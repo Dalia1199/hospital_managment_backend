@@ -297,7 +297,7 @@ export const signin = async (req, res, next) => {
     successresponse({ res, message: "success signin", data: { access_token, refreshtoken } })
 
 }
-//done in
+//done 
 export const signup = async (req, res, next) => {
 
     const {firstname,lastname,email,password,cpassword,phone,role,age,gender,address,
@@ -377,32 +377,32 @@ export const signup = async (req, res, next) => {
                 address
             }
         });
-    }
+        }
 
 
 
-    const otp = await generateotp();
+    // const otp = await generateotp();
 
-    eventemitter.emit(emailenum.confirmemail, async () => {
+    // eventemitter.emit(emailenum.confirmemail, async () => {
 
-        await sendemail({
-            to: email,
-            subject: "welcome to carehub",
-            html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
-        });
+    //     await sendemail({
+    //         to: email,
+    //         subject: "welcome to carehub",
+    //         html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
+    //     });
 
-        await setvalue({
-            key: otp_key({ email }),
-            value: hash({ plain_text: `${otp}` }),
-            ttl: 60 * 2
-        });
+    //     await setvalue({
+    //         key: otp_key({ email }),
+    //         value: hash({ plain_text: `${otp}` }),
+    //         ttl: 60 * 2
+    //     });
 
-        await setvalue({
-            key: max_otp_key({ email }),
-            value: 1,
-            ttl: 60 * 3
-        });
-    });
+    //     await setvalue({
+    //         key: max_otp_key({ email }),
+    //         value: 1,
+    //         ttl: 60 * 3
+    //     });
+    // });
 
     successresponse({
         res,status: 201,message: "signup success",data: user
