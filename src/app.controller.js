@@ -3,6 +3,8 @@ import { PORT } from "../conflig/conflig.service.js";
 import checkConnectionDB from "./DB/connectiondb.js";
 import userrouter from "./modules/users/user.controller.js";
 import { connectionredis } from "./DB/redis/redis.connect.js";
+import questionrouter from "./modules/questions/questions.controller.js";
+import answerrouter from "./modules/answers/answer.controller.js";
 const app = express();
 const Port=PORT||3000;
 
@@ -15,7 +17,9 @@ const bootstrap= () => {
     checkConnectionDB()
     connectionredis()
 
-app.use("/users", userrouter)
+app.use("/users", userrouter),
+app.use("/questions", questionrouter)
+ app.use("/answers", answerrouter);
     // app.use("*", (req, res, next) => {
     //     throw new Error(`url ${req.originalUrl} is not found`, { cause: 404 });
     // })

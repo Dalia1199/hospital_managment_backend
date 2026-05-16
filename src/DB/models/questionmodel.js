@@ -1,11 +1,15 @@
 import mongoose from "mongoose";
 
 export const questionSchema = new mongoose.Schema({
-
     question: {
         type: String,
         required: true,
         trim: true
+    },
+
+    category: {
+        type: String,
+        required: true
     },
 
     type: {
@@ -16,22 +20,33 @@ export const questionSchema = new mongoose.Schema({
 
     specialization: {
         type: String,
-        enum: ["cardiology", "dermatology", "neurology","general"],
+        enum: ["cardiology", "dermatology", "neurology", "general"],
         required: function () {
             return this.type === "specialized";
-        }
+        },
+        default: "general"
     },
 
     answerType: {
         type: String,
-        enum: ["text", "boolean", "single_choice"],
+        enum: [
+            "text",
+            "textarea",
+            "number",
+            "boolean",
+            "single_choice",
+            "multi_choice"
+        ],
         default: "text"
     },
 
     options: {
         type: [String],
         required: function () {
-            return this.answerType === "single_choice";
+            return [
+                "single_choice",
+                "multi_choice"
+            ].includes(this.answerType);
         }
     },
 
@@ -40,9 +55,9 @@ export const questionSchema = new mongoose.Schema({
         default: true
     }
 
-}, {
-    timestamps: true
-});
+}, { timestamps: true });
 
-const questionmodel = mongoose.models.question || mongoose.model("question", questionSchema)
+const questionmodel =mongoose.models.question || mongoose.model("question", questionSchema);
+
 export default questionmodel;
+

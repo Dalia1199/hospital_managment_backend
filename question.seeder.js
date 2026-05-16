@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 import questionmodel from "./src/DB/models/questionmodel.js";
-import { db_uri } from "./conflig/conflig.service.js";
 import { medicalHistoryQuestions } from "./medicalquestion.data.js"
 
 
 
+ const db_uri ="mongodb://127.0.0.1:27017/carehub"
 
 const seed = async () => {
     try {

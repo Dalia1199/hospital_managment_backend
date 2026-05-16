@@ -1,11 +1,8 @@
 import Joi from "joi";
 
-export const createanswersschema = {
+export const answersSchema = {
     body: Joi.object({
-
-        specialization: Joi.string()
-            .valid("medicine", "dentistry", "physiotherapy")
-            .required(),
+        patientId: Joi.string().optional(),
 
         answers: Joi.array().items(
             Joi.object({
@@ -13,6 +10,11 @@ export const createanswersschema = {
                 answer: Joi.required()
             })
         ).required()
-
     }).required()
-}
+};
+
+export const getAnswersSchema = {
+    params: Joi.object({
+        patientId: Joi.string().required()
+    }).required()
+};

@@ -54,7 +54,7 @@ export const emailtemplete=(otp)=>{
         <p>This code is valid for a few minutes. Do not share it with anyone.</p>
 
         <div class="footer">
-            If you didn’t request this, you can ignore this email.
+            If you didn't request this, you can ignore this email.
         </div>
     </div>
 </body>

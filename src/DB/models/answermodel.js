@@ -1,36 +1,29 @@
 import mongoose from "mongoose";
 
-const answerSchema = new mongoose.Schema({
+const answerSchema = new mongoose.Schema(
+    {
+        patientId: {
+            type: mongoose.Types.ObjectId,
+            ref: "patient",
+            required: true
+        },
 
-    userId: {
-        type: mongoose.Types.ObjectId,
-        ref: "user",
-        required: true
-    },
+        questionId: {
+            type: mongoose.Types.ObjectId,
+            ref: "question",
+            required: true
+        },
 
-    specialization: {
-        type: String,
-        enum: ["medicine", "dentistry", "physiotherapy"],
-        required: true
-    },
-
-    answers: [
-        {
-            questionId: {
-                type: mongoose.Types.ObjectId,
-                ref: "Question",
-                required: true
-            },
-            answer: {
-                type: mongoose.Schema.Types.Mixed,
-                required: true
-            }
+        answer: {
+            type: mongoose.Schema.Types.Mixed,
+            required: true
         }
-    ]
+    },
+    {
+        timestamps: true
+    }
+);
 
-}, {
-    timestamps: true
-});
+const answermodel =mongoose.models.answer ||mongoose.model("answer", answerSchema);
 
-const answemodel = mongoose.models.answer || mongoose.model("answer",answerSchema)
-export default answemodel;
+export default answermodel;
