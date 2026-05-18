@@ -16,7 +16,7 @@ const patientSchema = new mongoose.Schema({
             enum: Object.values(genderenum),
             default: genderenum.male
         },
-    bloodtype:String,
+    bloodType:String,
     medicalHistory: String
 });
 

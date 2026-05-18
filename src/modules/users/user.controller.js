@@ -10,17 +10,25 @@ const userrouter = Router()
 
 
 
+// userrouter.post(
+//     "/signup",
+//     multer_host(multerenum.image).fields([
+//         { name: "licenseimage", maxCount: 1 }
+
+    
+//     ]),
+//     validation(UV.signupschema),
+//     US.signup
+// );
 userrouter.post(
     "/signup",
     multer_host(multerenum.image).fields([
-        { name: "licenseimage", maxCount: 1 }
-
-    
+        { name: "licenseImage", maxCount: 1 },
+        { name: "nationalId", maxCount: 1 }
     ]),
     validation(UV.signupschema),
     US.signup
 );
-
 userrouter.post("/logout", authentication, US.logout)
 userrouter.post("/signin", validation(UV.signinschema), US.signin)
 userrouter.patch("/update-password", authentication, validation(UV.updatepassworsschema), US.UpdatePassword)

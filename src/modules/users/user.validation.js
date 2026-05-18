@@ -6,17 +6,16 @@ import { generalrules } from "../../common/utilits/generalrules.js";
 export const signupschema = {
     body: Joi.object({
 
-        firstname: Joi.string().min(3).required(),
-        lastname: Joi.string().min(3).required(),
+        fullName: Joi.string().min(7).required(),
 
         email: generalrules.email.required(),
 
         password: generalrules.password.required(),
-        cpassword: generalrules.cpassword.required(),
+        confirmPassword: generalrules.confirmPassword.required(),
 
         role: Joi.string().valid("doctor", "patient").required(),
 
-        phone: Joi.string().required(),
+        phoneNumber: Joi.string().required(),
 
         
 
@@ -32,21 +31,21 @@ export const signupschema = {
             otherwise: Joi.forbidden()
         }),
 
-        bloodtype: Joi.when("role", {
+        bloodType: Joi.when("role", {
             is: "patient",
-            then: Joi.string().required(),
+            then: Joi.string().optional(),
             otherwise: Joi.forbidden()
         }),
 
         address: Joi.when("role", {
             is: "patient",
-            then: Joi.string().required(),
+            then: Joi.string().optional(),
             otherwise: Joi.string().optional()
         }),
 
       
 
-        speciality: Joi.when("role", {
+        specialty: Joi.when("role", {
             is: "doctor",
             then: Joi.string().required(),
             otherwise: Joi.forbidden()
@@ -58,11 +57,11 @@ export const signupschema = {
             otherwise: Joi.forbidden()
         }),
 
-        nationalId: Joi.when("role", {
-            is: "doctor",
-            then: Joi.number().required(),
-            otherwise: Joi.forbidden()
-        }),
+        // nationalId: Joi.when("role", {
+        //     is: "doctor",
+        //     then: Joi.number().required(),
+        //     otherwise: Joi.forbidden()
+        // }),
 
         experience: Joi.when("role", {
             is: "doctor",

@@ -2,20 +2,13 @@ import mongoose from "mongoose";
 import {  providerenum, roleenum } from "../../common/enum/user.enum.js";
 
 const userschema = new mongoose.Schema({
-    firstname: {
+    fullName: {
         type: String,
         required: true,
-        minLength: 3,
-        maxLength: 7,
+        minLength: 6,
         trim: true
     },
-    lastname: {
-        type: String,
-        required: true,
-        minLength: 3,
-        maxLength: 7,
-        trim: true
-    },
+
     email: {
         type: String,
         required: true,
@@ -31,7 +24,7 @@ const userschema = new mongoose.Schema({
         trim: true,
         minLength: 6
     },
-    phone:{
+    phoneNumber:{
         type:String,
         required:true
     },
@@ -64,13 +57,6 @@ const userschema = new mongoose.Schema({
     strictQuery: true,
     toJSON: { virtuals: true }
 })
-userschema.virtual("username")
-    .get(function () {
-        return this.firstname + " " + this.lastname
-    })
-    .set(function (value) {
-        const [firstname, lastname] = value.split(" ")
-        this.set({ firstname, lastname })
-    })
+
 const usermodel = mongoose.models.user || mongoose.model("user", userschema)
 export default usermodel

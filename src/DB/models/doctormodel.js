@@ -6,11 +6,20 @@ const doctorSchema = new mongoose.Schema({
     },
     syncdicatedId:Number,
     licenseimage: {
-        secure_url: { type: String, required: false },
-        puplic_id: { type: String, required: false },
+        secure_url: {
+            type: String,
+            required: true
+        },
+        public_id: {
+            type: String,
+            required: true
+        }
     },
     specialization: String,
-    nationalId:Number,
+    nationalId: {
+        secure_url: String,
+        public_id: String
+    },
     experience: Number,
     rating: {
         type: Number,

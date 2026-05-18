@@ -298,10 +298,141 @@ export const signin = async (req, res, next) => {
 
 }
 //done 
+// export const signup = async (req, res, next) => {
+
+//     const { FullName, email, password, confirmPassword, phoneNumber,role,age,gender,address,
+//         bloodType,specialty,syndicateId,nationalId,experience} = req.body;
+
+//     if (await db_service.findOne({
+//         model: usermodel,
+//         filter: { email }
+//     })) {
+//         throw new Error("email already exists", { cause: 409 });
+//     }
+
+//     if (password !== confirmPassword) {
+//         throw new Error("password mismatch");
+//     }
+
+//     if (!["doctor", "patient"].includes(role)) {
+//         throw new Error("invalid role");
+//     }
+
+    
+
+//     let licenseImage = null;
+//     try{
+
+//     if (role === "doctor") {
+//         if (!req.files?.licenseImage) {
+//             throw new Error("license image required");
+//         }
+
+//         const { secure_url, public_id } = await cloudinary.uploader.upload(
+//             req.files.licenseImage[0].path,
+//             { folder: "carehub/doctors" }
+//         );
+
+//         licenseImage = { secure_url, public_id };
+//     }
+
+  
+//     const user = await db_service.create({
+//         model: usermodel,
+//         data: {
+//             FullName,
+//             email,
+//             password: hash({ plain_text: password }),
+//             phoneNumber: encrypt(phoneNumber),
+//             role,
+//             address
+//         }
+//     });
+
+//     if (role === "doctor") {
+
+//         await db_service.create({
+//             model:doctormodel,
+//             data: {
+//                 userId: user._id,
+//                 specialization: specialty,
+//                 nationalId,
+//                 experience,
+//                 syncdicatedId: syndicateId,
+//                 licenseImage: licenseImage
+
+//             }
+//         });
+
+//     } else {
+
+//         await db_service.create({
+//             model:patientmodel,
+//             data: {
+//                 userId: user._id,
+//                 age,
+//                 gender,
+//                 bloodtype,
+//                 address
+//             }
+//         });
+//         }
+
+
+
+//     // const otp = await generateotp();
+
+//     // eventemitter.emit(emailenum.confirmemail, async () => {
+
+//     //     await sendemail({
+//     //         to: email,
+//     //         subject: "welcome to carehub",
+//     //         html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
+//     //     });
+
+//     //     await setvalue({
+//     //         key: otp_key({ email }),
+//     //         value: hash({ plain_text: `${otp}` }),
+//     //         ttl: 60 * 2
+//     //     });
+
+//     //     await setvalue({
+//     //         key: max_otp_key({ email }),
+//     //         value: 1,
+//     //         ttl: 60 * 3
+//     //     });
+//     // });
+
+//     successresponse({
+//         res,status: 201,message: "signup success",data: user
+//     });
+// } catch(error){
+//     if (licenseImage?.public_id){
+//         await cloudinary.uploader.destroy(
+//             licenseImage.public_id
+//         );
+//     }
+//     throw error ;
+// }
+// };
 export const signup = async (req, res, next) => {
 
-    const {firstname,lastname,email,password,cpassword,phone,role,age,gender,address,
-        bloodtype,speciality,syndicateId,nationalId,experience} = req.body;
+    const {
+        fullName,
+        email,
+        password,
+        confirmPassword,
+        phoneNumber,
+        role,
+        age,
+        gender,
+        address,
+        bloodType,
+        specialty,
+        syndicateId,
+        nationalId,
+        experience
+    } = req.body;
 
     if (await db_service.findOne({
         model: usermodel,
@@ -310,7 +441,7 @@ export const signup = async (req, res, next) => {
         throw new Error("email already exists", { cause: 409 });
     }
 
-    if (password !== cpassword) {
+    if (password !== confirmPassword) {
         throw new Error("password mismatch");
     }
 
@@ -318,101 +449,129 @@ export const signup = async (req, res, next) => {
         throw new Error("invalid role");
     }
 
-    
+    let licenseImage = null;
+    let nationalIdImage = null;
 
-    let licenseimage = null;
-    try{
+    try {
 
-    if (role === "doctor") {
-        if (!req.files?.licenseimage) {
-            throw new Error("license image required");
-        }
+        if (role === "doctor") {
 
-        const { secure_url, public_id } = await cloudinary.uploader.upload(
-            req.files.licenseimage[0].path,
-            { folder: "carehub/doctors" }
-        );
-
-        licenseimage = { secure_url, public_id };
-    }
-
-  
-    const user = await db_service.create({
-        model: usermodel,
-        data: {
-            firstname,
-            lastname,
-            email,
-            password: hash({ plain_text: password }),
-            phone: encrypt(phone),
-            role,
-            address
-        }
-    });
-
-    if (role === "doctor") {
-
-        await db_service.create({
-            model:doctormodel,
-            data: {
-                userId: user._id,
-                specialization: speciality,
-                nationalId,
-                experience,
-                syncdicatedId: syndicateId,
-                licenseimage: licenseimage
-
+            if (!req.files?.licenseImage) {
+                throw new Error("license image required");
             }
-        });
 
-    } else {
+            const { secure_url, public_id } =
+                await cloudinary.uploader.upload(
+                    req.files.licenseImage[0].path,
+                    { folder: "carehub/doctors" }
+                );
 
-        await db_service.create({
-            model:patientmodel,
+            licenseImage = { secure_url, public_id };
+
+
+            // national id upload
+            if (!req.files?.nationalId) {
+                throw new Error("national id image required");
+            }
+
+            const {
+                secure_url: national_secure_url,
+                public_id: national_public_id
+            } = await cloudinary.uploader.upload(
+                req.files.nationalId[0].path,
+                { folder: "carehub/nationalIds" }
+            );
+
+            nationalIdImage = {
+                secure_url: national_secure_url,
+                public_id: national_public_id
+            };
+        }
+
+
+        const user = await db_service.create({
+            model: usermodel,
             data: {
-                userId: user._id,
-                age,
-                gender,
-                bloodtype,
+                fullName,
+                email,
+                password: hash({ plain_text: password }),
+                phoneNumber: encrypt(phoneNumber),
+                role,
                 address
             }
         });
+
+
+        if (role === "doctor") {
+
+            await db_service.create({
+                model: doctormodel,
+                data: {
+                    userId: user._id,
+                    specialization: specialty,
+                    nationalId: nationalIdImage,
+                    experience,
+                    syncdicatedId: syndicateId,
+                    licenseimage: licenseImage                }
+            });
+
+        } else {
+
+            await db_service.create({
+                model: patientmodel,
+                data: {
+                    userId: user._id,
+                    age,
+                    gender,
+                    bloodtype: bloodType,
+                    address
+                }
+            });
+        }
+        const otp = await generateotp();
+
+            eventemitter.emit(emailenum.confirmemail, async () => {
+
+                await sendemail({
+                    to: email,
+                    subject: "welcome to carehub",
+                    html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
+                });
+
+                await setvalue({
+                    key: otp_key({ email }),
+                    value: hash({ plain_text: `${otp}` }),
+                    ttl: 60 * 2
+                });
+
+                await setvalue({
+                    key: max_otp_key({ email }),
+                    value: 1,
+                    ttl: 60 * 3
+                });
+            });
+
+        successresponse({
+            res,
+            status: 201,
+            message: "signup success",
+            data: user
+        });
+
+    } catch (error) {
+
+        if (licenseImage?.public_id) {
+            await cloudinary.uploader.destroy(
+                licenseImage.public_id
+            );
         }
 
+        if (nationalIdImage?.public_id) {
+            await cloudinary.uploader.destroy(
+                nationalIdImage.public_id
+            );
+        }
 
-
-    // const otp = await generateotp();
-
-    // eventemitter.emit(emailenum.confirmemail, async () => {
-
-    //     await sendemail({
-    //         to: email,
-    //         subject: "welcome to carehub",
-    //         html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
-    //     });
-
-    //     await setvalue({
-    //         key: otp_key({ email }),
-    //         value: hash({ plain_text: `${otp}` }),
-    //         ttl: 60 * 2
-    //     });
-
-    //     await setvalue({
-    //         key: max_otp_key({ email }),
-    //         value: 1,
-    //         ttl: 60 * 3
-    //     });
-    // });
-
-    successresponse({
-        res,status: 201,message: "signup success",data: user
-    });
-} catch(error){
-    if (licenseimage?.public_id){
-        await cloudinary.uploader.destroy(
-            licenseimage.public_id
-        );
+        throw error;
     }
-    throw error ;
-}
 };

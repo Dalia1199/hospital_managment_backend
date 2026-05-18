@@ -39,7 +39,7 @@ export const generalrules = {
             "string.min": "password is too short"
         }),
 
-    cpassword: joi
+    confirmPassword: joi
         .string()
         .valid(joi.ref("password"))
         .required()
