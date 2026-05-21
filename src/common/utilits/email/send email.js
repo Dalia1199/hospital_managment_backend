@@ -1,6 +1,6 @@
 
 import nodemailer from "nodemailer";
-import { Email, password } from "../../../../conflig/conflig.service.js";
+import { Email, password } from "../../../../config/config.service.js";
 
 export const sendemail = async ({ to, subject, html, attachments = [] }) => {
 

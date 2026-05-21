@@ -1,5 +1,5 @@
 import { hashSync, compareSync } from "bcrypt";
-import { saltrounds } from "../../../../conflig/conflig.service.js";
+import { saltrounds } from "../../../../config/config.service.js";
 export function hash({ plain_text, saltround = saltrounds } = {}) {
     return hashSync(plain_text, Number(saltround))
 }

@@ -1,11 +1,13 @@
 import express from "express";
-import { PORT } from "../conflig/conflig.service.js";
+import { PORT } from "../config/config.service.js";
 import checkConnectionDB from "./DB/connectiondb.js";
 import userrouter from "./modules/users/user.controller.js";
 import { connectionredis } from "./DB/redis/redis.connect.js";
 import questionrouter from "./modules/questions/questions.controller.js";
 import answerrouter from "./modules/answers/answer.controller.js";
 import cors from "cors";
+import medicalrouter from "./modules/medicalhistory/medicalhistory.controller.js";
+import prescrptionrouter from "./modules/prescrption/prescription.controller.js";
 const app = express();
 const Port=PORT||3000;
 
@@ -18,11 +20,14 @@ const bootstrap= () => {
     checkConnectionDB()
     connectionredis()
     app.use(cors({
-        origin: "http://localhost:3000"
+        origin: "http://localhost:3001"
     }));
 app.use("/users", userrouter),
 app.use("/questions", questionrouter)
- app.use("/answers", answerrouter);
+app.use("/answers", answerrouter);
+app.use("/medical-history", medicalrouter);
+app.use("/prescrption", prescrptionrouter);
+
     // app.use("*", (req, res, next) => {
     //     throw new Error(`url ${req.originalUrl} is not found`, { cause: 404 });
     // })

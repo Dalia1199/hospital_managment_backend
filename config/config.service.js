@@ -9,7 +9,7 @@ let envpaths = {
     development: ".env.development",
     production: ".env.production"
 }
-dotenv.config({ path: resolve(`conflig/${envpaths[NODE_ENV]}`) })
+dotenv.config({ path: resolve(`config/${envpaths[NODE_ENV]}`) })
 export const PORT = +process.env.PORT;
 export const access_secret_key = process.env.ACCESS_SECRET_KEY
 export const db_uri = process.env.DB_URL
@@ -22,3 +22,4 @@ export const password = process.env.PASSWORD
 export const CLOUDINARY_CLOUD_NAME =process.env.CLOUDINARY_CLOUD_NAME
 export const CLOUDINARY_API_KEY= process.env.CLOUDINARY_API_KEY
 export const CLOUDINARY_API_SECRET=process.env.CLOUDINARY_API_SECRET
+export const DB_URL_ONLINE = process.env.DB_URL_ONLINE

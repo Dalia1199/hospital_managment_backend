@@ -10,16 +10,7 @@ const userrouter = Router()
 
 
 
-// userrouter.post(
-//     "/signup",
-//     multer_host(multerenum.image).fields([
-//         { name: "licenseimage", maxCount: 1 }
 
-    
-//     ]),
-//     validation(UV.signupschema),
-//     US.signup
-// );
 userrouter.post(
     "/signup",
     multer_host(multerenum.image).fields([

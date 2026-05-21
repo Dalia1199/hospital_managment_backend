@@ -1,4 +1,4 @@
-import { access_secret_key, refreshsecretkey } from "../../../conflig/conflig.service.js";
+import { access_secret_key, refreshsecretkey } from "../../../config/config.service.js";
 import usermodel from "../../DB/models/usermodel.js";
 import { get, revokedkey } from "../../DB/redis/redis.service.js";
 import { verifytoken } from "../utilits/token.service.js"
@@ -14,7 +14,7 @@ export const authentication = async (req, res, next) => {
     if (prefix !== prefix) {
         throw new Error("invalid token prefix");
     }
-    const decoded = verifytoken({ token, secret_key: access_secret_key})
+    const decoded = verifytoken({ token, secret_key: access_secret_key })
     if (!decoded || !decoded?.id) {
         throw new Error("invalid token ");
     }

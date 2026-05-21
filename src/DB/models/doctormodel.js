@@ -21,11 +21,13 @@ const doctorSchema = new mongoose.Schema({
         public_id: String
     },
     experience: Number,
-    rating: {
-        type: Number,
-        default: 0
-    }
+   
 });
+//CLINIC APPOINTMENT AND ADRESS
+//PROFILE PIC
+//CERTIFICATIONS
+
+
 
 const doctormodel = mongoose.models.doctor || mongoose.model("doctor", doctorSchema)
 export default doctormodel
