@@ -1,6 +1,8 @@
 import { Router } from "express";
 import *as US from "../users/user.service.js"
 import * as UV from "../users/user.validation.js"
+import { authorization } from "../../common/middleware/authorization.js";
+import { roleenum } from "../../common/enum/user.enum.js";
 
 import { validation } from "../../common/middleware/validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
@@ -26,14 +28,21 @@ userrouter.patch("/update-password", authentication, validation(UV.updatepasswor
 userrouter.get("/profile", authentication, US.getprofile)
 userrouter.get("/share-profile/:id"
     // ,validation(UV.shareprofileschema)
-    ,US.shareprofile)
+    , US.shareprofile)
 userrouter.patch("/update-profile", authentication, validation(UV.updateprofileschema), US.updateprofile)
-userrouter.patch("/forget-password", validation(UV.resendotpschema),US.forgetPassword)
+userrouter.patch("/forget-password", validation(UV.resendotpschema), US.forgetPassword)
 userrouter.post("/reset-password", validation(UV.resetpasswordschema), US.resetPassword)
 userrouter.patch("/confirm-email", validation(UV.confirmemailschema), US.confirmemail)
 userrouter.post("/resend-otp", validation(UV.resendotpschema), US.resendotp)
 userrouter.get("/refresh-token", US.refreshtoken)
 
 
+// get all users by role with pagination admin only
+userrouter.get(
+    "/get-all-users",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(UV.getusersschema),
+    US.getallusers)
 
 export default userrouter
