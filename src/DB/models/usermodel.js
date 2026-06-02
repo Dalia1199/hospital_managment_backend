@@ -34,9 +34,14 @@ const userschema = new mongoose.Schema({
         enum: Object.values(roleenum),
         default: roleenum.doctor
     },
-    profilepictures: {
-        secure_url: { type:String, required: false },
-        puplic_id: { type: String, required: false },
+    profilepicture: {
+        secure_url: {
+            type: String
+        },
+
+        public_id: {
+            type: String
+        }
     },
 
     
