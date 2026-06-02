@@ -17,7 +17,8 @@ const patientSchema = new mongoose.Schema({
             default: genderenum.male
         },
     bloodType:String,
-    medicalHistory: String
+    medicalHistory: String,
+ 
 });
 
 export default mongoose.model("Patient", patientSchema);

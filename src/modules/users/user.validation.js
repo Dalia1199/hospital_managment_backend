@@ -91,15 +91,7 @@ export const confirmemailschema = {
         code: Joi.string().min(6).required()
     }).required(),
 }
-export const updateprofileschema = {
-    body: Joi.object({
-        firstname: Joi.string().trim(),
-        lastname: Joi.string().trim(),
 
-
-        gender: Joi.string().valid(...Object.values(genderenum)).required(),
-    }).required(),
-}
 export const resetpasswordschema = {
     body: Joi.object({
         email: generalrules.email.required(),
