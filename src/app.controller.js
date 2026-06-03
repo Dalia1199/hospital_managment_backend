@@ -9,6 +9,7 @@ import cors from "cors";
 import medicalrouter from "./modules/medicalhistory/medicalhistory.controller.js";
 import prescrptionrouter from "./modules/prescrption/prescription.controller.js";
 import patientrouter from "./modules/patient/patient.controller.js";
+import doctorrouter from "./modules/doctor/doctor.controller.js";
 const app = express();
 const Port=PORT||3000;
 
@@ -29,6 +30,7 @@ app.use("/answers", answerrouter);
 app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
     app.use("/patient", patientrouter);
+    app.use("/doctors", doctorrouter);
 
 
 
