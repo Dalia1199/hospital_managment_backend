@@ -7,11 +7,10 @@ import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { multer_host } from "../../common/middleware/multer.js";
 import { multerenum } from "../../common/enum/multerenum.js";
 
-const authcontroller = require("../../common/middleware/authenticataiaon.js")
-const prescrptionrouter = express.Router()
+
 
 //api
 
-prescrptionrouter.route('/:id').delete(authcontroller.protect,authcontroller.restrictTo("doctor","admin"),PS.deleteprescrption)
+prescrptionrouter.delete('/:id',authentication,authorization([roleenum.doctor, roleenum.doctor]),PS.deleteprescrption)
 
 export default prescrptionrouter

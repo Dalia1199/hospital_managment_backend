@@ -11,13 +11,14 @@ import AppError from "../../common/utilits/appError.js";
 
 
 
-export const deleteprescrption = catchAsync(async (req, res,next) => {
+export const deleteprescrption = async (req, res,next) => {
 const prescription = await prescrptionmodel.findByIdAndUpdate(req.params.id,{status:"cancelled",},{new:true})
+
 if (!prescription) {
-    return next(new AppError('No prescription found with that ID', 404));
+    throw new Error('No prescription found with that ID');
   }
 successresponse({ res, message: "prescription deleted successfully" })
 
 
 }
-)
+
