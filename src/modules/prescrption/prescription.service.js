@@ -3,16 +3,21 @@ import cloudinary from "../../common/utilits/cloudinary.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js"
 
+export const createPrescription = async (req, res, next) => {
+    const { patientId, diagnosis, medicines, notes } = req.body;
 
-export const createPrescription = async ({ patientId, doctorId, diagnosis, medicines, notes }) => {
-    const prescription = new prescrptionmodel({
+    const prescription = await prescrptionmodel.create({
         patientId,
-        doctorId,
+        doctorId: req.user._id,
         diagnosis,
-        medications: medicines,
-        notes: notes || "",
+        medicines,
+        notes: notes || ""
     });
 
-    await prescription.save();
-    return prescription;
+    successresponse({
+        res,
+        message: "Prescription created successfully",
+        data: prescription
+    });
 };
+
