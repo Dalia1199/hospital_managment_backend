@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import {  providerenum, roleenum } from "../../common/enum/user.enum.js";
+import { providerenum, roleenum } from "../../common/enum/user.enum.js";
 
 const userschema = new mongoose.Schema({
     fullName: {
@@ -14,7 +14,7 @@ const userschema = new mongoose.Schema({
         required: true,
         unique: true,
         trim: true,
-        
+
     },
     password: {
         type: String,
@@ -24,11 +24,11 @@ const userschema = new mongoose.Schema({
         trim: true,
         minLength: 6
     },
-    phoneNumber:{
-        type:String,
-        required:true
+    phoneNumber: {
+        type: String,
+        required: true
     },
-  
+
     role: {
         type: String,
         enum: Object.values(roleenum),
@@ -44,21 +44,37 @@ const userschema = new mongoose.Schema({
         }
     },
 
-    
+
     changecredential: Date,
-  
+
 
 
     confirmed: Boolean,
-    address: {type: String, required: false},
+    address: { type: String, required: false },
     provider: {
         type: String,
         enum: Object.values(providerenum),
         default: providerenum.system
     },
+    //admin 
+    status: {
+        type: String,
+        enum: ["pending", "active", "rejected", "blocked"],
+        default: function () {
 
+            if (this.role === roleenum.doctor) {
+                return "pending"
+            }
+
+            return "active"
+        }
+    },
+
+    rejectedReason: {
+        type: String
+    },
 }, {
-    timestamps: true, 
+    timestamps: true,
     strictQuery: true,
     toJSON: { virtuals: true }
 })
