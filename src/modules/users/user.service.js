@@ -194,68 +194,7 @@ export const logout = async (req, res, next) => {
         })
     } successresponse({ res })
 }
-//TOBEMODFIED
-export const updateprofile = async (req, res, next) => {
-    let { firstname, lastname, gender, phone } = req.body
-    if (phone) { phone = encrypt(phone) }
-    const user = await db_service.findOneAndUpdate({
-        model: usermodel,
-        filter: { _id: req.user._id },
-        update: { firstname, lastname, gender, phone }
-    })
-    if (!user) { throw new Error("user not exist yet") }
-    await deleletekey(`profile::${req.user._id}`)
-    successresponse({ res, data: user })
 
-}
-//TOBEMODFIED
-
-// export const shareprofile = async (req, res, next) => {
-//     const { id } = req.params
-//     const user = await db_service.findById({
-//         model: usermodel,
-//         id,
-//         select: "-password"
-//     })
-//     if (!user) { throw new Error("user not exist yet") }
-//     user.phone = decrypt(user.phone)
-//     successresponse({ res, data: user })
-// }
-export const shareprofile = async (req, res, next) => {
-    const { id } = req.params
-
-    const user = db_service.findById({
-        model: usermodel,
-        id,
-        select: "-password"
-    })
-
-    if (!user) {
-        throw new Error("user not exist yet")
-    }
-
-    if (user.phone) {
-        user.phone = decrypt(user.phone)
-    }
-
-    successresponse({ res, data: user })
-}
-
-export const getprofile = async (req, res, next) => {
-
-
-    const user = await db_service.findById({
-        model: usermodel,
-        id: req.decoded.id, select: "-password"
-    })
-    if (!user) {
-        throw new Error("user not found", { cause: 400 });
-    }
-
-    successresponse({ res, message: "done", data: { ...user._doc, phone: decrypt(user.phone) } })
-
-    // successresponse({ res, message: "done", data: user })
-}
 export const signin = async (req, res, next) => {
     const { email, password } = req.body
     const user = await db_service.findOne({
