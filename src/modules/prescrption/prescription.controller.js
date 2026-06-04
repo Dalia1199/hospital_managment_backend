@@ -16,5 +16,16 @@ prescrptionrouter.post(
     PS.createPrescription
 )
 
-export default prescrptionrouter
+
+
+
+// GET /prescrption/patient/:patientId
+// Accessible by: doctor, patient (own data only)
+prescrptionrouter.get(
+    "/patient/:patientId",
+    authentication,
+    authorization([roleenum.doctor, roleenum.patient]),
+    validation(PV.getPatientPrescriptionsSchema),
+    PS.getPatientPrescriptions
+);
 
