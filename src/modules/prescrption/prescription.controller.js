@@ -11,6 +11,6 @@ import { multerenum } from "../../common/enum/multerenum.js";
 
 //api
 
-prescrptionrouter.delete('/:id',authentication,authorization([roleenum.doctor, roleenum.doctor]),PS.deleteprescrption)
+prescrptionrouter.delete('/:id',authentication,authorization([roleenum.doctor, roleenum.admin]),PS.deleteprescrption)
 
 export default prescrptionrouter
