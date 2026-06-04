@@ -1,8 +1,6 @@
 import { Router } from "express";
 import *as US from "../users/user.service.js"
 import * as UV from "../users/user.validation.js"
-import { authorization } from "../../common/middleware/authorization.js";
-import { roleenum } from "../../common/enum/user.enum.js";
 
 import { validation } from "../../common/middleware/validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
@@ -37,12 +35,5 @@ userrouter.post("/resend-otp", validation(UV.resendotpschema), US.resendotp)
 userrouter.get("/refresh-token", US.refreshtoken)
 
 
-// get all users by role with pagination admin only
-userrouter.get(
-    "/get-all-users",
-    authentication,
-    authorization([roleenum.admin]),
-    validation(UV.getusersschema),
-    US.getallusers)
 
 export default userrouter
