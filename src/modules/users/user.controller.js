@@ -1,8 +1,6 @@
 import { Router } from "express";
 import *as US from "../users/user.service.js"
 import * as UV from "../users/user.validation.js"
-import { authorization } from "../../common/middleware/authorization.js";
-import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { multer_host } from "../../common/middleware/multer.js";
@@ -34,16 +32,4 @@ userrouter.post("/reset-password", validation(UV.resetpasswordschema), US.resetP
 userrouter.patch("/confirm-email", validation(UV.confirmemailschema), US.confirmemail)
 userrouter.post("/resend-otp", validation(UV.resendotpschema), US.resendotp)
 userrouter.get("/refresh-token", US.refreshtoken)
-
-
-
-// add update doctor profile api
-userrouter.patch(
-    "/doctor-profile",
-    authentication,              
-    authorization([roleenum.doctor]),
-    validation(UV.updatedoctorprofileschema),
-    US.updatedoctorprofile
-)
-
 export default userrouter
