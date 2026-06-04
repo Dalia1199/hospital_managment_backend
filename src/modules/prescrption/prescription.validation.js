@@ -25,7 +25,7 @@ export const updatePrescriptionSchema = {
         ).optional(),
 
         notes: Joi.string().trim().optional().allow("") // notes are optional and can be cleared out (empty string)
-    }).required()
+    }).unknown(false).required()
 };
 
 
