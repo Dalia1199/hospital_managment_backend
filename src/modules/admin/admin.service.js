@@ -27,3 +27,55 @@ export const getPendingDoctors = async (req, res, next) => {
         next(error);
     }
 };
+
+
+
+///////////for approve and reject doctor 
+
+export const approveDoctor = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await db_service.findByIdAndUpdate({
+            model: usermodel,
+            id: req.params.id,
+            data: { status: "approved" },
+            options: { new: true, select: "-password" }
+        });
+
+        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const rejectDoctor = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await db_service.findByIdAndUpdate({
+            model: usermodel,
+            id: req.params.id,
+            data: { status: "rejected" },
+            options: { new: true, select: "-password" }
+        });
+
+        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
