@@ -40,7 +40,7 @@ export const createPrescriptionSchema = {
             "any.required": "Diagnosis is required",
         }),
 
-        medicines: Joi.array().items(medicineSchema).min(1).required().messages({
+            medications: Joi.array().items(medicineSchema).min(1).required().messages({
             "array.min": "At least one medicine is required",
             "any.required": "medicines array is required",
         }),
