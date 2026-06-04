@@ -1,4 +1,11 @@
 import { Router } from "express";
+import * as PS from "../prescrption/prescription.service.js"
+import * as PV from "../prescrption/prescription.validation.js"
+
+import { validation } from "../../common/middleware/validation.js";
+import { authentication } from "../../common/middleware/authenticataiaon.js";
+import { multer_host } from "../../common/middleware/multer.js";
+import { multerenum } from "../../common/enum/multerenum.js";
 import * as PV from "./prescription.validation.js";
 import * as PS from "./prescription.service.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
@@ -29,3 +36,6 @@ prescrptionrouter.get(
     PS.getPatientPrescriptions
 );
 
+prescrptionrouter.delete('/:id',authentication,authorization([roleenum.doctor, roleenum.admin]),PS.deleteprescrption)
+
+export default prescrptionrouter
