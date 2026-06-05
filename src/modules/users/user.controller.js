@@ -1,7 +1,6 @@
 import { Router } from "express";
 import *as US from "../users/user.service.js"
 import * as UV from "../users/user.validation.js"
-
 import { validation } from "../../common/middleware/validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { multer_host } from "../../common/middleware/multer.js";
@@ -30,7 +29,4 @@ userrouter.post("/reset-password", validation(UV.resetpasswordschema), US.resetP
 userrouter.patch("/confirm-email", validation(UV.confirmemailschema), US.confirmemail)
 userrouter.post("/resend-otp", validation(UV.resendotpschema), US.resendotp)
 userrouter.get("/refresh-token", US.refreshtoken)
-
-
-
 export default userrouter
