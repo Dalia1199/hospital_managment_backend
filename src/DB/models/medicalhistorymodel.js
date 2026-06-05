@@ -85,7 +85,14 @@ const medicalHistorySchema = new mongoose.Schema(
                 secure_url: String,
                 public_id: String
             }
-        ]
+        ],
+        // Array to link prescriptions to this medical history record
+        prescriptions: [
+            {
+                type: mongoose.Types.ObjectId,
+                ref: "prescrption"
+            }
+        ],
     },
     {
         timestamps: true

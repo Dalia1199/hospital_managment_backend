@@ -54,6 +54,11 @@ const prescriptionSchema = new mongoose.Schema({
     notes: {
         type: String
     },
+// add prescription image 
+    prescriptionImage: {
+        secure_url: { type: String },
+        public_id: { type: String }
+    },
 
     status: {
         type: String,
