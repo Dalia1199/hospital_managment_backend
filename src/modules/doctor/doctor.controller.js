@@ -18,6 +18,15 @@ doctorrouter.get(
     DS.getDashboard
 );
 
+// add update doctor profile api
+doctorrouter.patch(
+    "/profile",
+    authentication,              
+    authorization([roleenum.doctor]),
+    validation(DV.updatedoctorprofileschema),
+    DS.updatedoctorprofile
+);
+// Routes
 doctorrouter.patch(
     "/license",
     authentication,
