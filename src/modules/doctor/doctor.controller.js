@@ -10,7 +10,14 @@ import { validation } from "../../common/middleware/validation.js";
 
 const doctorrouter = Router();
 
-// Routes
+// GET /doctor/dashboard
+doctorrouter.get(
+    "/dashboard",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getDashboard
+);
+
 doctorrouter.patch(
     "/license",
     authentication,

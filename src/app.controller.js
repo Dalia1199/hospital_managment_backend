@@ -30,7 +30,7 @@ app.use("/answers", answerrouter);
 app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
     app.use("/patient", patientrouter);
-    app.use("/doctors", doctorrouter);
+    app.use("/doctor", doctorrouter);
 
 
 
