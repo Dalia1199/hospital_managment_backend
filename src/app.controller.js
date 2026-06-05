@@ -8,8 +8,8 @@ import answerrouter from "./modules/answers/answer.controller.js";
 import cors from "cors";
 import medicalrouter from "./modules/medicalhistory/medicalhistory.controller.js";
 import prescrptionrouter from "./modules/prescrption/prescription.controller.js";
-import patientrouter from "./modules/patient/patient.controller.js";
 import adminrouter from "./modules/admin/admin.controller.js";
+import patientrouter from "./modules/patient/patient.controller.js";
 
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 const app = express();
@@ -31,9 +31,9 @@ app.use("/questions", questionrouter)
 app.use("/answers", answerrouter);
 app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
+app.use("/admin", adminrouter);
 app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
-    app.use("/doctor", doctorrouter);
 
  
     app.use("/admin", adminrouter)
