@@ -53,6 +53,13 @@ export const createPrescriptionSchema = {
         }),
 
         notes: Joi.string().trim().max(1000).optional().allow(""),
+        // Allow medicalHistoryId in the request body
+        medicalHistoryId: Joi.string()
+            .pattern(/^[a-f\d]{24}$/i)
+            .optional()
+            .messages({
+                "string.pattern.base": "medicalHistoryId must be a valid MongoDB ObjectId"
+        }),
     })
 }
 
