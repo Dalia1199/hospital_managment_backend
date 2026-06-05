@@ -22,11 +22,8 @@ userrouter.post(
 userrouter.post("/logout", authentication, US.logout)
 userrouter.post("/signin", validation(UV.signinschema), US.signin)
 userrouter.patch("/update-password", authentication, validation(UV.updatepassworsschema), US.UpdatePassword)
-userrouter.get("/profile", authentication, US.getprofile)
-userrouter.get("/share-profile/:id"
-    // ,validation(UV.shareprofileschema)
-    ,US.shareprofile)
-userrouter.patch("/update-profile", authentication, validation(UV.updateprofileschema), US.updateprofile)
+// userrouter.get("/profile", authentication, US.getprofile)
+
 userrouter.patch("/forget-password", validation(UV.resendotpschema),US.forgetPassword)
 userrouter.post("/reset-password", validation(UV.resetpasswordschema), US.resetPassword)
 userrouter.patch("/confirm-email", validation(UV.confirmemailschema), US.confirmemail)

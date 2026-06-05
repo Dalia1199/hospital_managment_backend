@@ -8,3 +8,9 @@ export const updatedoctorprofileschema = {
         experience: Joi.number().optional(),
     }).required(),
 }
+// Define doctor validation schemas here
+export const updateDoctorLicense = {
+    file: Joi.object({
+        mimetype: Joi.string().valid("image/png", "image/jpeg", "application/pdf").required()
+    }).unknown(true).required()
+};
