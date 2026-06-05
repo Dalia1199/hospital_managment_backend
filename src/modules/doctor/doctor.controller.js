@@ -17,6 +17,7 @@ doctorrouter.patch(
     authorization([roleenum.doctor]),
     validation(DV.updatedoctorprofileschema),
     DS.updatedoctorprofile
+);
 // Routes
 doctorrouter.patch(
     "/license",

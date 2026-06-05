@@ -1,23 +1,12 @@
 import doctormodel from "../../DB/models/doctormodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
-
+import { roleenum } from "../../common/enum/user.enum.js";
+import cloudinary from "../../common/utilits/cloudinary.js";
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {
         const { bio, specialization, experience } = req.body;
-import usermodel from "../../DB/models/usermodel.js";
-import * as db_service from "../../DB/db.service.js";
-import { successresponse } from "../../common/utilits/responce.success.js";
-import { roleenum } from "../../common/enum/user.enum.js";
-import cloudinary from "../../common/utilits/cloudinary.js";
-
-// Implement doctor license upload service 
-export const uploadLicense = async (req, res, next) => {
-    try {
-        if (!req.file) {
-            throw new Error("image/pdf file is required", { cause: 400 });
-        }
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -40,10 +29,20 @@ export const uploadLicense = async (req, res, next) => {
             data: doctor
         });
     } catch (error) {
-        next(error);
-            throw new Error("doctor profile not found", { cause: 404 });
+          next(error);
         }
+    };
+    // Implement doctor license upload service 
+    export const uploadLicense = async (req, res, next) => {
+        try {
+            if (!req.file) {
+                throw new Error("image/pdf file is required", { cause: 400 });
+            }
 
+            const doctor = await db_service.findOne({
+                model: doctormodel,
+                filter: { userId: req.user._id }
+            });
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
