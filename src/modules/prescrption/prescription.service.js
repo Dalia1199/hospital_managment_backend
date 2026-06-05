@@ -1,5 +1,6 @@
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import * as db_service from "../../DB/db.service.js";
+import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js"; 
 import { successresponse } from "../../common/utilits/responce.success.js"
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
@@ -134,15 +135,38 @@ export const deleteprescrption = async (req, res, next) => {
 };
 
 export const createPrescription = async (req, res, next) => {
-    const { patientId, diagnosis, medications, notes } = req.body;
+    // Extract medicalHistoryId from the request body
+     const { patientId, medicalHistoryId, diagnosis, medications, notes } = req.body;
 
+// if medicalHistoryId found and verify it exists and belongs to the same petient
+    if (medicalHistoryId) {
+        const history = await medicalhistorymodel.findOne({
+            _id: medicalHistoryId,
+            patientId
+        });
+
+        if (!history) {
+            throw new Error("medical history not found or does not belong to this patient", { cause: 404 });
+        }
+    }
+
+    // Store the medicalHistoryId on the prescription itself, or null if not provided
     const prescription = await prescrptionmodel.create({
         patientId,
         doctorId: req.user._id,
+        medicalHistoryId: medicalHistoryId || null,
         diagnosis,
         medications,
         notes: notes || ""
     });
+
+    // if medicalHistory found  push id into the medical history's prescriptions array
+    if (medicalHistoryId) {
+        await medicalhistorymodel.findByIdAndUpdate(
+            medicalHistoryId,
+            { $push: { prescriptions: prescription._id } }
+        );
+    }
 
     successresponse({
         res,
