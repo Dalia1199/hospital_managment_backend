@@ -9,4 +9,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
-scratch/
+.env
+.env.development
+.env.production

@@ -17,4 +17,20 @@ adminrouter.get(
     AS.getallusers
 );
 
-export default adminrouter;
+
+adminrouter.patch(
+    "/:id/activate",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.activateAndDeactivateSchema),
+    AS.activateUser
+);
+adminrouter.patch(
+    "/:id/deactivate",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.activateAndDeactivateSchema),
+    AS.deactivateUser
+);
+
+export default adminrouter

@@ -194,68 +194,7 @@ export const logout = async (req, res, next) => {
         })
     } successresponse({ res })
 }
-//TOBEMODFIED
-export const updateprofile = async (req, res, next) => {
-    let { firstname, lastname, gender, phone } = req.body
-    if (phone) { phone = encrypt(phone) }
-    const user = await db_service.findOneAndUpdate({
-        model: usermodel,
-        filter: { _id: req.user._id },
-        update: { firstname, lastname, gender, phone }
-    })
-    if (!user) { throw new Error("user not exist yet") }
-    await deleletekey(`profile::${req.user._id}`)
-    successresponse({ res, data: user })
 
-}
-//TOBEMODFIED
-
-// export const shareprofile = async (req, res, next) => {
-//     const { id } = req.params
-//     const user = await db_service.findById({
-//         model: usermodel,
-//         id,
-//         select: "-password"
-//     })
-//     if (!user) { throw new Error("user not exist yet") }
-//     user.phone = decrypt(user.phone)
-//     successresponse({ res, data: user })
-// }
-export const shareprofile = async (req, res, next) => {
-    const { id } = req.params
-
-    const user = db_service.findById({
-        model: usermodel,
-        id,
-        select: "-password"
-    })
-
-    if (!user) {
-        throw new Error("user not exist yet")
-    }
-
-    if (user.phone) {
-        user.phone = decrypt(user.phone)
-    }
-
-    successresponse({ res, data: user })
-}
-
-export const getprofile = async (req, res, next) => {
-
-
-    const user = await db_service.findById({
-        model: usermodel,
-        id: req.decoded.id, select: "-password"
-    })
-    if (!user) {
-        throw new Error("user not found", { cause: 400 });
-    }
-
-    successresponse({ res, message: "done", data: { ...user._doc, phone: decrypt(user.phone) } })
-
-    // successresponse({ res, message: "done", data: user })
-}
 export const signin = async (req, res, next) => {
     const { email, password } = req.body
     const user = await db_service.findOne({
@@ -270,6 +209,10 @@ export const signin = async (req, res, next) => {
     }
     if (!compare({ plain_text: password, cipher_text: user.password })) {
         throw new Error("invalid password", { cause: 400 });
+    }
+
+    if (user.status === "blocked") {
+        return next(new Error("Account is deactivated. Contact admin.", { cause: 403 }));
     }
 
 
@@ -303,8 +246,8 @@ export const signin = async (req, res, next) => {
 export const signup = async (req, res, next) => {
 
     const {
-        fullName,email,password,confirmPassword,phoneNumber,role,age,
-        gender,address,bloodType,specialty,syndicateId,nationalId,experience
+        fullName, email, password, confirmPassword, phoneNumber, role, age,
+        gender, address, bloodType, specialty, syndicateId, nationalId, experience
     } = req.body;
 
     if (await db_service.findOne({
@@ -448,3 +391,6 @@ export const signup = async (req, res, next) => {
         throw error;
     }
 };
+
+
+

@@ -9,10 +9,13 @@ import cors from "cors";
 import medicalrouter from "./modules/medicalhistory/medicalhistory.controller.js";
 import prescrptionrouter from "./modules/prescrption/prescription.controller.js";
 import adminrouter from "./modules/admin/admin.controller.js";
-const app = express();
-const Port=PORT||3000;
+import patientrouter from "./modules/patient/patient.controller.js";
 
-const bootstrap= () => {
+import doctorrouter from "./modules/doctor/doctor.controller.js";
+const app = express();
+const Port = PORT || 3000;
+
+const bootstrap = () => {
     app.use(express.json());
 
     app.get("/", (req, res, next) => {
@@ -29,18 +32,21 @@ app.use("/answers", answerrouter);
 app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
 app.use("/admin", adminrouter);
+app.use("/doctor", doctorrouter);
+    app.use("/patient", patientrouter);
 
-    // app.use("*", (req, res, next) => {
-    //     throw new Error(`url ${req.originalUrl} is not found`, { cause: 404 });
-    // })
+ 
+    app.use("/admin", adminrouter)
+
+
     app.use("{/*demo}", (req, res, next) => {
-      throw new Error(`url ${req.originalUrl} is not found😒😒`,{ cause: 404 });
+        throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
     })
     app.use((err, req, res, next) => {
-        res.status(err.cause||500).json({ message: err.message, stack: err.stack })
+        res.status(err.cause || 500).json({ message: err.message, stack: err.stack })
     })
-  
-app.listen(Port,()=>{console.log(`Server is running on port ${Port}`)});
+
+    app.listen(Port, () => { console.log(`Server is running on port ${Port}`) });
 
 
 

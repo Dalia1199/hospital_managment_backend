@@ -450,7 +450,3 @@ export const medicalHistoryQuestions = [
 
 
 
-export const seedMedicalQuestions = async ({ model }) => {
-    await model.insertMany(questionmodel);
-    console.log("Medical history questions seeded successfully");
-};
