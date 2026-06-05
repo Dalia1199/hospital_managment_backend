@@ -22,7 +22,7 @@ export const getDashboard = async (req, res, next) => {
         const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
             prescrptionmodel.distinct("patientId", { doctorId: req.user._id }).then(r => r.length),
             db_service.count({ model: prescrptionmodel, filter: { doctorId: req.user._id } }),
-            db_service.count({ model: medicalhistorymodel, filter: { doctorId: doctor._id } })
+            db_service.count({ model: medicalhistorymodel, filter: { doctorId: req.user._id } })
         ]);
 
         return successresponse({
@@ -36,7 +36,6 @@ export const getDashboard = async (req, res, next) => {
     }
 };
 
-export const uploadLicense = async (req, res, next) => {
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {

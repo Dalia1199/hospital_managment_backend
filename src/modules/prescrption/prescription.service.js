@@ -2,7 +2,6 @@ import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js"; 
 import { successresponse } from "../../common/utilits/responce.success.js"
-import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 
 // Update the text fields of a prescription (diagnosis, medications list, and notes)
