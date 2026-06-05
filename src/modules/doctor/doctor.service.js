@@ -1,8 +1,42 @@
 import doctormodel from "../../DB/models/doctormodel.js";
+import usermodel from "../../DB/models/usermodel.js";
+import patientmodel from "../../DB/models/patientmodel.js";
+import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
+
+export const getDashboard = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            return res.status(404).json({ message: "doctor profile not found" });
+        }
+
+        const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
+            prescrptionmodel.distinct("patientId", { doctorId: req.user._id }).then(r => r.length),
+            db_service.count({ model: prescrptionmodel, filter: { doctorId: req.user._id } }),
+            db_service.count({ model: medicalhistorymodel, filter: { doctorId: doctor._id } })
+        ]);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "dashboard stats fetched successfully",
+            data: { totalPatients, totalPrescriptions, totalMedicalHistories }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const uploadLicense = async (req, res, next) => {
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {
@@ -51,13 +85,10 @@ export const updatedoctorprofile = async (req, res, next) => {
         const oldPublicId = doctor.licenseimage?.public_id;
 
         try {
-            // 2. Update doctor and user profiles in database
             const updatedDoctor = await db_service.findOneAndUpdate({
                 model: doctormodel,
                 filter: { userId: req.user._id },
-                update: {
-                    licenseimage: { secure_url, public_id }
-                },
+                update: { licenseimage: { secure_url, public_id } },
                 options: { new: true }
             });
 
@@ -67,7 +98,6 @@ export const updatedoctorprofile = async (req, res, next) => {
                 update: { status: "pending" }
             });
 
-            // 3. Only delete old image from Cloudinary
             if (oldPublicId) {
                 await cloudinary.uploader.destroy(oldPublicId);
             }
@@ -79,7 +109,6 @@ export const updatedoctorprofile = async (req, res, next) => {
             });
 
         } catch (dbError) {
-            //delete the new image from Cloudinary
             await cloudinary.uploader.destroy(public_id);
             throw dbError;
         }

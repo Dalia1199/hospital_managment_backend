@@ -31,7 +31,7 @@ app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
 app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
-    app.use("/doctors", doctorrouter);
+    app.use("/doctor", doctorrouter);
 
 
 
