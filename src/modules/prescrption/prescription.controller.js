@@ -24,7 +24,7 @@ prescrptionrouter.patch(
     validation(PV.updatePrescriptionSchema), // 3. Validate that the ID is valid and the body is formatted correctly
     PS.updatePrescription                    // 4. Run the update logic in the service layer
 );
-
+//done
 // Route 2: Upload a scanned file (image or PDF) for a prescription
 prescrptionrouter.patch(
     "/:id/upload",
@@ -35,14 +35,8 @@ prescrptionrouter.patch(
     PS.uploadPrescriptionImage               // 5. Run the upload logic in the service layer
 );
 
-import * as PV from "./prescription.validation.js";
-import * as PS from "./prescription.service.js";
-import { authentication } from "../../common/middleware/authenticataiaon.js";
-import { authorization } from "../../common/middleware/authorization.js";
-import { roleenum } from "../../common/enum/user.enum.js";
-import { validation } from "../../common/middleware/validation.js";
 
-const prescrptionrouter = Router();
+
 
 prescrptionrouter.post(
     "/create",
@@ -65,6 +59,10 @@ prescrptionrouter.get(
     PS.getPatientPrescriptions
 );
 
-prescrptionrouter.delete('/:id',authentication,authorization([roleenum.doctor, roleenum.admin]),PS.deleteprescrption)
+prescrptionrouter.delete(
+    '/:id',
+    authentication,
+    authorization([roleenum.doctor, roleenum.admin]),
+    PS.deleteprescrption)
 
 export default prescrptionrouter

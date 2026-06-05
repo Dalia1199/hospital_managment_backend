@@ -2,6 +2,7 @@ import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js"
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
+import cloudinary from "../../common/utilits/cloudinary.js";
 
 // Update the text fields of a prescription (diagnosis, medications list, and notes)
 export const updatePrescription = async (req, res, next) => {
@@ -100,7 +101,7 @@ export const uploadPrescriptionImage = async (req, res, next) => {
                 }
             }
         });
-    }
+    } 
 
     // 9. Return response: Send back the updated prescription document with the new image fields
     return successresponse({
@@ -109,6 +110,7 @@ export const uploadPrescriptionImage = async (req, res, next) => {
         message: "Prescription image uploaded successfully",
         data: updatedPrescription
     });
+}
 
 export const deleteprescrption = async (req, res, next) => {
     const { user } = req; 
@@ -117,12 +119,12 @@ export const deleteprescrption = async (req, res, next) => {
     const prescription = await prescrptionmodel.findById(req.params.id);
 
     if (!prescription) {
-        return new Error('No prescription found with that ID');
+        throw new Error('No prescription found with that ID');
     }
 
   
-    if (user.role === "doctor" && prescription.doctorid.toString() !== user._id.toString()) {
-        return new Error("you are not allowed to delete this prescription");
+    if (user.role === "doctor" && prescription.doctorId.toString() !== user._id.toString()) {
+        throw new Error("you are not allowed to delete this prescription");
     }
 
    
@@ -179,4 +181,4 @@ export const getPatientPrescriptions = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-};
+}

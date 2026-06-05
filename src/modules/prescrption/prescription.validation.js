@@ -36,13 +36,12 @@ export const uploadPrescriptionSchema = {
     params: Joi.object({
         id: generalrules.id.required()
     }).required()
-
-export const deletePrescriptionSchema = Joi.object({
+};
+export const deletePrescriptionSchema = {
     params: Joi.object({
-        id: Joi.string().required()
+        id:generalrules.id.required()
     }).required()
-})
-
+};
 const medicineSchema = Joi.object({
     medicineName: Joi.string().trim().min(2).max(100).required().messages({
         "string.empty": "Medicine name is required",
