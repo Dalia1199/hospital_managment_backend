@@ -12,6 +12,7 @@ import adminrouter from "./modules/admin/admin.controller.js";
 import patientrouter from "./modules/patient/patient.controller.js";
 
 import doctorrouter from "./modules/doctor/doctor.controller.js";
+import adminrouter from "./modules/admin/admin.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -26,6 +27,7 @@ const bootstrap = () => {
     app.use(cors({
         origin: "http://localhost:3001"
     }));
+    app.use("/admin", adminrouter);
 app.use("/users", userrouter),
 app.use("/questions", questionrouter)
 app.use("/answers", answerrouter);

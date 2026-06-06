@@ -1,12 +1,24 @@
 import { Router } from "express";
 import * as AS from "./admin.service.js";
-import * as AV from "./admin.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
 
+import * as AV from "./admin.validation.js";
+
 const adminrouter = Router();
+
+// GET /admin/dashboard
+// Accessible by: admin only
+adminrouter.get(
+    "/dashboard",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getDashboard
+);
+
+
 
 // Routes
 adminrouter.get(
@@ -33,4 +45,4 @@ adminrouter.patch(
     AS.deactivateUser
 );
 
-export default adminrouter
+export default adminrouter;

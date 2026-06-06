@@ -1,9 +1,44 @@
 import usermodel from "../../DB/models/usermodel.js";
-import { successresponse } from "../../common/utilits/responce.success.js";
+import patientmodel from "../../DB/models/patientmodel.js";
+import doctormodel from "../../DB/models/doctormodel.js";
+import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
+import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 
-// get all users by role with pagination
+export const getDashboard = async (req, res, next) => {
+    try {
+        const [
+            totalUsers,
+            totalDoctors,
+            totalPatients,
+            pendingDoctors,
+            totalPrescriptions,
+            totalMedicalHistories
+        ] = await Promise.all([
+            db_service.count({ model: usermodel, filter: {} }),
+            db_service.count({ model: usermodel, filter: { role: roleenum.doctor } }),
+            db_service.count({ model: patientmodel, filter: {} }),
+            db_service.count({ model: usermodel, filter: { role: roleenum.doctor, confirmed: false } }),
+            db_service.count({ model: prescrptionmodel, filter: {} }),
+            db_service.count({ model: medicalhistorymodel, filter: {} })
+        ]);
+;
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "admin dashboard stats fetched successfully",
+            data: {
+                totalUsers,
+                totalDoctors,
+                totalPatients,
+                pendingDoctors,
+                totalPrescriptions,
+                totalMedicalHistories
+};
+                               // get all users by role with pagination
 export const getallusers = async (req, res, next) => {
     try {
         const { page = 1, limit = 20, role } = req.query;
@@ -31,10 +66,10 @@ export const getallusers = async (req, res, next) => {
         });
 
         const totalPages = Math.ceil(totalCount / itemsPerPage);
-
-        return successresponse({
+      return successresponse({
             res,
             status: 200,
+      =
             message: "Users fetched successfully",
             data: {
                 users,
