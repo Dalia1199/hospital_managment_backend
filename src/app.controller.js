@@ -12,7 +12,6 @@ import adminrouter from "./modules/admin/admin.controller.js";
 import patientrouter from "./modules/patient/patient.controller.js";
 
 import doctorrouter from "./modules/doctor/doctor.controller.js";
-import adminrouter from "./modules/admin/admin.controller.js";
 const app = express();
 const Port = PORT || 3000;
 

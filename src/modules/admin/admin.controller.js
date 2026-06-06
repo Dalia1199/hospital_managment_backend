@@ -21,7 +21,7 @@ adminrouter.patch(
     "/doctors/:id/approve",
     authentication,
     authorization([roleenum.admin]),
-    validation(AV.reject or approveDoctorSchema),
+    validation(AV.rejectorapproveDoctorSchema),
     AS.approveDoctor
 );
 
@@ -29,10 +29,9 @@ adminrouter.patch(
     "/doctors/:id/reject",
     authentication,
     authorization([roleenum.admin]),
-    validation(AV.reject or approveDoctorSchema),
+    validation(AV.rejectorapproveDoctorSchema),
     AS.rejectDoctor
 );
-export default adminrouter
 
 
 

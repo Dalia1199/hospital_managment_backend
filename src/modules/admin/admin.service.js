@@ -6,7 +6,6 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
-import * as db_service from "../../DB/db.service.js";
 
 export const getPendingDoctors = async (req, res, next) => {
     try {
@@ -55,7 +54,12 @@ export const approveDoctor = async (req, res, next) => {
             options: { new: true, select: "-password" }
         });
 
-        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
+        return successresponse({ res,
+             message: "Doctor approved successfully",
+              data: updatedDoctor 
+            });
+        } catch(error){next(error);}
+    };
 export const getDashboard = async (req, res, next) => {
     try {
         const [
@@ -85,7 +89,9 @@ export const getDashboard = async (req, res, next) => {
                 totalPatients,
                 pendingDoctors,
                 totalPrescriptions,
-                totalMedicalHistories
+                totalMedicalHistories}
+});
+    } catch (error) { next(error); }
 };
                                // get all users by role with pagination
 export const getallusers = async (req, res, next) => {
@@ -118,7 +124,7 @@ export const getallusers = async (req, res, next) => {
       return successresponse({
             res,
             status: 200,
-      =
+      
             message: "Users fetched successfully",
             data: {
                 users,

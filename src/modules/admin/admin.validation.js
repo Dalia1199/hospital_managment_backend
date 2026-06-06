@@ -1,6 +1,7 @@
 import Joi from "joi";
+import { generalrules } from "../../common/utilits/generalrules.js";
 
-export const  reject or approveDoctorSchema = {
+export const  rejectorapproveDoctorSchema = {
     params: Joi.object({
         id: generalrules.id.required()
     })
