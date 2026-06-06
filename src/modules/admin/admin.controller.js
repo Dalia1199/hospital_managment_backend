@@ -6,8 +6,16 @@ import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
 
 import * as AV from "./admin.validation.js";
+const adminrouter = Router()
 
-const adminrouter = Router();
+//routes
+adminrouter.get(
+    "/doctors/pending",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getPendingDoctors
+
+
 
 // GET /admin/dashboard
 // Accessible by: admin only
