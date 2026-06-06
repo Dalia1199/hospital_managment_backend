@@ -6,6 +6,7 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
+import * as db_service from "../../DB/db.service.js";
 
 export const getPendingDoctors = async (req, res, next) => {
     try {
@@ -32,6 +33,29 @@ export const getPendingDoctors = async (req, res, next) => {
     }
 };
 
+
+
+///////////for approve and reject doctor 
+
+export const approveDoctor = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await db_service.findByIdAndUpdate({
+            model: usermodel,
+            id: req.params.id,
+            data: { status: "approved" },
+            options: { new: true, select: "-password" }
+        });
+
+        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
 export const getDashboard = async (req, res, next) => {
     try {
         const [
@@ -111,6 +135,29 @@ export const getallusers = async (req, res, next) => {
     }
 };
 
+export const rejectDoctor = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await db_service.findByIdAndUpdate({
+            model: usermodel,
+            id: req.params.id,
+            data: { status: "rejected" },
+            options: { new: true, select: "-password" }
+        });
+
+        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
 export const activateUser = async (req, res, next) => {
     try {
         const { id } = req.params;

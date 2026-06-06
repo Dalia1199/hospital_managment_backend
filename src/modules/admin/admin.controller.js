@@ -14,6 +14,25 @@ adminrouter.get(
     authentication,
     authorization([roleenum.admin]),
     AS.getPendingDoctors
+);
+
+
+adminrouter.patch(
+    "/doctors/:id/approve",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.reject or approveDoctorSchema),
+    AS.approveDoctor
+);
+
+adminrouter.patch(
+    "/doctors/:id/reject",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.reject or approveDoctorSchema),
+    AS.rejectDoctor
+);
+export default adminrouter
 
 
 

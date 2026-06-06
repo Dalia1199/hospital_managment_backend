@@ -1,5 +1,12 @@
 import Joi from "joi";
 
+export const  reject or approveDoctorSchema = {
+    params: Joi.object({
+        id: generalrules.id.required()
+    })
+};
+
+
 // add validation for admin to get all users
 export const getusersschema = {
     query: Joi.object({
