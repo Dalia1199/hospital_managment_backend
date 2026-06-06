@@ -1,16 +1,45 @@
 import doctormodel from "../../DB/models/doctormodel.js";
 import usermodel from "../../DB/models/usermodel.js";
+import patientmodel from "../../DB/models/patientmodel.js";
+import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 
-// Implement doctor license upload service 
-export const uploadLicense = async (req, res, next) => {
+export const getDashboard = async (req, res, next) => {
     try {
-        if (!req.file) {
-            throw new Error("image/pdf file is required", { cause: 400 });
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            return res.status(404).json({ message: "doctor profile not found" });
         }
+
+        const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
+            prescrptionmodel.distinct("patientId", { doctorId: req.user._id }).then(r => r.length),
+            db_service.count({ model: prescrptionmodel, filter: { doctorId: req.user._id } }),
+            db_service.count({ model: medicalhistorymodel, filter: { doctorId: req.user._id } })
+        ]);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "dashboard stats fetched successfully",
+            data: { totalPatients, totalPrescriptions, totalMedicalHistories }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// add update doctor profile logic
+export const updatedoctorprofile = async (req, res, next) => {
+    try {
+        const { bio, specialization, experience } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -18,9 +47,35 @@ export const uploadLicense = async (req, res, next) => {
         });
 
         if (!doctor) {
-            throw new Error("doctor profile not found", { cause: 404 });
+            throw new Error("Doctor profile not found", { cause: 404 });
         }
 
+        if (bio !== undefined) doctor.bio = bio;
+        if (specialization !== undefined) doctor.specialization = specialization;
+        if (experience !== undefined) doctor.experience = experience;
+
+        await doctor.save();
+
+        return successresponse({
+            res,
+            message: "Profile updated successfully",
+            data: doctor
+        });
+    } catch (error) {
+          next(error);
+        }
+    };
+    // Implement doctor license upload service 
+    export const uploadLicense = async (req, res, next) => {
+        try {
+            if (!req.file) {
+                throw new Error("image/pdf file is required", { cause: 400 });
+            }
+
+            const doctor = await db_service.findOne({
+                model: doctormodel,
+                filter: { userId: req.user._id }
+            });
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -29,13 +84,10 @@ export const uploadLicense = async (req, res, next) => {
         const oldPublicId = doctor.licenseimage?.public_id;
 
         try {
-            // 2. Update doctor and user profiles in database
             const updatedDoctor = await db_service.findOneAndUpdate({
                 model: doctormodel,
                 filter: { userId: req.user._id },
-                update: {
-                    licenseimage: { secure_url, public_id }
-                },
+                update: { licenseimage: { secure_url, public_id } },
                 options: { new: true }
             });
 
@@ -45,7 +97,6 @@ export const uploadLicense = async (req, res, next) => {
                 update: { status: "pending" }
             });
 
-            // 3. Only delete old image from Cloudinary
             if (oldPublicId) {
                 await cloudinary.uploader.destroy(oldPublicId);
             }
@@ -57,7 +108,6 @@ export const uploadLicense = async (req, res, next) => {
             });
 
         } catch (dbError) {
-            //delete the new image from Cloudinary
             await cloudinary.uploader.destroy(public_id);
             throw dbError;
         }
