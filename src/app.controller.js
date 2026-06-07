@@ -9,6 +9,7 @@ import cors from "cors";
 import medicalrouter from "./modules/medicalhistory/medicalhistory.controller.js";
 import prescrptionrouter from "./modules/prescrption/prescription.controller.js";
 import patientrouter from "./modules/patient/patient.controller.js";
+import adminrouter from "./modules/admin/admin.controller.js";
 const app = express();
 const Port=PORT||3000;
 
@@ -20,16 +21,19 @@ const bootstrap= () => {
     })
     checkConnectionDB()
     connectionredis()
-    app.use(cors({
-        origin: "http://localhost:3001"
-    }));
+    /////update by nermen for allow browser to access the api and allow specific headers and methods
+app.use(cors({
+    origin: "http://localhost:3000",
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+}));
 app.use("/users", userrouter),
 app.use("/questions", questionrouter)
 app.use("/answers", answerrouter);
 app.use("/medical-history", medicalrouter);
 app.use("/prescrption", prescrptionrouter);
-    app.use("/patient", patientrouter);
-
+app.use("/patient", patientrouter);
+app.use("/admin", adminrouter);
 
 
     // app.use("*", (req, res, next) => {

@@ -1,13 +1,13 @@
 import Joi from "joi";
 
-export const approveDoctorSchema = Joi.object({
+export const approveDoctorSchema = {
     params: Joi.object({
         id: Joi.string().required()
     })
-});
+};
 
-export const rejectDoctorSchema = Joi.object({
+export const rejectDoctorSchema = {
     params: Joi.object({
         id: Joi.string().required()
     })
-});
+};
