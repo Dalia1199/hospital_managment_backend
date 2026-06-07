@@ -21,7 +21,13 @@ const doctorSchema = new mongoose.Schema({
         public_id: String
     },
     experience: Number,
-   
+
+    // add bio to the doctor model
+   bio: {
+    type:String,
+     maxlength:200,
+      minlength:20,
+   },
 });
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC

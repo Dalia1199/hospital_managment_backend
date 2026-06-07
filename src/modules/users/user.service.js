@@ -91,7 +91,7 @@ export const resendotp = async (req, res, next) => {
 export const refreshtoken = async (req, res, next) => {
     const { authorization } = req.headers
     if (!authorization) {
-        throw new error("token not exist");
+        throw new Error("token not exist");
     }
     const [prefix, token] = authorization.split(" ")
     if (prefix !== Prefix) {
@@ -211,6 +211,10 @@ export const signin = async (req, res, next) => {
         throw new Error("invalid password", { cause: 400 });
     }
 
+    if (user.status === "blocked") {
+        return next(new Error("Account is deactivated. Contact admin.", { cause: 403 }));
+    }
+
 
     const uuid = uuidv4()
     const access_token = generatetoken({
@@ -242,8 +246,8 @@ export const signin = async (req, res, next) => {
 export const signup = async (req, res, next) => {
 
     const {
-        fullName,email,password,confirmPassword,phoneNumber,role,age,
-        gender,address,bloodType,specialty,syndicateId,nationalId,experience
+        fullName, email, password, confirmPassword, phoneNumber, role, age,
+        gender, address, bloodType, specialty, syndicateId, nationalId, experience
     } = req.body;
 
     if (await db_service.findOne({
@@ -387,3 +391,6 @@ export const signup = async (req, res, next) => {
         throw error;
     }
 };
+
+
+
