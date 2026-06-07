@@ -18,11 +18,19 @@ const Port = PORT || 3000;
 const bootstrap = () => {
     app.use(express.json());
     
-    app.use(cors({
-        origin: "http://localhost:3001",
-        credentials: true
-    }));
+    // app.use(cors({
+    //     origin: "http://localhost:3001",
+    //     credentials: true
+    // }));
     
+    /////update by nermen for allow browser to access the api and allow specific headers and methods
+    app.use(cors({
+        origin: "http://localhost:3000",
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+    }));
+
+
     checkConnectionDB();
     connectionredis();
 

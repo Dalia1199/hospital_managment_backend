@@ -59,7 +59,7 @@ const userschema = new mongoose.Schema({
     //admin 
     status: {
         type: String,
-        enum: ["pending", "active", "rejected", "blocked"],
+        enum: ["pending", "active" , "approved" , "rejected", "blocked"],
         default: function () {
 
             if (this.role === roleenum.doctor) {
