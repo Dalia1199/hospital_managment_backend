@@ -33,7 +33,7 @@ const doctorSchema = new mongoose.Schema({
 //PROFILE PIC
 //CERTIFICATIONS
 
-
+//appointments:{}
 
 const doctormodel = mongoose.models.doctor || mongoose.model("doctor", doctorSchema)
 export default doctormodel
