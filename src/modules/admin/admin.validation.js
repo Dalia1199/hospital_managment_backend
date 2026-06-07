@@ -14,6 +14,9 @@ export const rejectDoctorSchema = {
 };
 
 
+
+
+
 // add validation for admin to get all users
 export const getusersschema = {
     query: Joi.object({
