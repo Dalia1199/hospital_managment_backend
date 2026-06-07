@@ -3,6 +3,8 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import * as db_service from "../../DB/db.service.js";
 
+import doctormodel from "../../DB/models/doctormodel.js";
+
 export const getPendingDoctors = async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -22,7 +24,23 @@ export const getPendingDoctors = async (req, res, next) => {
                 sort: { createdAt: 1 }
             }
         });
-        return successresponse({ res, data: pendingDoctors });
+
+        //علشان اجيب ال license بتاع كل doctor لازم اعمل loop عشان اجيب ال details بتاعه من ال doctormodel
+        const doctorsWithLicense = await Promise.all(
+            pendingDoctors.map(async (doctor) => {
+                const doctorDetails = await db_service.findOne({
+                    model: doctormodel,
+                    filter: { userId: doctor._id }
+                });
+                return {
+                    ...doctor.toObject(),
+                    licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
+                    specialty: doctorDetails?.specialization ?? null,
+                };
+            })
+        );
+
+        return successresponse({ res, data: doctorsWithLicense });
     } catch (error) {
         next(error);
     }
