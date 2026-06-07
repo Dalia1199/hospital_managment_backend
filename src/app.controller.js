@@ -17,28 +17,27 @@ const Port = PORT || 3000;
 
 const bootstrap = () => {
     app.use(express.json());
+    
+    app.use(cors({
+        origin: "http://localhost:3001",
+        credentials: true
+    }));
+    
+    checkConnectionDB();
+    connectionredis();
 
     app.get("/", (req, res, next) => {
         res.status(200).json({ message: `welcome to carehub app😊` })
     })
-    checkConnectionDB()
-    connectionredis()
-    app.use(cors({
-        origin: "http://localhost:3001"
-    }));
+
+    app.use("/users", userrouter),
+    app.use("/questions", questionrouter)
+    app.use("/answers", answerrouter);
+    app.use("/medical-history", medicalrouter);
+    app.use("/prescrption", prescrptionrouter);
     app.use("/admin", adminrouter);
-app.use("/users", userrouter),
-app.use("/questions", questionrouter)
-app.use("/answers", answerrouter);
-app.use("/medical-history", medicalrouter);
-app.use("/prescrption", prescrptionrouter);
-app.use("/admin", adminrouter);
-app.use("/doctor", doctorrouter);
+    app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
-
- 
-    app.use("/admin", adminrouter)
-
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
@@ -48,23 +47,6 @@ app.use("/doctor", doctorrouter);
     })
 
     app.listen(Port, () => { console.log(`Server is running on port ${Port}`) });
-
-
-
-
-
-
-
-
-
 }
-
-
-
-
-
-
-
-
 
 export default bootstrap;
