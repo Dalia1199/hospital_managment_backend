@@ -32,4 +32,13 @@ adminrouter.patch(
     validation(authenticationV.rejectDoctorSchema),
     AS.rejectDoctor
 );
+
+adminrouter.get(
+    "/doctors",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getAllDoctors
+);
+
+
 export default adminrouter

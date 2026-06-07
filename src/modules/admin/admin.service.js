@@ -97,3 +97,39 @@ export const rejectDoctor = async (req, res, next) => {
         next(error);
     }
 };
+
+///////////get all doctors for admin for show them at approval page and filter them by status pending or approved or rejected or blocked
+export const getAllDoctors = async (req, res, next) => {
+    try {
+        const { status } = req.query;
+        const filter = { role: roleenum.doctor };
+        if (status) filter.status = status;
+
+        const doctors = await db_service.find({
+            model: usermodel,
+            filter,
+            options: {
+                select: "-password",
+                sort: { createdAt: -1 }
+            }
+        });
+
+        const doctorsWithDetails = await Promise.all(
+            doctors.map(async (doctor) => {
+                const doctorDetails = await db_service.findOne({
+                    model: doctormodel,
+                    filter: { userId: doctor._id }
+                });
+                return {
+                    ...doctor.toObject(),
+                    licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
+                    specialty: doctorDetails?.specialization ?? null,
+                };
+            })
+        );
+
+        return successresponse({ res, data: doctorsWithDetails });
+    } catch (error) {
+        next(error);
+    }
+};
