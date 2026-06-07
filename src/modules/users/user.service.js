@@ -91,7 +91,7 @@ export const resendotp = async (req, res, next) => {
 export const refreshtoken = async (req, res, next) => {
     const { authorization } = req.headers
     if (!authorization) {
-        throw new error("token not exist");
+        throw new Error("token not exist");
     }
     const [prefix, token] = authorization.split(" ")
     if (prefix !== Prefix) {
