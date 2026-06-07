@@ -17,19 +17,13 @@ const Port = PORT || 3000;
 
 const bootstrap = () => {
     app.use(express.json());
-    
-    // app.use(cors({
-    //     origin: "http://localhost:3001",
-    //     credentials: true
-    // }));
-    
-    /////update by nermen for allow browser to access the api and allow specific headers and methods
-    app.use(cors({
-        origin: "http://localhost:3000",
-        allowedHeaders: ["Content-Type", "Authorization"],
-        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
-    }));
 
+    app.use(cors({
+        origin: function (origin, callback) {
+            callback(null, true);
+        },
+        credentials: true
+    }));
 
     checkConnectionDB();
     connectionredis();
@@ -39,7 +33,7 @@ const bootstrap = () => {
     })
 
     app.use("/users", userrouter),
-    app.use("/questions", questionrouter)
+        app.use("/questions", questionrouter)
     app.use("/answers", answerrouter);
     app.use("/medical-history", medicalrouter);
     app.use("/prescrption", prescrptionrouter);

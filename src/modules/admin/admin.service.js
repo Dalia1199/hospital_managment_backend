@@ -64,36 +64,11 @@ export const approveDoctor = async (req, res, next) => {
             throw new Error("No pending doctor found with that ID");
         }
 
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: usermodel,
-            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" },
-            update: { status: "approved" },
-            options: { new: true, select: "-password" }
-        });
-
-        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
-    } catch (error) {
-        next(error);
-    }
-};
-
-export const rejectDoctor = async (req, res, next) => {
-    try {
-        const doctor = await db_service.findOne({
-            model: usermodel,
-            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
-        });
-
-        if (!doctor) {
-            throw new Error("No pending doctor found with that ID");
-        }
-
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: usermodel,
-            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" },
-            update: { status: "rejected" },
-            options: { new: true, select: "-password" }
-        });
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "approved" },
+            { new: true, select: "-password" }
+        );
 
         return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
     } catch (error) {
@@ -220,6 +195,28 @@ export const getallusers = async (req, res, next) => {
     }
 };
 
+export const rejectDoctor = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "rejected" },
+            { new: true, select: "-password" }
+        );
+
+        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
 export const activateUser = async (req, res, next) => {
     try {
         const { id } = req.params;
