@@ -47,12 +47,11 @@ export const approveDoctor = async (req, res, next) => {
             throw new Error("No pending doctor found with that ID");
         }
 
-        const updatedDoctor = await db_service.findByIdAndUpdate({
-            model: usermodel,
-            id: req.params.id,
-            data: { status: "approved" },
-            options: { new: true, select: "-password" }
-        });
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "approved" },
+            { new: true, select: "-password" }
+        );
 
         return successresponse({ res,
              message: "Doctor approved successfully",
@@ -152,12 +151,11 @@ export const rejectDoctor = async (req, res, next) => {
             throw new Error("No pending doctor found with that ID");
         }
 
-        const updatedDoctor = await db_service.findByIdAndUpdate({
-            model: usermodel,
-            id: req.params.id,
-            data: { status: "rejected" },
-            options: { new: true, select: "-password" }
-        });
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "rejected" },
+            { new: true, select: "-password" }
+        );
 
         return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
     } catch (error) {
