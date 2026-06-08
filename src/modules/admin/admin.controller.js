@@ -9,19 +9,13 @@ import * as AV from "./admin.validation.js";
 const adminrouter = Router()
 
 //routes
-adminrouter.get(
-    "/doctors/pending",
-    authentication,
-    authorization([roleenum.admin]),
-    AS.getPendingDoctors
-);
 
 
 adminrouter.patch(
     "/doctors/:id/approve",
     authentication,
     authorization([roleenum.admin]),
-    validation(AV.rejectorapproveDoctorSchema),
+    validation(AV.approveDoctorSchema),
     AS.approveDoctor
 );
 
@@ -29,10 +23,16 @@ adminrouter.patch(
     "/doctors/:id/reject",
     authentication,
     authorization([roleenum.admin]),
-    validation(AV.rejectorapproveDoctorSchema),
+    validation(AV.rejectDoctorSchema),
     AS.rejectDoctor
 );
 
+adminrouter.get(
+    "/doctors",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getAllDoctors
+);
 
 
 // GET /admin/dashboard
@@ -69,6 +69,14 @@ adminrouter.patch(
     authorization([roleenum.admin]),
     validation(AV.activateAndDeactivateSchema),
     AS.deactivateUser
+);
+
+
+adminrouter.get(
+    "/doctors/pending",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getPendingDoctors
 );
 
 export default adminrouter;

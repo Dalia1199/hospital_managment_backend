@@ -1,11 +1,20 @@
 import Joi from "joi";
 import { generalrules } from "../../common/utilits/generalrules.js";
 
-export const  rejectorapproveDoctorSchema = {
+export const approveDoctorSchema = {
     params: Joi.object({
         id: generalrules.id.required()
     })
 };
+
+export const rejectDoctorSchema = {
+    params: Joi.object({
+        id: generalrules.id.required()
+    })
+};
+
+
+
 
 
 // add validation for admin to get all users
