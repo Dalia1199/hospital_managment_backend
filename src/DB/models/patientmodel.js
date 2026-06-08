@@ -18,7 +18,19 @@ const patientSchema = new mongoose.Schema({
         },
     bloodType:String,
     medicalHistory: String,
- 
+    height: { type: String, trim: true },
+    weight: { type: String, trim: true },
+    allergies: { type: [String], default: [] },
+    chronic: { type: [String], default: [] },
+    surgeries: { 
+        type: [{
+            operationName: { type: String, required: true },
+            surgeonName: { type: String },
+            date: { type: String },
+            report: { type: String }
+        }], 
+        default: [] 
+    },
 });
 
-export default mongoose.model("Patient", patientSchema);
+export default mongoose.model("patient", patientSchema);

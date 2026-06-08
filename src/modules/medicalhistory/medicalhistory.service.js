@@ -5,12 +5,18 @@ import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 
 export const createMedicalHistory = async (req, res, next) => {
-    const { patientId, diagnosis, notes } = req.body;
+    const { isOfflinePatient, patientId, guestName, guestPhone, diagnosis, notes } = req.body;
 
-    const answers = await answermodel.find({ patientId });
+    let answers = [];
+    if (!isOfflinePatient && patientId) {
+        answers = await answermodel.find({ patientId });
+    }
 
     const history = await medicalhistorymodel.create({
-        patientId,
+        isOfflinePatient,
+        patientId: isOfflinePatient ? undefined : patientId,
+        guestName,
+        guestPhone,
         doctorId: req.user._id,
         diagnosis,
         notes,

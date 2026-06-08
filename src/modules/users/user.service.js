@@ -339,7 +339,7 @@ export const signup = async (req, res, next) => {
                     userId: user._id,
                     age,
                     gender,
-                    bloodtype: bloodType,
+                    bloodType,
                     address
                 }
             });
