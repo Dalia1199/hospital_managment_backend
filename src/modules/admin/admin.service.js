@@ -7,6 +7,12 @@ import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 
+import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
+import { eventemitter } from "../../common/utilits/email/email.events.js";
+import { emailenum } from "../../common/enum/emailenum.js";
+import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
+import { hash } from "../../common/utilits/security/hash.js";
+
 
 
 
@@ -70,7 +76,27 @@ export const approveDoctor = async (req, res, next) => {
             { new: true, select: "-password" }
         );
 
-        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+        // بعت OTP للدكتور بعد الـ approve
+        const otp = await generateotp();
+        eventemitter.emit(emailenum.confirmemail, async () => {
+            await sendemail({
+                to: doctor.email,
+                subject: "Your account has been approved - CareHub",
+                html: `<p>Congratulations! Your account has been approved. Your OTP is: ${otp}</p>`
+            });
+            await setvalue({
+                key: otp_key({ email: doctor.email, subject: emailenum.confirmemail }),
+                value: hash({ plain_text: `${otp}` }),
+                ttl: 60 * 10
+            });
+            await setvalue({
+                key: max_otp_key({ email: doctor.email }),
+                value: 1,
+                ttl: 60 * 3
+            });
+        });
+
+        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
     } catch (error) {
         next(error);
     }
