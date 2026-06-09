@@ -28,6 +28,7 @@ import {
   revokedkey,
   setvalue,
   ttl,
+  expire,
 } from "../../DB/redis/redis.service.js";
 import patientmodel from "../../DB/models/patientmodel.js";
 import {
@@ -54,14 +55,17 @@ const sendemailotp = async ({ email, subject } = {}) => {
     );
   }
 
-  if ((await get(max_otp_key({ email }))) >= 3) {
-    await setvalue({
-      key: block_otp_key({ email }),
-      value: 1,
-      ttl: 60 * 60 * 10,
-    });
-    throw new Error(`you exceed the maximmu number of trials`);
-  }
+if ((await get(max_otp_key({ email }))) >= 3) {
+  await setvalue({
+    key: block_otp_key({ email }),
+    value: 1,
+    ttl: 60 * 60 * 10,
+  });
+
+  await deleletekey(max_otp_key({ email }));
+
+  throw new Error(`you exceed the maximmu number of trials`);
+}
   const otp = await generateotp();
   eventemitter.emit(emailenum.confirmemail, async () => {
     await sendemail({
@@ -69,12 +73,22 @@ const sendemailotp = async ({ email, subject } = {}) => {
       subject: "hello to Carehub app",
       html: emailtemplete(otp),
     });
-    await setvalue({
-      key: otp_key({ email, subject }),
-      value: hash({ plain_text: `${otp}` }),
-      ttl: 60 * 10,
-    });
-    await incr(max_otp_key({ email }));
+await setvalue({
+  key: otp_key({ email, subject }),
+  value: hash({ plain_text: `${otp}` }),
+  ttl: 60 * 2,
+});
+
+const key = max_otp_key({ email });
+
+const count = await incr(key);
+
+if (count === 1) {
+  await expire({
+    key,
+    ttl: 60 * 60, // ساعة
+  });
+}
   });
 };
 
@@ -104,26 +118,42 @@ export const confirmemail = async (req, res, next) => {
     update: { confirmed: true },
   });
   if (!user) {
-    throw new error("user not exist");
+    throw new Error("user not exist");
   }
   await deleletekey(otp_key({ email, subject: emailenum.confirmemail }));
   successresponse({ res, message: "email confirmed successfuly" });
 };
 
 export const resendotp = async (req, res, next) => {
-    const { email } = req.body
+
+
+    const { email } = req.body;
+
+    // دور على اليوزر
     const user = await db_service.findOne({
         model: usermodel,
-        filter: { 
-            email, 
+        filter: {
+            email,
             provider: providerenum.system,
-        },
-    })
-    if (!user) {
-        throw new Error("user not exist");
+        }
+    });
+
+    if (!user) throw new Error("user not exist");
+
+    // لو مريض — لازم يكون لسه مش confirmed
+    if (user.role === "patient") {
+        if (user.confirmed) throw new Error("email already confirmed");
     }
-    await sendemailotp({ email, subject: emailenum.confirmemail })
-    successresponse({ res, message: "otp sent" })
+
+    // لو دكتور — لازم يكون اتعمله approve في الـ doctormodel
+if (user.role === "doctor") {
+    if (user.status !== "approved") {
+        throw new Error("doctor not approved yet");
+    }
+}
+
+    await sendemailotp({ email, subject: emailenum.confirmemail });
+    successresponse({ res, message: "otp sent" });
 }
 export const refreshtoken = async (req, res, next) => {
   const { authorization } = req.headers;
@@ -143,7 +173,7 @@ export const refreshtoken = async (req, res, next) => {
     filter: { _id: decoded.id },
   });
   if (!user) {
-    throw new error("user not exist", { cause: 400 });
+    throw new Error("user not exist", { cause: 400 });
   }
   res.json({ message: "done " });
 };
@@ -249,7 +279,7 @@ export const signin = async (req, res, next) => {
     filter: {
       email,
       provider: providerenum.system,
-      confirmed: { $exists: true }, //COMMITED TO EASILY USED IN TEST
+    //confirmed: { $exists: true }, //COMMITED TO EASILY USED IN TEST
     },
   });
   if (!user) {
@@ -264,6 +294,19 @@ export const signin = async (req, res, next) => {
       new Error("Account is deactivated. Contact admin.", { cause: 403 }),
     );
   }
+
+  
+  // لو patient لازم يكون confirmed
+  if (user.role === "patient" && !user.confirmed) {
+    throw new Error("please confirm your email first", { cause: 403 });
+  }
+
+  // لو doctor لازم يكون approved
+if (user.role === "doctor") {
+    if (user.status !== "approved") {
+        throw new Error("doctor not approved yet");
+    }
+}
 
   const uuid = uuidv4();
   const access_token = generatetoken({
@@ -418,7 +461,7 @@ export const signup = async (req, res, next) => {
         await setvalue({
           key: max_otp_key({ email }),
           value: 1,
-          ttl: 60 * 3,
+          ttl: 60 * 60,
         });
       });
     }
