@@ -18,6 +18,8 @@ const patientSchema = new mongoose.Schema({
         },
     bloodType:String,
     medicalHistory: String,
+    chronicDiseases: [String],
+allergies: [String]
  
 });
 

@@ -15,7 +15,7 @@ export const validation = (schema) => {
             }
         }
         if (errorresult.length) {
-            return res.status(400).json({ messaage: "validation error", error: errorresult })
+            return res.status(400).json({ message: "validation error", error: errorresult })
         }
         next()
     }

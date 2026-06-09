@@ -12,6 +12,7 @@ import adminrouter from "./modules/admin/admin.controller.js";
 import patientrouter from "./modules/patient/patient.controller.js";
 
 import doctorrouter from "./modules/doctor/doctor.controller.js";
+import appointmensrouter from "./modules/appointments/appointmens.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -31,6 +32,14 @@ const bootstrap = () => {
     }));
 
 
+
+    app.use(cors({
+        origin: function (origin, callback) {
+            callback(null, true);
+        },
+        credentials: true
+    }));
+
     checkConnectionDB();
     connectionredis();
 
@@ -39,13 +48,14 @@ const bootstrap = () => {
     })
 
     app.use("/users", userrouter),
-    app.use("/questions", questionrouter)
+        app.use("/questions", questionrouter)
     app.use("/answers", answerrouter);
     app.use("/medical-history", medicalrouter);
     app.use("/prescrption", prescrptionrouter);
     app.use("/admin", adminrouter);
     app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
+    app.use("/appointmens", appointmensrouter)
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
