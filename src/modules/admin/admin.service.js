@@ -6,6 +6,17 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
+import { eventemitter } from "../../common/utilits/email/email.events.js";
+import { emailenum } from "../../common/enum/emailenum.js";
+import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
+
+
+
+import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
+import { eventemitter } from "../../common/utilits/email/email.events.js";
+import { emailenum } from "../../common/enum/emailenum.js";
+import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
+import { hash } from "../../common/utilits/security/hash.js";
 
 
 
@@ -64,13 +75,100 @@ export const approveDoctor = async (req, res, next) => {
             throw new Error("No pending doctor found with that ID");
         }
 
+        const updatedDoctor = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" },
+            update: { status: "approved" },
+            options: { new: true, select: "-password" }
+        });
+
+        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
+export const rejectDoctor = async (req, res, next) => {
+    try {
+        const { reason } = req.body;
+
+        const doctor = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
+        });
+
+        if (!doctor) {
+            throw new Error("No pending doctor found with that ID");
+        }
+
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "rejected" },
+            { new: true, select: "-password" }
+        );
+
+        // بعت email للدكتور بسبب الرفض
+        eventemitter.emit(emailenum.confirmemail, async () => {
+            await sendemail({
+                to: doctor.email,
+                subject: "Your registration was rejected - CareHub",
+                html: `
+                    <p>Dear ${doctor.fullName},</p>
+                    <p>Unfortunately, your registration request has been rejected.</p>
+                    ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
+                    <p>If you have any questions, please contact support.</p>
+                `
+            });
+        });
+
+        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+    } catch (error) {
+        next(error);
+    }
+};
+
+///////////get all doctors for admin for show them at approval page and filter them by status pending or approved or rejected or blocked
+export const getAllDoctors = async (req, res, next) => {
+    try {
+        const { status } = req.query;
+        const filter = { role: roleenum.doctor };
+        if (status) filter.status = status;
+
+        const doctors = await db_service.find({
+            model: usermodel,
+            filter,
+            options: {
+                select: "-password",
+                sort: { createdAt: -1 }
+            }
+        });
+
         const updatedDoctor = await usermodel.findByIdAndUpdate(
             req.params.id,
             { status: "approved" },
             { new: true, select: "-password" }
         );
 
-        return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
+        // بعت OTP للدكتور بعد الـ approve
+        const otp = await generateotp();
+        eventemitter.emit(emailenum.confirmemail, async () => {
+            await sendemail({
+                to: doctor.email,
+                subject: "Your account has been approved - CareHub",
+                html: `<p>Congratulations! Your account has been approved. Your OTP is: ${otp}</p>`
+            });
+            await setvalue({
+                key: otp_key({ email: doctor.email, subject: emailenum.confirmemail }),
+                value: hash({ plain_text: `${otp}` }),
+                ttl: 60 * 10
+            });
+            await setvalue({
+                key: max_otp_key({ email: doctor.email }),
+                value: 1,
+                ttl: 60 * 3
+            });
+        });
+
+        return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
     } catch (error) {
         next(error);
     }
@@ -251,6 +349,22 @@ export const deactivateUser = async (req, res, next) => {
         return successresponse({ res, status: 200, message: "User deactivated successfully", data: user });
     }
     catch (error) {
+        next(error);
+    }
+};
+
+/////علشان لو عايزة اعيد الطبيب اللي تم رفضه او حذفه الى حالة الانتظار عشان اعرضه تاني في صفحة الموافقة
+
+export const resetToPending = async (req, res, next) => {
+    try {
+        const doctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "pending" },
+            { new: true, select: "-password" }
+        );
+        if (!doctor) throw new Error("Doctor not found");
+        return successresponse({ res, message: "Doctor reset to pending", data: doctor });
+    } catch (error) {
         next(error);
     }
 };
