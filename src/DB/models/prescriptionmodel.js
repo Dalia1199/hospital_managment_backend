@@ -4,9 +4,21 @@ const prescriptionSchema = new mongoose.Schema({
     patientId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
-        required: true
+        required: function() { return !this.isOfflinePatient; }
     },
-
+    isOfflinePatient: {
+        type: Boolean,
+        default: false
+    },
+    guestName: {
+        type: String,
+        trim: true,
+        required: function() { return this.isOfflinePatient; }
+    },
+    guestPhone: {
+        type: String,
+        trim: true
+    },
     doctorId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",

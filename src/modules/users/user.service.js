@@ -416,71 +416,67 @@ export const signup = async (req, res, next) => {
       },
     });
 
-    if (role === "doctor") {
-      await db_service.create({
-        model: doctormodel,
-        data: {
-          userId: user._id,
-          specialization: specialty,
-          nationalId: nationalIdImage,
-          experience,
-          syncdicatedId: syndicateId,
-          licenseimage: licenseImage,
-        },
-      });
-    } else {
-      await db_service.create({
-        model: patientmodel,
-        data: {
-          userId: user._id,
-          age,
-          gender,
-          bloodtype: bloodType,
-          address,
-        },
-      });
-    }
+        if (role === "doctor") {
+            await db_service.create({
+                model: doctormodel,
+                data: {
+                    userId: user._id,
+                    specialization: specialty,
+                    nationalId: nationalIdImage,
+                    experience,
+                    syncdicatedId: syndicateId,
+                    licenseimage: licenseImage
+                }
+            });
+        } else {
+            await db_service.create({
+                model: patientmodel,
+                data: {
+                    userId: user._id,
+                    age,
+                    gender,
+                    bloodType,
+                    address
+                }
+            });
+        }
 
-    /////////////nermen removed comment to test forget password
-    //COMMITED TO EASILY USED IN TEST
+        // بعت OTP للمريض فقط
+        if (role === "patient") {
+            const otp = await generateotp();
+            eventemitter.emit(emailenum.confirmemail, async () => {
+                await sendemail({
+                    to: email,
+                    subject: "welcome to carehub",
+                    html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
+                });
+                await setvalue({
+                    key: otp_key({ email, subject: emailenum.confirmemail }),
+                    value: hash({ plain_text: `${otp}` }),
+                    ttl: 60 * 2
+                });
+                await setvalue({
+                    key: max_otp_key({ email }),
+                    value: 1,
+                    ttl: 60 * 60
+                });
+            });
+        }
 
-    // بعت OTP بس للمريض
-    if (role === "patient") {
-      const otp = await generateotp();
-      eventemitter.emit(emailenum.confirmemail, async () => {
-        await sendemail({
-          to: email,
-          subject: "welcome to carehub",
-          html: `<p>welcome to Carehub app your otp is: ${otp}</p>`,
+        successresponse({
+            res,
+            status: 201,
+            message: "signup success",
+            data: user
         });
-        await setvalue({
-          key: otp_key({ email, subject: emailenum.confirmemail }),
-          value: hash({ plain_text: `${otp}` }),
-          ttl: 60 * 2,
-        });
-        await setvalue({
-          key: max_otp_key({ email }),
-          value: 1,
-          ttl: 60 * 60,
-        });
-      });
-    }
 
-    successresponse({
-      res,
-      status: 201,
-      message: "signup success",
-      data: user,
-    });
-  } catch (error) {
-    if (licenseImage?.public_id) {
-      await cloudinary.uploader.destroy(licenseImage.public_id);
+    } catch (error) {
+        if (licenseImage?.public_id) {
+            await cloudinary.uploader.destroy(licenseImage.public_id);
+        }
+        if (nationalIdImage?.public_id) {
+            await cloudinary.uploader.destroy(nationalIdImage.public_id);
+        }
+        throw error;
     }
-
-    if (nationalIdImage?.public_id) {
-      await cloudinary.uploader.destroy(nationalIdImage.public_id);
-    }
-
-    throw error;
-  }
 };
