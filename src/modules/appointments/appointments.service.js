@@ -323,3 +323,88 @@ export const getDoctorAppointments = async (req, res, next) => {
     }
 
 };
+export const cancelAppointment = async (req, res, next) => {
+
+    try {
+
+        const { appointmentId } = req.params;
+
+        const appointment = await db_service.findOne({
+
+            model: appointmentmodel,
+
+            filter: {
+
+                _id: appointmentId,
+
+                patientId: req.user._id
+
+            }
+
+        });
+
+        if (!appointment) {
+
+            throw new Error("appointment not found", { cause: 404 });
+
+        }
+
+        if (appointment.status === "cancelled") {
+
+            throw new Error("appointment already cancelled", { cause: 409 });
+
+        }
+
+        await db_service.updateOne({
+
+            model: appointmentmodel,
+
+            filter: {
+
+                _id: appointmentId
+
+            },
+
+            data: {
+
+                status: "cancelled"
+
+            }
+
+        });
+
+        await db_service.updateOne({
+
+            model: slotmodel,
+
+            filter: {
+
+                _id: appointment.slotId
+
+            },
+
+            data: {
+
+                isBooked: false
+
+            }
+
+        });
+
+        return successresponse({
+
+            res,
+
+            status: 200,
+
+            message: "appointment cancelled successfully"
+
+        });
+
+    } catch (error) {
+
+        next(error);
+
+    }
+
+};
