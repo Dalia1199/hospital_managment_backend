@@ -80,3 +80,24 @@ export const bookAppointmentSchema = {
     }).required()
 
 };
+export const cancelAppointmentSchema = {
+
+    params: Joi.object({
+
+        appointmentId: Joi.string()
+            .hex()
+            .length(24)
+            .required()
+            .messages({
+
+                "string.hex": "invalid appointment id",
+
+                "string.length": "appointment id must be 24 characters",
+
+                "any.required": "appointment id is required"
+
+            })
+
+    }).required()
+
+};

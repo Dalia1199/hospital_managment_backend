@@ -76,4 +76,19 @@ appointmensrouter.get(
     AS.getDoctorAppointments
 
 );
+appointmensrouter.patch(
+
+    "/cancel/:appointmentId",
+
+    authentication,
+
+    authorization([
+        roleenum.patient
+    ]),
+
+    validation(AV.cancelAppointmentSchema),
+
+    AS.cancelAppointment
+
+);
 export default appointmensrouter;
