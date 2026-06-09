@@ -40,7 +40,6 @@ export const getMedicalHistory = async (req, res, next) => {
         .populate("answers")
         .populate("doctorId")
         .populate("prescriptions");
-
     successresponse({
         res,
         data: history
