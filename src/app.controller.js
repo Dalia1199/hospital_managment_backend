@@ -19,11 +19,16 @@ const Port = PORT || 3000;
 const bootstrap = () => {
     app.use(express.json());
 
+    // app.use(cors({
+    //     origin: function (origin, callback) {
+    //         callback(null, true);
+    //     },
+    //     credentials: true
+    // }));
     app.use(cors({
-        origin: function (origin, callback) {
-            callback(null, true);
-        },
-        credentials: true
+        origin: "http://localhost:3001",
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
 
     checkConnectionDB();
