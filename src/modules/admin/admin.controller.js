@@ -79,4 +79,11 @@ adminrouter.get(
     AS.getPendingDoctors
 );
 
+adminrouter.patch(
+    "/doctors/:id/pending",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.resetToPending
+);
+
 export default adminrouter;

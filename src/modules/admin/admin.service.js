@@ -6,7 +6,9 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
-
+import { eventemitter } from "../../common/utilits/email/email.events.js";
+import { emailenum } from "../../common/enum/emailenum.js";
+import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
 
 
 
@@ -76,9 +78,10 @@ export const approveDoctor = async (req, res, next) => {
         next(error);
     }
 };
-
 export const rejectDoctor = async (req, res, next) => {
     try {
+        const { reason } = req.body;
+
         const doctor = await db_service.findOne({
             model: usermodel,
             filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" }
@@ -88,11 +91,24 @@ export const rejectDoctor = async (req, res, next) => {
             throw new Error("No pending doctor found with that ID");
         }
 
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: usermodel,
-            filter: { _id: req.params.id, role: roleenum.doctor, status: "pending" },
-            update: { status: "rejected" },
-            options: { new: true, select: "-password" }
+        const updatedDoctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "rejected" },
+            { new: true, select: "-password" }
+        );
+
+        // بعت email للدكتور بسبب الرفض
+        eventemitter.emit(emailenum.confirmemail, async () => {
+            await sendemail({
+                to: doctor.email,
+                subject: "Your registration was rejected - CareHub",
+                html: `
+                    <p>Dear ${doctor.fullName},</p>
+                    <p>Unfortunately, your registration request has been rejected.</p>
+                    ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
+                    <p>If you have any questions, please contact support.</p>
+                `
+            });
         });
 
         return successresponse({ res, message: "Doctor rejected successfully", data: updatedDoctor });
@@ -254,6 +270,22 @@ export const deactivateUser = async (req, res, next) => {
         return successresponse({ res, status: 200, message: "User deactivated successfully", data: user });
     }
     catch (error) {
+        next(error);
+    }
+};
+
+/////علشان لو عايزة اعيد الطبيب اللي تم رفضه او حذفه الى حالة الانتظار عشان اعرضه تاني في صفحة الموافقة
+
+export const resetToPending = async (req, res, next) => {
+    try {
+        const doctor = await usermodel.findByIdAndUpdate(
+            req.params.id,
+            { status: "pending" },
+            { new: true, select: "-password" }
+        );
+        if (!doctor) throw new Error("Doctor not found");
+        return successresponse({ res, message: "Doctor reset to pending", data: doctor });
+    } catch (error) {
         next(error);
     }
 };
