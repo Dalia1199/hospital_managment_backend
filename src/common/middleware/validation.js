@@ -15,6 +15,7 @@ export const validation = (schema) => {
             }
         }
         if (errorresult.length) {
+            console.error("VALIDATION ERROR CAUGHT:", JSON.stringify(errorresult, null, 2));
             return res.status(400).json({ message: "validation error", error: errorresult })
         }
         next()
