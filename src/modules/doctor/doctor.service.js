@@ -678,3 +678,26 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         return next(error);
     }
 };
+
+
+
+export const getAllDoctors = async (req, res, next) => {
+    try {
+        const doctors = await doctormodel.find().populate({
+            path: "userId",
+            select: "fullName email confirmed",
+            match: { confirmed: true }
+        });
+ 
+        const activeDoctors = doctors.filter(d => d.userId);
+ 
+        return successresponse({
+            res,
+            status: 200,
+            message: "doctors fetched successfully",
+            data: activeDoctors
+        });
+    } catch (error) {
+        next(error);
+    }
+};
