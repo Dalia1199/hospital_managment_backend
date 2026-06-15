@@ -339,7 +339,7 @@ if (user.role === "doctor") {
         refreshtoken,   
         role: user.role, 
         id: user._id,
-        name: user.name, },
+        fullName: user.fullName, },
   });
 };
 
