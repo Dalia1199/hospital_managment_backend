@@ -325,10 +325,55 @@ export const verifySession = async (req, res, next) => {
         return next(error);
     }
 };
+
+export const updatePatientAlerts = async (req, res, next) => {
+    try {
+        const { patientId } = req.params;
+        const { allergies, chronic, surgeries } = req.body;
+
+        const patient = await patientmodel.findOne({ userId: patientId });
+        if (!patient) {
+            throw new Error("Patient not found", { cause: 404 });
+        }
+
+        let parsedAllergies = undefined;
+        let parsedChronic = undefined;
+        let parsedSurgeries = undefined;
+
+        if (allergies !== undefined) {
+            try { parsedAllergies = Array.isArray(allergies) ? allergies : JSON.parse(allergies); } catch (e) { parsedAllergies = [allergies]; }
+        }
+        if (chronic !== undefined) {
+            try { parsedChronic = Array.isArray(chronic) ? chronic : JSON.parse(chronic); } catch (e) { parsedChronic = [chronic]; }
+        }
+        if (surgeries !== undefined) {
+            try { parsedSurgeries = Array.isArray(surgeries) ? surgeries : JSON.parse(surgeries); } catch (e) { parsedSurgeries = surgeries ? [surgeries] : []; }
+        }
+
+        if (parsedAllergies !== undefined) patient.allergies = parsedAllergies;
+        if (parsedChronic !== undefined) patient.chronic = parsedChronic;
+        if (parsedSurgeries !== undefined) patient.surgeries = parsedSurgeries;
+
+        await patient.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Patient alerts and surgeries updated successfully",
+            data: {
+                allergies: patient.allergies,
+                chronic: patient.chronic,
+                surgeries: patient.surgeries
+            }
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
     export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { diagnosis, notes, prescriptionText, height, weight, bloodType, allergies, chronic, surgeries } = req.body;
+        const { diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
 
         const session = await db_service.findOneAndUpdate({
@@ -343,9 +388,10 @@ export const verifySession = async (req, res, next) => {
         }
 
         const documents = [];
-        if (req.file) {
-            const folderName = session.isOfflinePatient ? `guest_${session.guestName}` : `patient_${session.patientId}`;
-            const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
+        const folderName = session.isOfflinePatient ? `guest_${session.guestName}` : `patient_${session.patientId}`;
+        
+        if (req.files && req.files.prescriptionImage && req.files.prescriptionImage[0]) {
+            const { secure_url, public_id } = await cloudinary.uploader.upload(req.files.prescriptionImage[0].path, {
                 folder: `carehub/medicalhistory/prescriptions/${folderName}`
             });
             documents.push({
@@ -355,6 +401,30 @@ export const verifySession = async (req, res, next) => {
                 public_id,
                 uploadedBy: doctorId
             });
+        }
+
+        if (req.files && req.files.attachments && req.files.attachments.length > 0) {
+            let parsedMetadata = [];
+            if (req.body.attachmentsMetadata) {
+                try { parsedMetadata = JSON.parse(req.body.attachmentsMetadata); } catch (e) { console.error("Failed to parse attachments metadata", e); }
+            }
+
+            for (let i = 0; i < req.files.attachments.length; i++) {
+                const file = req.files.attachments[i];
+                const meta = parsedMetadata[i] || { title: `Document ${i+1}`, type: "other" };
+                
+                const { secure_url, public_id } = await cloudinary.uploader.upload(file.path, {
+                    folder: `carehub/medicalhistory/documents/${folderName}`
+                });
+                
+                documents.push({
+                    type: meta.type,
+                    title: meta.title,
+                    secure_url,
+                    public_id,
+                    uploadedBy: doctorId
+                });
+            }
         }
 
         let parsedAllergies = [];
@@ -382,6 +452,10 @@ export const verifySession = async (req, res, next) => {
             prescriptionText,
             height,
             weight,
+            bloodPressure,
+            sugarLevel,
+            pulse,
+            temperature,
             allergies: parsedAllergies,
             chronic: parsedChronic,
             surgeries: parsedSurgeries,

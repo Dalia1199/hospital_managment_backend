@@ -86,12 +86,24 @@ doctorrouter.get(
     DS.getPatientMedicalHistory
 );
 
+// update patient alerts
+doctorrouter.patch(
+    "/patient/:patientId/alerts",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.updatePatientAlertsSchema),
+    DS.updatePatientAlerts
+);
+
 // end session
 doctorrouter.patch(
     "/session/:sessionId/end",
     authentication,
     authorization([roleenum.doctor]),
-    multer_host([...multerenum.image, ...multerenum.pdf]).single("prescriptionImage"),
+    multer_host([...multerenum.image, ...multerenum.pdf]).fields([
+        { name: "prescriptionImage", maxCount: 1 },
+        { name: "attachments", maxCount: 10 }
+    ]),
     validation(DV.endSessionSchema),
     DS.endSession
 );

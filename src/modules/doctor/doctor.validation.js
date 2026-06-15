@@ -8,6 +8,32 @@ export const updatedoctorprofileschema = {
         experience: Joi.number().optional(),
     }).required(),
 }
+
+export const updatePatientAlertsSchema = {
+    params: Joi.object({
+        patientId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
+    }).required(),
+    body: Joi.object({
+        allergies: Joi.alternatives().try(
+            Joi.array().items(Joi.string()),
+            Joi.string().allow("")
+        ).optional(),
+        chronic: Joi.alternatives().try(
+            Joi.array().items(Joi.string()),
+            Joi.string().allow("")
+        ).optional(),
+        surgeries: Joi.alternatives().try(
+            Joi.string().allow(""),
+            Joi.array().items(Joi.object({
+                operationName: Joi.string().required(),
+                surgeonName: Joi.string().allow("").optional(),
+                date: Joi.string().allow("").optional(),
+                report: Joi.string().allow("").optional()
+            }))
+        ).optional()
+    }).required()
+};
+
 // Define doctor validation schemas here
 export const updateDoctorLicense = {
     file: Joi.object({
@@ -67,6 +93,10 @@ export const endSessionSchema = {
         prescriptionText: Joi.string().allow("").optional(),
         height: Joi.string().allow("").optional(),
         weight: Joi.string().allow("").optional(),
+        bloodPressure: Joi.string().allow("").optional(),
+        sugarLevel: Joi.string().allow("").optional(),
+        pulse: Joi.string().allow("").optional(),
+        temperature: Joi.string().allow("").optional(),
         bloodType: Joi.string().allow("").optional(),
         allergies: Joi.alternatives().try(
             Joi.array().items(Joi.string()),
@@ -85,11 +115,10 @@ export const endSessionSchema = {
                 report: Joi.string().allow("").optional()
             }))
         ).optional(),
-        medications: Joi.string().allow("").optional()
+        medications: Joi.string().allow("").optional(),
+        attachmentsMetadata: Joi.string().allow("").optional()
     }).unknown(true).optional(),
-    file: Joi.object({
-        mimetype: Joi.string().valid("image/png", "image/jpeg", "image/jpg", "application/pdf").required()
-    }).unknown(true).optional()
+    files: Joi.object().unknown(true).optional()
 }
 
 export const cancelSessionSchema = {
