@@ -334,7 +334,12 @@ if (user.role === "doctor") {
   successresponse({
     res,
     message: "success signin",
-    data: { access_token, refreshtoken },
+    data: {
+        access_token,
+        refreshtoken,   
+        role: user.role, 
+        id: user._id,
+        fullName: user.fullName, },
   });
 };
 

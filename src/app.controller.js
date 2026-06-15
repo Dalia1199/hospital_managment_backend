@@ -25,11 +25,7 @@ const bootstrap = () => {
     // }));
     
     /////update by nermen for allow browser to access the api and allow specific headers and methods
-    app.use(cors({
-        origin: "http://localhost:3001",
-        allowedHeaders: ["Content-Type", "Authorization"],
-        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
-    }));
+    // We removed the hardcoded http://localhost:3001 origin to allow the dynamic CORS configuration below to work for all frontend URLs including Vercel.
 
 
 
