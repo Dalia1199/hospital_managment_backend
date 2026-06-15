@@ -5,12 +5,25 @@ const medicalHistorySchema = new mongoose.Schema(
         patientId: {
             type: mongoose.Types.ObjectId,
             ref: "patient",
-            required: true
+            required: function() { return !this.isOfflinePatient; }
+        },
+        isOfflinePatient: {
+            type: Boolean,
+            default: false
+        },
+        guestName: {
+            type: String,
+            trim: true,
+            required: function() { return this.isOfflinePatient; }
+        },
+        guestPhone: {
+            type: String,
+            trim: true
         },
 
         doctorId: {
             type: mongoose.Types.ObjectId,
-            ref: "doctor",
+            ref: "user",
             required: true
         },
 
@@ -30,6 +43,24 @@ const medicalHistorySchema = new mongoose.Schema(
                 ref: "answer"
             }
         ],
+
+        // Vitals captured during this specific encounter
+        height: { type: String, trim: true },
+        weight: { type: String, trim: true },
+        allergies: { type: [String], default: [] },
+        chronic: { type: [String], default: [] },
+        surgeries: { 
+            type: [{
+                operationName: { type: String, required: true },
+                surgeonName: { type: String },
+                date: { type: String },
+                report: { type: String }
+            }], 
+            default: [] 
+        },
+
+        // Quick prescription text if they don't upload image
+        prescriptionText: { type: String, trim: true },
 
         documents: [
             {

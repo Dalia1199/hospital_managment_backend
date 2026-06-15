@@ -1,7 +1,7 @@
 
 import crypto from "node:crypto";
 
-// لازم 32 byte key
+// Must be 32 byte key
 const encryption_key = crypto
     .createHash("sha256")
     .update("123456789123456789123456789$#@de")
