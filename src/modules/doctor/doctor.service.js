@@ -392,7 +392,8 @@ export const updatePatientAlerts = async (req, res, next) => {
         
         if (req.files && req.files.prescriptionImage && req.files.prescriptionImage[0]) {
             const { secure_url, public_id } = await cloudinary.uploader.upload(req.files.prescriptionImage[0].path, {
-                folder: `carehub/medicalhistory/prescriptions/${folderName}`
+                folder: `carehub/medicalhistory/prescriptions/${folderName}`,
+                resource_type: "auto"
             });
             documents.push({
                 type: "prescription",
@@ -414,7 +415,8 @@ export const updatePatientAlerts = async (req, res, next) => {
                 const meta = parsedMetadata[i] || { title: `Document ${i+1}`, type: "other" };
                 
                 const { secure_url, public_id } = await cloudinary.uploader.upload(file.path, {
-                    folder: `carehub/medicalhistory/documents/${folderName}`
+                    folder: `carehub/medicalhistory/documents/${folderName}`,
+                    resource_type: "auto"
                 });
                 
                 documents.push({
