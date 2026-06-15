@@ -107,13 +107,17 @@ export const cancelSessionSchema = {
 export const getMyPatientsSchema = {
     query: Joi.object({
         startDate: Joi.date().iso().optional(),
-        endDate: Joi.date().iso().optional()
-    }).optional()
+        endDate: Joi.date().iso().optional(),
+        page: Joi.number().min(1).optional(),
+        limit: Joi.number().min(1).optional()
+    }).unknown(true).optional()
 };
 
 export const getMyPrescriptionsSchema = {
     query: Joi.object({
         startDate: Joi.date().iso().optional(),
-        endDate: Joi.date().iso().optional()
-    }).optional()
+        endDate: Joi.date().iso().optional(),
+        page: Joi.number().min(1).optional(),
+        limit: Joi.number().min(1).optional()
+    }).unknown(true).optional()
 };

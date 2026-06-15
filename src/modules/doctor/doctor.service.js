@@ -705,25 +705,91 @@ export const getMyPatients = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
-
-        // Fetch all unique patient IDs from prescriptions
-        const distinctPatientIds = await prescrptionmodel.distinct("patientId", baseFilter);
-
-        // Fetch those patients from usermodel with pagination
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        const patients = await usermodel.find({ _id: { $in: distinctPatientIds } })
-            .skip(skip)
-            .limit(parseInt(limit))
-            .select("fullName email phoneNumber role status createdAt");
 
-        const total = distinctPatientIds.length;
+        const pipeline = [
+            { $match: baseFilter },
+            { 
+                $group: {
+                    _id: {
+                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+                    },
+                    isOfflinePatient: { $first: "$isOfflinePatient" },
+                    guestName: { $first: "$guestName" },
+                    guestPhone: { $first: "$guestPhone" },
+                    patientId: { $first: "$patientId" },
+                    totalVisits: { $sum: 1 },
+                    firstVisit: { $min: "$createdAt" },
+                    lastVisit: { $max: "$createdAt" },
+                    lastType: { $last: { $cond: { if: "$isOfflinePatient", then: "Walk-in", else: "Online" } } }
+                }
+            },
+            { $sort: { lastVisit: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "patientId",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            {
+                $unwind: { path: "$userData", preserveNullAndEmptyArrays: true }
+            },
+            {
+                $project: {
+                    id: "$_id",
+                    isOfflinePatient: 1,
+                    guestName: 1,
+                    guestPhone: 1,
+                    patientId: 1,
+                    totalVisits: 1,
+                    firstVisit: 1,
+                    lastVisit: 1,
+                    lastType: 1,
+                    fullName: "$userData.fullName",
+                    email: "$userData.email",
+                    phoneNumber: "$userData.phoneNumber",
+                    status: { $ifNull: ["$userData.status", "active"] }
+                }
+            }
+        ];
+
+        const patients = await medicalhistorymodel.aggregate(pipeline);
+
+        const decryptedPatients = patients.map(p => {
+            if (p.phoneNumber && !p.isOfflinePatient) {
+                try {
+                    p.phoneNumber = decrypt(p.phoneNumber);
+                } catch (e) {
+                    console.error("Failed to decrypt phone");
+                }
+            }
+            return p;
+        });
+
+        const countPipeline = [
+            { $match: baseFilter },
+            { 
+                $group: {
+                    _id: {
+                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+                    }
+                }
+            },
+            { $count: "total" }
+        ];
+        const countResult = await medicalhistorymodel.aggregate(countPipeline);
+        const total = countResult.length > 0 ? countResult[0].total : 0;
 
         return successresponse({
             res,
             status: 200,
             message: "Patients fetched successfully",
             data: {
-                patients,
+                patients: decryptedPatients,
                 pagination: {
                     total,
                     page: parseInt(page),
