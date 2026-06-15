@@ -13,6 +13,8 @@ import { decrypt } from "../../common/utilits/security/encrypt.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
+        const { startDate, endDate } = req.query;
+
         const doctor = await db_service.findOne({
             model: doctormodel,
             filter: { userId: req.user._id }
@@ -22,10 +24,19 @@ export const getDashboard = async (req, res, next) => {
             return res.status(404).json({ message: "doctor profile not found" });
         }
 
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+
         const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
-            prescrptionmodel.distinct("patientId", { doctorId: req.user._id }).then(r => r.length),
-            db_service.count({ model: prescrptionmodel, filter: { doctorId: req.user._id } }),
-            db_service.count({ model: medicalhistorymodel, filter: { doctorId: req.user._id } })
+            prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
+            db_service.count({ model: prescrptionmodel, filter: baseFilter }),
+            db_service.count({ model: medicalhistorymodel, filter: baseFilter })
         ]);
 
         return successresponse({
@@ -676,5 +687,96 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         });
     } catch (error) {
         return next(error);
+    }
+};
+
+export const getMyPatients = async (req, res, next) => {
+    try {
+        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+
+        // Fetch all unique patient IDs from prescriptions
+        const distinctPatientIds = await prescrptionmodel.distinct("patientId", baseFilter);
+
+        // Fetch those patients from usermodel with pagination
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const patients = await usermodel.find({ _id: { $in: distinctPatientIds } })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .select("fullName email phoneNumber role status createdAt");
+
+        const total = distinctPatientIds.length;
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Patients fetched successfully",
+            data: {
+                patients,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(total / parseInt(limit))
+                }
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getMyPrescriptions = async (req, res, next) => {
+    try {
+        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const prescriptions = await prescrptionmodel.find(baseFilter)
+            .populate({ path: "patientId", select: "fullName email phoneNumber" })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await prescrptionmodel.countDocuments(baseFilter);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Prescriptions fetched successfully",
+            data: {
+                prescriptions,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(total / parseInt(limit))
+                }
+            }
+        });
+    } catch (error) {
+        next(error);
     }
 };

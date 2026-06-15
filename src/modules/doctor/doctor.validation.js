@@ -103,3 +103,17 @@ export const cancelSessionSchema = {
             })
     }).required()
 };
+
+export const getMyPatientsSchema = {
+    query: Joi.object({
+        startDate: Joi.date().iso().optional(),
+        endDate: Joi.date().iso().optional()
+    }).optional()
+};
+
+export const getMyPrescriptionsSchema = {
+    query: Joi.object({
+        startDate: Joi.date().iso().optional(),
+        endDate: Joi.date().iso().optional()
+    }).optional()
+};

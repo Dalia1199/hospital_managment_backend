@@ -105,4 +105,22 @@ doctorrouter.delete(
     DS.cancelSession
 );
 
+// get my patients
+doctorrouter.get(
+    "/my-patients",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.getMyPatientsSchema),
+    DS.getMyPatients
+);
+
+// get my prescriptions
+doctorrouter.get(
+    "/my-prescriptions",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.getMyPrescriptionsSchema),
+    DS.getMyPrescriptions
+);
+
 export default doctorrouter;
