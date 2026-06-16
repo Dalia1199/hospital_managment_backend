@@ -200,6 +200,7 @@ export const getDashboard = async (req, res, next) => {
                 totalDoctors,
                 totalPatients,
                 pendingDoctors,
+                rejectedDoctors,
                 totalPrescriptions,
                 totalMedicalHistories
             }
