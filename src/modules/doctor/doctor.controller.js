@@ -18,6 +18,14 @@ doctorrouter.get(
     DS.getDashboard
 );
 
+// GET /doctor/profile — fetch full profile data
+doctorrouter.get(
+    "/profile",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getDoctorProfile
+);
+
 // add update doctor profile api
 doctorrouter.patch(
     "/profile",

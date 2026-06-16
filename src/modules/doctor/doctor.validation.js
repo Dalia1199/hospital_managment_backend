@@ -3,6 +3,8 @@ import Joi from "joi";
 // add validation for update doctor profile
 export const updatedoctorprofileschema = {
     body: Joi.object({
+        fullName: Joi.string().min(3).max(100).trim().optional(),
+        address: Joi.string().trim().optional(),
         bio: Joi.string().min(20).max(200).optional(),
         specialization: Joi.string().optional(),
         experience: Joi.number().optional(),

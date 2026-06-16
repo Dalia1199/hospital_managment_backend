@@ -39,10 +39,45 @@ export const getDashboard = async (req, res, next) => {
     }
 };
 
+
+// GET /doctor/profile — merged user + doctor doc
+export const getDoctorProfile = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor profile not found" });
+        }
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Profile fetched successfully",
+            data: {
+                fullName: req.user.fullName,
+                email: req.user.email,
+                phoneNumber: req.user.phoneNumber,
+                status: req.user.status,  
+                address: req.user.address,
+                profilepicture: req.user.profilepicture,
+                specialization: doctor.specialization,
+                experience: doctor.experience,
+                bio: doctor.bio,
+                licenseimage: doctor.licenseimage,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {
-        const { bio, specialization, experience } = req.body;
+        const {fullName, address, bio, specialization, experience } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -53,16 +88,28 @@ export const updatedoctorprofile = async (req, res, next) => {
             throw new Error("Doctor profile not found", { cause: 404 });
         }
 
+         // Update user model fields (fullName, address)
+        if (fullName !== undefined) req.user.fullName = fullName;
+        if (address !== undefined) req.user.address = address;
+        await req.user.save();
+
+
+        // Update doctor model fields
         if (bio !== undefined) doctor.bio = bio;
         if (specialization !== undefined) doctor.specialization = specialization;
         if (experience !== undefined) doctor.experience = experience;
-
         await doctor.save();
 
         return successresponse({
             res,
             message: "Profile updated successfully",
-            data: doctor
+            data:  {              
+                fullName: req.user.fullName,
+                address: req.user.address,
+                bio: doctor.bio,
+                specialization: doctor.specialization,
+                experience: doctor.experience 
+            }
         });
     } catch (error) {
           next(error);
