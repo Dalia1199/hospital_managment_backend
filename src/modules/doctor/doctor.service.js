@@ -9,7 +9,7 @@ import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
-import { decrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt , encrypt } from "../../common/utilits/security/encrypt.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -59,14 +59,13 @@ export const getDoctorProfile = async (req, res, next) => {
             data: {
                 fullName: req.user.fullName,
                 email: req.user.email,
-                phoneNumber: req.user.phoneNumber,
-                status: req.user.status,  
+                phoneNumber: req.user.phoneNumber ? decrypt(req.user.phoneNumber) : "",
                 address: req.user.address,
                 profilepicture: req.user.profilepicture,
                 specialization: doctor.specialization,
                 experience: doctor.experience,
                 bio: doctor.bio,
-                licenseimage: doctor.licenseimage,
+                
             }
         });
     } catch (error) {
@@ -77,7 +76,7 @@ export const getDoctorProfile = async (req, res, next) => {
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {
-        const {fullName, address, bio, specialization, experience } = req.body;
+        const {fullName, address, phoneNumber, bio, specialization, experience } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -91,6 +90,7 @@ export const updatedoctorprofile = async (req, res, next) => {
          // Update user model fields (fullName, address)
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
+        if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
         await req.user.save();
 
 
@@ -106,6 +106,7 @@ export const updatedoctorprofile = async (req, res, next) => {
             data:  {              
                 fullName: req.user.fullName,
                 address: req.user.address,
+                phoneNumber: phoneNumber ? phoneNumber : decrypt(req.user.phoneNumber),
                 bio: doctor.bio,
                 specialization: doctor.specialization,
                 experience: doctor.experience 
