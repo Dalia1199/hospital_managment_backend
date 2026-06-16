@@ -10,6 +10,13 @@ import { validation } from "../../common/middleware/validation.js";
 
 const doctorrouter = Router();
 
+// GET /doctor/all — accessible by patient + doctor + admin
+doctorrouter.get(
+    "/all",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
+    DS.getAllDoctors
+);
 // GET /doctor/dashboard
 doctorrouter.get(
     "/dashboard",
