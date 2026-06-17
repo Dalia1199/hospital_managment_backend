@@ -969,78 +969,6 @@ export const getMyPrescriptions = async (req, res, next) => {
                     limit: parseInt(limit),
                     totalPages: Math.ceil(total / parseInt(limit))
                 }
-            };
-
-        const countPipeline = [
-            { $match: baseFilter },
-            { 
-                $group: {
-                    _id: {
-                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
-                    }
-                }
-            },
-            { $count: "total" }
-        ];
-        const countResult = await medicalhistorymodel.aggregate(countPipeline);
-        const total = countResult.length > 0 ? countResult[0].total : 0;
-
-        return successresponse({
-            res,
-            status: 200,
-            message: "Patients fetched successfully",
-            data: {
-                patients: decryptedPatients,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
-                }
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-export const getMyPrescriptions = async (req, res, next) => {
-    try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
-        const dateFilter = {};
-        if (startDate || endDate) {
-            dateFilter.createdAt = {};
-            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
-            if (endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                dateFilter.createdAt.$lte = end;
-            }
-        }
-
-        const baseFilter = { doctorId: req.user._id, ...dateFilter };
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const prescriptions = await prescrptionmodel.find(baseFilter)
-            .populate({ path: "patientId", select: "fullName email phoneNumber" })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await prescrptionmodel.countDocuments(baseFilter);
-
-        return successresponse({
-            res,
-            status: 200,
-            message: "Prescriptions fetched successfully",
-            data: {
-                prescriptions,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
-                }
             }
         });
     } catch (error) {
@@ -1210,5 +1138,4 @@ export const getReportsAnalytics = async (req, res, next) => {
         console.error("ANALYTICS 500 ERROR:", error);
         next(error);
     }
-};
 };
