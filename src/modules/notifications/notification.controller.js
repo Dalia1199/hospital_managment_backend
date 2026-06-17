@@ -2,6 +2,10 @@ import notificationmodel from "../../DB/models/notificationmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { sendNotificationToUser } from "../../common/socket/socket.service.js";
+import { Router } from "express";
+import { authentication } from "../../common/middleware/authenticataiaon.js";
+
+const router = Router();
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -136,5 +140,9 @@ export const markAllAsRead = async (req, res, next) => {
     next(error);
   }
 };
-export default router;
 
+router.get("/", authentication, getNotifications);
+router.patch("/read-all", authentication, markAllAsRead);
+router.patch("/:id/read", authentication, markAsRead);
+
+export default router;
