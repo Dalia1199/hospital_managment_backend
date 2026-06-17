@@ -13,6 +13,8 @@ import { decrypt , encrypt } from "../../common/utilits/security/encrypt.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
+        const { startDate, endDate } = req.query;
+
         const doctor = await db_service.findOne({
             model: doctormodel,
             filter: { userId: req.user._id }
@@ -22,10 +24,19 @@ export const getDashboard = async (req, res, next) => {
             return res.status(404).json({ message: "doctor profile not found" });
         }
 
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+
         const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
-            prescrptionmodel.distinct("patientId", { doctorId: req.user._id }).then(r => r.length),
-            db_service.count({ model: prescrptionmodel, filter: { doctorId: req.user._id } }),
-            db_service.count({ model: medicalhistorymodel, filter: { doctorId: req.user._id } })
+            prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
+            db_service.count({ model: prescrptionmodel, filter: baseFilter }),
+            db_service.count({ model: medicalhistorymodel, filter: baseFilter })
         ]);
 
         return successresponse({
@@ -215,7 +226,7 @@ export const searchPatient = async (req, res, next) => {
 
 export const createSession = async (req, res, next) => {
     try {
-        const { isOfflinePatient, patientId, guestName, guestPhone } = req.body;
+        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge } = req.body;
         const doctorId = req.user._id;
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -243,6 +254,7 @@ export const createSession = async (req, res, next) => {
                     isOfflinePatient,
                     guestName,
                     guestPhone,
+                    guestAge,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                 }
@@ -362,16 +374,61 @@ export const verifySession = async (req, res, next) => {
         return next(error);
     }
 };
+
+export const updatePatientAlerts = async (req, res, next) => {
+    try {
+        const { patientId } = req.params;
+        const { allergies, chronic, surgeries } = req.body;
+
+        const patient = await patientmodel.findOne({ userId: patientId });
+        if (!patient) {
+            throw new Error("Patient not found", { cause: 404 });
+        }
+
+        let parsedAllergies = undefined;
+        let parsedChronic = undefined;
+        let parsedSurgeries = undefined;
+
+        if (allergies !== undefined) {
+            try { parsedAllergies = Array.isArray(allergies) ? allergies : JSON.parse(allergies); } catch (e) { parsedAllergies = [allergies]; }
+        }
+        if (chronic !== undefined) {
+            try { parsedChronic = Array.isArray(chronic) ? chronic : JSON.parse(chronic); } catch (e) { parsedChronic = [chronic]; }
+        }
+        if (surgeries !== undefined) {
+            try { parsedSurgeries = Array.isArray(surgeries) ? surgeries : JSON.parse(surgeries); } catch (e) { parsedSurgeries = surgeries ? [surgeries] : []; }
+        }
+
+        if (parsedAllergies !== undefined) patient.allergies = parsedAllergies;
+        if (parsedChronic !== undefined) patient.chronic = parsedChronic;
+        if (parsedSurgeries !== undefined) patient.surgeries = parsedSurgeries;
+
+        await patient.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Patient alerts and surgeries updated successfully",
+            data: {
+                allergies: patient.allergies,
+                chronic: patient.chronic,
+                surgeries: patient.surgeries
+            }
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
     export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { diagnosis, notes, prescriptionText, height, weight, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId },
-            update: { status: "completed" },
+            update: { status: "completed", fees: fees || 0 },
             options: { new: true }
         });
         
@@ -380,10 +437,14 @@ export const verifySession = async (req, res, next) => {
         }
 
         const documents = [];
-        if (req.file) {
-            const folderName = session.isOfflinePatient ? `guest_${session.guestName}` : `patient_${session.patientId}`;
-            const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
-                folder: `carehub/medicalhistory/prescriptions/${folderName}`
+        const folderName = session.isOfflinePatient ? `guest_${session.guestName}` : `patient_${session.patientId}`;
+        
+        if (req.files && req.files.prescriptionImage && req.files.prescriptionImage[0]) {
+            const { secure_url, public_id } = await cloudinary.uploader.upload(req.files.prescriptionImage[0].path, {
+                folder: `carehub/medicalhistory/prescriptions/${folderName}`,
+                resource_type: req.files.prescriptionImage[0].mimetype === "application/pdf" ? "raw" : "auto",
+                use_filename: true,
+                unique_filename: true
             });
             documents.push({
                 type: "prescription",
@@ -392,6 +453,33 @@ export const verifySession = async (req, res, next) => {
                 public_id,
                 uploadedBy: doctorId
             });
+        }
+
+        if (req.files && req.files.attachments && req.files.attachments.length > 0) {
+            let parsedMetadata = [];
+            if (req.body.attachmentsMetadata) {
+                try { parsedMetadata = JSON.parse(req.body.attachmentsMetadata); } catch (e) { console.error("Failed to parse attachments metadata", e); }
+            }
+
+            for (let i = 0; i < req.files.attachments.length; i++) {
+                const file = req.files.attachments[i];
+                const meta = parsedMetadata[i] || { title: `Document ${i+1}`, type: "other" };
+                
+                const { secure_url, public_id } = await cloudinary.uploader.upload(file.path, {
+                    folder: `carehub/medicalhistory/documents/${folderName}`,
+                    resource_type: file.mimetype === "application/pdf" ? "raw" : "auto",
+                    use_filename: true,
+                    unique_filename: true
+                });
+                
+                documents.push({
+                    type: meta.type,
+                    title: meta.title,
+                    secure_url,
+                    public_id,
+                    uploadedBy: doctorId
+                });
+            }
         }
 
         let parsedAllergies = [];
@@ -419,6 +507,10 @@ export const verifySession = async (req, res, next) => {
             prescriptionText,
             height,
             weight,
+            bloodPressure,
+            sugarLevel,
+            pulse,
+            temperature,
             allergies: parsedAllergies,
             chronic: parsedChronic,
             surgeries: parsedSurgeries,
@@ -727,6 +819,157 @@ export const getPatientMedicalHistory = async (req, res, next) => {
     }
 };
 
+export const getMyPatients = async (req, res, next) => {
+    try {
+        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const pipeline = [
+            { $match: baseFilter },
+            { 
+                $group: {
+                    _id: {
+                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+                    },
+                    isOfflinePatient: { $first: "$isOfflinePatient" },
+                    guestName: { $first: "$guestName" },
+                    guestPhone: { $first: "$guestPhone" },
+                    patientId: { $first: "$patientId" },
+                    totalVisits: { $sum: 1 },
+                    firstVisit: { $min: "$createdAt" },
+                    lastVisit: { $max: "$createdAt" },
+                    lastType: { $last: { $cond: { if: "$isOfflinePatient", then: "Walk-in", else: "Online" } } }
+                }
+            },
+            { $sort: { lastVisit: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "patientId",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            {
+                $unwind: { path: "$userData", preserveNullAndEmptyArrays: true }
+            },
+            {
+                $project: {
+                    id: "$_id",
+                    isOfflinePatient: 1,
+                    guestName: 1,
+                    guestPhone: 1,
+                    patientId: 1,
+                    totalVisits: 1,
+                    firstVisit: 1,
+                    lastVisit: 1,
+                    lastType: 1,
+                    fullName: "$userData.fullName",
+                    email: "$userData.email",
+                    phoneNumber: "$userData.phoneNumber",
+                    status: { $ifNull: ["$userData.status", "active"] }
+                }
+            }
+        ];
+
+        const patients = await medicalhistorymodel.aggregate(pipeline);
+
+        const decryptedPatients = patients.map(p => {
+            if (p.phoneNumber && !p.isOfflinePatient) {
+                try {
+                    p.phoneNumber = decrypt(p.phoneNumber);
+                } catch (e) {
+                    console.error("Failed to decrypt phone");
+                }
+            }
+            return p;
+        });
+
+        const countPipeline = [
+            { $match: baseFilter },
+            { 
+                $group: {
+                    _id: {
+                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+                    }
+                }
+            },
+            { $count: "total" }
+        ];
+        const countResult = await medicalhistorymodel.aggregate(countPipeline);
+        const total = countResult.length > 0 ? countResult[0].total : 0;
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Patients fetched successfully",
+            data: {
+                patients: decryptedPatients,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(total / parseInt(limit))
+                }
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getMyPrescriptions = async (req, res, next) => {
+    try {
+        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const dateFilter = {};
+        if (startDate || endDate) {
+            dateFilter.createdAt = {};
+            if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const prescriptions = await prescrptionmodel.find(baseFilter)
+            .populate({ path: "patientId", select: "fullName email phoneNumber" })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await prescrptionmodel.countDocuments(baseFilter);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Prescriptions fetched successfully",
+            data: {
+                prescriptions,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(total / parseInt(limit))
+                }
+            }
 
 
 export const getAllDoctors = async (req, res, next) => {
@@ -746,6 +989,149 @@ export const getAllDoctors = async (req, res, next) => {
             data: activeDoctors
         });
     } catch (error) {
+        next(error);
+    }
+};
+
+export const getReportsAnalytics = async (req, res, next) => {
+    try {
+        const doctorId = req.user._id;
+        const { startDate, endDate } = req.query;
+
+        let end = new Date();
+        let start = new Date();
+        start.setDate(start.getDate() - 30); // Default to last 30 days
+
+        if (startDate) start = new Date(startDate);
+        if (endDate) {
+            end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+        }
+
+        const periodLength = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+        
+        const prevEnd = new Date(start);
+        const prevStart = new Date(start);
+        prevStart.setDate(prevStart.getDate() - periodLength);
+
+        // Fetch current period sessions
+        const currentSessions = await db_service.find({
+            model: sessionmodel,
+            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } }
+        });
+
+        // Fetch prev period sessions
+        const prevSessions = await db_service.find({
+            model: sessionmodel,
+            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } }
+        });
+
+        // Current KPIs
+        let currentRevenue = 0;
+        let onlineCount = 0;
+        let walkinCount = 0;
+        const trendMap = {};
+        const onlineUserIds = new Set();
+
+        currentSessions.forEach(session => {
+            currentRevenue += (session.fees || 0);
+            if (session.isOfflinePatient) walkinCount++;
+            else {
+                onlineCount++;
+                if (session.patientId) onlineUserIds.add(session.patientId.toString());
+            }
+
+            const createdAt = session.createdAt ? new Date(session.createdAt) : new Date();
+            const dateStr = createdAt.toISOString().split('T')[0];
+            trendMap[dateStr] = (trendMap[dateStr] || 0) + 1;
+        });
+
+        // Fetch ages from patientmodel
+        const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } });
+
+        const ageGroups = { "0-18": 0, "19-30": 0, "31-50": 0, "51+": 0 };
+        patients.forEach(p => {
+            if (p.age !== undefined) {
+                if (p.age <= 18) ageGroups["0-18"]++;
+                else if (p.age <= 30) ageGroups["19-30"]++;
+                else if (p.age <= 50) ageGroups["31-50"]++;
+                else ageGroups["51+"]++;
+            }
+        });
+
+        // Incorporate walk-in guest ages
+        currentSessions.forEach(session => {
+            if (session.isOfflinePatient && session.guestAge !== undefined) {
+                if (session.guestAge <= 18) ageGroups["0-18"]++;
+                else if (session.guestAge <= 30) ageGroups["19-30"]++;
+                else if (session.guestAge <= 50) ageGroups["31-50"]++;
+                else ageGroups["51+"]++;
+            }
+        });
+
+        let prevRevenue = 0;
+        prevSessions.forEach(session => {
+            prevRevenue += (session.fees || 0);
+        });
+
+        const revenueGrowth = prevRevenue === 0 ? (currentRevenue > 0 ? 100 : 0) : Math.round(((currentRevenue - prevRevenue) / prevRevenue) * 100);
+        const visitsGrowth = prevSessions.length === 0 ? (currentSessions.length > 0 ? 100 : 0) : Math.round(((currentSessions.length - prevSessions.length) / prevSessions.length) * 100);
+
+        const visitTrends = [];
+        for (let i = periodLength - 1; i >= 0; i--) {
+            const d = new Date(end);
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            visitTrends.push({
+                date: dateStr,
+                visits: trendMap[dateStr] || 0
+            });
+        }
+
+        const ageDemographics = Object.keys(ageGroups).map(name => ({
+            name, count: ageGroups[name]
+        }));
+
+        // Medical History Analytics
+        const histories = await db_service.find({
+            model: medicalhistorymodel,
+            filter: { doctorId, createdAt: { $gte: start, $lte: end } }
+        });
+
+        const diagnosisMap = {};
+        histories.forEach(h => {
+            if (h.diagnosis) {
+                const diag = h.diagnosis?.trim()?.toLowerCase();
+                if (diag) diagnosisMap[diag] = (diagnosisMap[diag] || 0) + 1;
+            }
+        });
+
+        const topDiagnosis = Object.keys(diagnosisMap)
+            .map(name => ({ name, count: diagnosisMap[name] }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Analytics fetched successfully",
+            data: {
+                kpis: {
+                    totalRevenue: currentRevenue,
+                    revenueGrowth,
+                    totalVisits: currentSessions.length,
+                    visitsGrowth,
+                    onlineVisits: onlineCount,
+                    walkinVisits: walkinCount
+                },
+                visitTrends,
+                topDiagnosis,
+                ageDemographics
+            }
+        });
+
+    } catch (error) {
+        console.error("ANALYTICS 500 ERROR:", error);
         next(error);
     }
 };
