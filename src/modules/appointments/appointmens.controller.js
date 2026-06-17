@@ -6,20 +6,40 @@ import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
 const appointmensrouter = Router();
+//done
 
-appointmensrouter.post(
+appointmensrouter.patch(
 
-    "/slot",
+    "/availability",
 
     authentication,
 
     authorization([roleenum.doctor]),
 
-    validation(AV.createSlotSchema),
+    validation(AV.addAvailabilitySchema),
 
-    AS.createslot
+    AS.addAvailability
 
 );
+//done
+
+appointmensrouter.post(
+
+    "/generate-slots",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    validation(
+        AV.generateSlotsSchema
+    ),
+
+    AS.generateMonthlySlots
+
+);
+//done
+
 appointmensrouter.get(
 
     "/available-slots/:doctorId",
@@ -35,6 +55,8 @@ appointmensrouter.get(
     AS.getAvailableSlots
 
 );
+//done
+
 appointmensrouter.post(
 
     "/book",
@@ -50,6 +72,7 @@ appointmensrouter.post(
     AS.bookAppointment
 
 );
+//done
 appointmensrouter.get(
 
     "/my-appointments",
@@ -63,6 +86,7 @@ appointmensrouter.get(
     AS.getMyAppointments
 
 );
+//done
 appointmensrouter.get(
 
     "/doctor-appointments",
@@ -76,6 +100,7 @@ appointmensrouter.get(
     AS.getDoctorAppointments
 
 );
+//done
 appointmensrouter.patch(
 
     "/cancel/:appointmentId",
@@ -90,5 +115,91 @@ appointmensrouter.patch(
 
     AS.cancelAppointment
 
+);
+//done
+appointmensrouter.patch(
+
+    "/complete/:appointmentId",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    validation(AV.completeAppointmentSchema),
+
+    AS.completeAppointment
+
+);
+//done
+appointmensrouter.delete(
+
+    "/slot/:slotId",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    validation(AV.deleteSlotSchema),
+
+    AS.deleteSlot
+
+);
+//done
+appointmensrouter.patch(
+
+    "/slot/:slotId",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    validation(AV.updateSlotSchema),
+
+    AS.updateSlot
+
+);
+appointmensrouter.patch(
+
+    "/reschedule/:appointmentId",
+
+    authentication,
+
+    authorization([roleenum.patient]),
+
+    validation(AV.rescheduleAppointmentSchema),
+
+    AS.rescheduleAppointment
+);
+appointmensrouter.get(
+    "/dashboard",
+    authentication,
+    authorization([roleenum.doctor]),
+    AS.doctorDashboard
+);
+appointmensrouter.get(
+    "/doctor/upcoming",
+    authentication,
+    authorization([roleenum.doctor]),
+    AS.getUpcomingAppointments
+);
+
+appointmensrouter.get(
+    "/doctor/today",
+    authentication,
+    authorization([roleenum.doctor]),
+    AS.getTodayAppointments
+);
+
+appointmensrouter.get(
+    "/doctor/completed",
+    authentication,
+    authorization([roleenum.doctor]),
+    AS.getCompletedAppointments
+);
+appointmensrouter.get(
+    "/patient",
+    authentication,
+    authorization([roleenum.patient]),
+    AS.getPatientAppointments
 );
 export default appointmensrouter;

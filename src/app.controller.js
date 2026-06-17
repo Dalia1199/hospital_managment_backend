@@ -13,27 +13,19 @@ import patientrouter from "./modules/patient/patient.controller.js";
 
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 import appointmensrouter from "./modules/appointments/appointmens.controller.js";
+import notificationrouter from "./modules/notifications/notification.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
 const bootstrap = () => {
     app.use(express.json());
     
-    // app.use(cors({
-    //     origin: "http://localhost:3001",
-    //     credentials: true
-    // }));
-    
-    /////update by nermen for allow browser to access the api and allow specific headers and methods
-    // We removed the hardcoded http://localhost:3001 origin to allow the dynamic CORS configuration below to work for all frontend URLs including Vercel.
-
-
-
     app.use(cors({
-        origin: function (origin, callback) {
-            callback(null, true);
-        },
-        credentials: true
+        origin: [ "http://localhost:3001",
+        "https://carehub-two.vercel.app"],
+        credentials : true,
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
 
     checkConnectionDB();
@@ -52,6 +44,7 @@ const bootstrap = () => {
     app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
     app.use("/appointmens", appointmensrouter)
+    app.use("/notifications", notificationrouter);
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
@@ -60,7 +53,7 @@ const bootstrap = () => {
         res.status(err.cause || 500).json({ message: err.message, stack: err.stack })
     })
 
-    app.listen(Port, () => { console.log(`Server is running on port ${Port}`) });
+    return app;
 }
 
 export default bootstrap;
