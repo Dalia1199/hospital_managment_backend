@@ -969,7 +969,7 @@ export const getMyPrescriptions = async (req, res, next) => {
                     limit: parseInt(limit),
                     totalPages: Math.ceil(total / parseInt(limit))
                 }
-            }
+            };
 
 
 export const getAllDoctors = async (req, res, next) => {
