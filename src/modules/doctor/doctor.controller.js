@@ -10,6 +10,13 @@ import { validation } from "../../common/middleware/validation.js";
 
 const doctorrouter = Router();
 
+// GET /doctor/all — accessible by patient + doctor + admin
+doctorrouter.get(
+    "/all",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
+    DS.getAllDoctors
+);
 // GET /doctor/dashboard
 doctorrouter.get(
     "/dashboard",
@@ -24,6 +31,14 @@ doctorrouter.get(
     authentication,
     authorization([roleenum.doctor]),
     DS.getReportsAnalytics
+);
+
+// GET /doctor/profile - fetch full profile data
+doctorrouter.get(
+    "/profile",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getDoctorProfile
 );
 
 // add update doctor profile api
