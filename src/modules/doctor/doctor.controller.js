@@ -25,6 +25,7 @@ doctorrouter.get(
     DS.getDashboard
 );
 
+// GET /doctor/profile — fetch full profile data
 // GET /doctor/reports/analytics
 doctorrouter.get(
     "/reports/analytics",
