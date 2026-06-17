@@ -31,6 +31,7 @@ const patientSchema = new mongoose.Schema({
         }], 
         default: [] 
     },
+    pulse: { type: String, trim: true },
 });
 
 export default mongoose.model("patient", patientSchema);

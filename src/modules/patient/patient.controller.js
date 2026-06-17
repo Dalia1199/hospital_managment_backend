@@ -53,13 +53,13 @@ patientrouter.get(
     PS.getMyProfile
 )
 //done
-patientrouter.patch(
-    "/profile-image",
-    authentication,
-    authorization([roleenum.patient]),
-    multer_host(multerenum.image).single("image"),
-    PS.updateProfileImage
-)
+// patientrouter.patch(
+//     "/profile-image",
+//     authentication,
+//     authorization([roleenum.patient]),
+//     multer_host(multerenum.image).single("image"),
+//     PS.updateProfileImage
+// )
 export default patientrouter
 
  
