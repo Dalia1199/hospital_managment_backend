@@ -18,6 +18,14 @@ doctorrouter.get(
     DS.getDashboard
 );
 
+// GET /doctor/reports/analytics
+doctorrouter.get(
+    "/reports/analytics",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getReportsAnalytics
+);
+
 // add update doctor profile api
 doctorrouter.patch(
     "/profile",

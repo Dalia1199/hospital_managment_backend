@@ -24,6 +24,9 @@ const sessionSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    guestAge: {
+        type: Number
+    },
     otp: {
         type: String,
         required: function() { return !this.isOfflinePatient; }
@@ -35,6 +38,10 @@ const sessionSchema = new mongoose.Schema({
     },
     validUntil: {
         type: Date
+    },
+    fees: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true

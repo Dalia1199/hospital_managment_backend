@@ -178,7 +178,7 @@ export const searchPatient = async (req, res, next) => {
 
 export const createSession = async (req, res, next) => {
     try {
-        const { isOfflinePatient, patientId, guestName, guestPhone } = req.body;
+        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge } = req.body;
         const doctorId = req.user._id;
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -206,6 +206,7 @@ export const createSession = async (req, res, next) => {
                     isOfflinePatient,
                     guestName,
                     guestPhone,
+                    guestAge,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                 }
@@ -373,13 +374,13 @@ export const updatePatientAlerts = async (req, res, next) => {
     export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId },
-            update: { status: "completed" },
+            update: { status: "completed", fees: fees || 0 },
             options: { new: true }
         });
         
@@ -923,6 +924,149 @@ export const getMyPrescriptions = async (req, res, next) => {
             }
         });
     } catch (error) {
+        next(error);
+    }
+};
+
+export const getReportsAnalytics = async (req, res, next) => {
+    try {
+        const doctorId = req.user._id;
+        const { startDate, endDate } = req.query;
+
+        let end = new Date();
+        let start = new Date();
+        start.setDate(start.getDate() - 30); // Default to last 30 days
+
+        if (startDate) start = new Date(startDate);
+        if (endDate) {
+            end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+        }
+
+        const periodLength = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+        
+        const prevEnd = new Date(start);
+        const prevStart = new Date(start);
+        prevStart.setDate(prevStart.getDate() - periodLength);
+
+        // Fetch current period sessions
+        const currentSessions = await db_service.find({
+            model: sessionmodel,
+            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } }
+        });
+
+        // Fetch prev period sessions
+        const prevSessions = await db_service.find({
+            model: sessionmodel,
+            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } }
+        });
+
+        // Current KPIs
+        let currentRevenue = 0;
+        let onlineCount = 0;
+        let walkinCount = 0;
+        const trendMap = {};
+        const onlineUserIds = new Set();
+
+        currentSessions.forEach(session => {
+            currentRevenue += (session.fees || 0);
+            if (session.isOfflinePatient) walkinCount++;
+            else {
+                onlineCount++;
+                if (session.patientId) onlineUserIds.add(session.patientId.toString());
+            }
+
+            const createdAt = session.createdAt ? new Date(session.createdAt) : new Date();
+            const dateStr = createdAt.toISOString().split('T')[0];
+            trendMap[dateStr] = (trendMap[dateStr] || 0) + 1;
+        });
+
+        // Fetch ages from patientmodel
+        const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } });
+
+        const ageGroups = { "0-18": 0, "19-30": 0, "31-50": 0, "51+": 0 };
+        patients.forEach(p => {
+            if (p.age !== undefined) {
+                if (p.age <= 18) ageGroups["0-18"]++;
+                else if (p.age <= 30) ageGroups["19-30"]++;
+                else if (p.age <= 50) ageGroups["31-50"]++;
+                else ageGroups["51+"]++;
+            }
+        });
+
+        // Incorporate walk-in guest ages
+        currentSessions.forEach(session => {
+            if (session.isOfflinePatient && session.guestAge !== undefined) {
+                if (session.guestAge <= 18) ageGroups["0-18"]++;
+                else if (session.guestAge <= 30) ageGroups["19-30"]++;
+                else if (session.guestAge <= 50) ageGroups["31-50"]++;
+                else ageGroups["51+"]++;
+            }
+        });
+
+        let prevRevenue = 0;
+        prevSessions.forEach(session => {
+            prevRevenue += (session.fees || 0);
+        });
+
+        const revenueGrowth = prevRevenue === 0 ? (currentRevenue > 0 ? 100 : 0) : Math.round(((currentRevenue - prevRevenue) / prevRevenue) * 100);
+        const visitsGrowth = prevSessions.length === 0 ? (currentSessions.length > 0 ? 100 : 0) : Math.round(((currentSessions.length - prevSessions.length) / prevSessions.length) * 100);
+
+        const visitTrends = [];
+        for (let i = periodLength - 1; i >= 0; i--) {
+            const d = new Date(end);
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            visitTrends.push({
+                date: dateStr,
+                visits: trendMap[dateStr] || 0
+            });
+        }
+
+        const ageDemographics = Object.keys(ageGroups).map(name => ({
+            name, count: ageGroups[name]
+        }));
+
+        // Medical History Analytics
+        const histories = await db_service.find({
+            model: medicalhistorymodel,
+            filter: { doctorId, createdAt: { $gte: start, $lte: end } }
+        });
+
+        const diagnosisMap = {};
+        histories.forEach(h => {
+            if (h.diagnosis) {
+                const diag = h.diagnosis?.trim()?.toLowerCase();
+                if (diag) diagnosisMap[diag] = (diagnosisMap[diag] || 0) + 1;
+            }
+        });
+
+        const topDiagnosis = Object.keys(diagnosisMap)
+            .map(name => ({ name, count: diagnosisMap[name] }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Analytics fetched successfully",
+            data: {
+                kpis: {
+                    totalRevenue: currentRevenue,
+                    revenueGrowth,
+                    totalVisits: currentSessions.length,
+                    visitsGrowth,
+                    onlineVisits: onlineCount,
+                    walkinVisits: walkinCount
+                },
+                visitTrends,
+                topDiagnosis,
+                ageDemographics
+            }
+        });
+
+    } catch (error) {
+        console.error("ANALYTICS 500 ERROR:", error);
         next(error);
     }
 };

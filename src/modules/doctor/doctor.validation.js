@@ -67,7 +67,8 @@ export const createSessionSchema = {
             }),
             otherwise: Joi.optional()
         }),
-        guestPhone: Joi.string().trim().min(10).max(15).optional()
+        guestPhone: Joi.string().trim().min(10).max(15).optional(),
+        guestAge: Joi.number().min(0).max(120).optional()
     })
 };
 
@@ -88,6 +89,7 @@ export const endSessionSchema = {
             })
     }).required(),
     body: Joi.object({
+        fees: Joi.number().min(0).optional(),
         diagnosis: Joi.string().allow("").optional(),
         notes: Joi.string().allow("").optional(),
         prescriptionText: Joi.string().allow("").optional(),
