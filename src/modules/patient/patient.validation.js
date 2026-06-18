@@ -29,6 +29,7 @@ export const updatePatientProfileSchema = {
     weight: Joi.string().optional(),
     height: Joi.string().optional(),
     pulse:  Joi.string().optional(),
+    sharingSetting: Joi.string().valid("all", "own_only", "otp").optional(),
 
     surgeries: Joi.array()
       .items(

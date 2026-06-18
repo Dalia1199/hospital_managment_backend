@@ -3,6 +3,7 @@ import answermodel from "../../DB/models/answermodel.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
+import { checkDoctorAccess } from "../doctor/doctor.service.js";
 
 export const createMedicalHistory = async (req, res, next) => {
     const { isOfflinePatient, patientId, guestName, guestPhone, diagnosis, notes } = req.body;
@@ -32,24 +33,40 @@ export const createMedicalHistory = async (req, res, next) => {
 
 
 export const getMedicalHistory = async (req, res, next) => {
-    const { patientId } = req.params;
+    try {
+        const { patientId } = req.params;
 
-    if (
-        req.user.role === roleenum.patient &&
-        req.user._id.toString() !== patientId
-    ) {
-        throw new Error("not authorized", { cause: 403 });
+        if (
+            req.user.role === roleenum.patient &&
+            req.user._id.toString() !== patientId
+        ) {
+            throw new Error("not authorized", { cause: 403 });
+        }
+
+        let filter = { patientId };
+
+        if (req.user.role === "doctor") {
+            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+            if (!hasAccess) {
+                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+            }
+            if (sharingSetting === "own_only") {
+                filter.doctorId = req.user._id;
+            }
+        }
+
+        const history = await medicalhistorymodel
+            .findOne(filter)
+            .populate("answers")
+            .populate("doctorId")
+            .populate("prescriptions");
+        successresponse({
+            res,
+            data: history
+        });
+    } catch (error) {
+        next(error);
     }
-
-    const history = await medicalhistorymodel
-        .findOne({ patientId })
-        .populate("answers")
-        .populate("doctorId")
-        .populate("prescriptions");
-    successresponse({
-        res,
-        data: history
-    });
 };
 
 

@@ -318,6 +318,7 @@ export const getMyProfile = async (req, res, next) => {
         allergies: patient?.allergies ?? [],
         chronic: patient?.chronic ?? [],
         surgeries: patient?.surgeries ?? [],
+        sharingSetting: patient?.sharingSetting ?? "all",
       },
     });
   } catch (error) {
@@ -342,6 +343,7 @@ export const updatePatientProfile = async (req, res, next) => {
       height,
       weight,
       pulse,
+      sharingSetting,
     } = req.body;
 
     // 1. Update user model
@@ -371,6 +373,7 @@ export const updatePatientProfile = async (req, res, next) => {
     if (height !== undefined) patientUpdate.height = height;
     if (weight !== undefined) patientUpdate.weight = weight;
     if (pulse !== undefined) patientUpdate.pulse = pulse;
+    if (sharingSetting !== undefined) patientUpdate.sharingSetting = sharingSetting;
 
     if (Object.keys(patientUpdate).length > 0) {
       await db_service.findOneAndUpdate({
@@ -397,6 +400,7 @@ export const updatePatientProfile = async (req, res, next) => {
         height,
         weight,
         pulse,
+        sharingSetting,
       },
     });
   } catch (error) {
