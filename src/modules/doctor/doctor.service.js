@@ -1050,11 +1050,19 @@ export const getMyPrescriptions = async (req, res, next) => {
 
 export const getAllDoctors = async (req, res, next) => {
     try {
-        const doctors = await doctormodel.find().populate({
-            path: "userId",
-            select: "fullName email confirmed",
-            match: { confirmed: true }
-        });
+        // Basic pagination to prevent fetching the entire database
+        const { page = 1, limit = 100 } = req.query;
+        const skip = (page - 1) * limit;
+
+        const doctors = await doctormodel.find()
+            .skip(skip)
+            .limit(parseInt(limit))
+            .populate({
+                path: "userId",
+                select: "fullName email confirmed",
+                match: { confirmed: true }
+            })
+            .lean(); // Massive performance boost by returning plain JS objects
  
         const activeDoctors = doctors.filter(d => d.userId);
  
@@ -1093,13 +1101,15 @@ export const getReportsAnalytics = async (req, res, next) => {
         // Fetch current period sessions
         const currentSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } }
+            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } },
+            options: { lean: true }
         });
 
         // Fetch prev period sessions
         const prevSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } }
+            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } },
+            options: { lean: true }
         });
 
         // Current KPIs
@@ -1123,7 +1133,7 @@ export const getReportsAnalytics = async (req, res, next) => {
         });
 
         // Fetch ages from patientmodel
-        const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } });
+        const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } }).lean();
 
         const ageGroups = { "0-18": 0, "19-30": 0, "31-50": 0, "51+": 0 };
         patients.forEach(p => {
@@ -1171,7 +1181,8 @@ export const getReportsAnalytics = async (req, res, next) => {
         // Medical History Analytics
         const histories = await db_service.find({
             model: medicalhistorymodel,
-            filter: { doctorId, createdAt: { $gte: start, $lte: end } }
+            filter: { doctorId, createdAt: { $gte: start, $lte: end } },
+            options: { lean: true }
         });
 
         const diagnosisMap = {};

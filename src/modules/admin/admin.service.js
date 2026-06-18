@@ -28,7 +28,8 @@ export const getPendingDoctors = async (req, res, next) => {
                 skip,
                 limit,
                 select: "-password",
-                sort: { createdAt: 1 }
+                sort: { createdAt: 1 },
+                lean: true
             }
         });
 
@@ -39,7 +40,7 @@ export const getPendingDoctors = async (req, res, next) => {
                     filter: { userId: doctor._id }
                 });
                 return {
-                    ...doctor.toObject(),
+                    ...doctor,
                     licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
                     specialty: doctorDetails?.specialization ?? null,
                 };
@@ -146,7 +147,8 @@ export const getAllDoctors = async (req, res, next) => {
             filter,
             options: {
                 select: "-password",
-                sort: { createdAt: -1 }
+                sort: { createdAt: -1 },
+                lean: true
             }
         });
 
@@ -157,7 +159,7 @@ export const getAllDoctors = async (req, res, next) => {
                     filter: { userId: doctor._id }
                 });
                 return {
-                    ...doctor.toObject(),
+                    ...doctor,
                     licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
                     nationalIdUrl: doctorDetails?.nationalId?.secure_url ?? null,
                     specialty: doctorDetails?.specialization ?? null,
@@ -224,7 +226,8 @@ export const getallusers = async (req, res, next) => {
             options: {
                 skip: skip,
                 limit: itemsPerPage,
-                select: "-password"
+                select: "-password",
+                lean: true
             }
         });
 
