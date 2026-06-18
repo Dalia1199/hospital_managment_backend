@@ -55,6 +55,24 @@ adminrouter.get(
     AS.getallusers
 );
 
+// ─── Admin Profile Routes ─────────────────────────────────────────────────────
+adminrouter.get(
+    "/profile",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getAdminProfile
+);
+
+adminrouter.patch(
+    "/profile",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.updateAdminProfileSchema),
+    AS.updateAdminProfile
+);
+
+export default adminrouter;
+
 
 adminrouter.patch(
     "/:id/activate",
@@ -86,4 +104,6 @@ adminrouter.patch(
     AS.resetToPending
 );
 
-export default adminrouter;
+
+
+

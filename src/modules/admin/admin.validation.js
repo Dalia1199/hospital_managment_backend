@@ -41,3 +41,13 @@ export const activateAndDeactivateSchema = {
             })
     })
 }
+
+
+// ─── Admin Profile ────────────────────────────────────────────────────────────
+export const updateAdminProfileSchema = {
+    body: Joi.object({
+        fullName:    Joi.string().min(3).max(100).trim().optional(),
+        phoneNumber: Joi.string().trim().min(10).max(15).optional(),
+        address:     Joi.string().trim().optional(),
+    }).required()
+};
