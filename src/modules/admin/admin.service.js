@@ -180,13 +180,15 @@ export const getDashboard = async (req, res, next) => {
             totalDoctors,
             totalPatients,
             pendingDoctors,
+            rejectedDoctors,
             totalPrescriptions,
             totalMedicalHistories
         ] = await Promise.all([
             db_service.count({ model: usermodel, filter: {} }),
             db_service.count({ model: usermodel, filter: { role: roleenum.doctor } }),
             db_service.count({ model: patientmodel, filter: {} }),
-            db_service.count({ model: usermodel, filter: { role: roleenum.doctor, confirmed: false } }),
+            db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "pending" } }),
+            db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "rejected" } }),
             db_service.count({ model: prescrptionmodel, filter: {} }),
             db_service.count({ model: medicalhistorymodel, filter: {} })
         ]);
@@ -200,6 +202,7 @@ export const getDashboard = async (req, res, next) => {
                 totalDoctors,
                 totalPatients,
                 pendingDoctors,
+                rejectedDoctors,
                 totalPrescriptions,
                 totalMedicalHistories
             }

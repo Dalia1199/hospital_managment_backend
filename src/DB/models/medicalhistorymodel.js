@@ -47,6 +47,10 @@ const medicalHistorySchema = new mongoose.Schema(
         // Vitals captured during this specific encounter
         height: { type: String, trim: true },
         weight: { type: String, trim: true },
+        bloodPressure: { type: String, trim: true },
+        sugarLevel: { type: String, trim: true },
+        pulse: { type: String, trim: true },
+        temperature: { type: String, trim: true },
         allergies: { type: [String], default: [] },
         chronic: { type: [String], default: [] },
         surgeries: { 

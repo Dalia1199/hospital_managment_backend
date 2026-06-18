@@ -50,7 +50,21 @@ const appointmentsSchema = new mongoose.Schema({
 
         default: "booked"
 
-    }
+    },
+    appointmentDate: {
+        type: Date,
+        required: true
+    },
+
+    startDateTime: {
+        type: Date,
+        required: true
+    },
+
+    endDateTime: {
+        type: Date,
+        required: true
+    },
 
 }, {
 

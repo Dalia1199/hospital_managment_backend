@@ -10,6 +10,13 @@ import { validation } from "../../common/middleware/validation.js";
 
 const doctorrouter = Router();
 
+// GET /doctor/all — accessible by patient + doctor + admin
+doctorrouter.get(
+    "/all",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
+    DS.getAllDoctors
+);
 // GET /doctor/dashboard
 doctorrouter.get(
     "/dashboard",
@@ -19,6 +26,15 @@ doctorrouter.get(
 );
 
 // GET /doctor/profile — fetch full profile data
+// GET /doctor/reports/analytics
+doctorrouter.get(
+    "/reports/analytics",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getReportsAnalytics
+);
+
+// GET /doctor/profile - fetch full profile data
 doctorrouter.get(
     "/profile",
     authentication,
@@ -94,12 +110,24 @@ doctorrouter.get(
     DS.getPatientMedicalHistory
 );
 
+// update patient alerts
+doctorrouter.patch(
+    "/patient/:patientId/alerts",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.updatePatientAlertsSchema),
+    DS.updatePatientAlerts
+);
+
 // end session
 doctorrouter.patch(
     "/session/:sessionId/end",
     authentication,
     authorization([roleenum.doctor]),
-    multer_host([...multerenum.image, ...multerenum.pdf]).single("prescriptionImage"),
+    multer_host([...multerenum.image, ...multerenum.pdf]).fields([
+        { name: "prescriptionImage", maxCount: 1 },
+        { name: "attachments", maxCount: 10 }
+    ]),
     validation(DV.endSessionSchema),
     DS.endSession
 );
@@ -111,6 +139,24 @@ doctorrouter.delete(
     authorization([roleenum.doctor]),
     validation(DV.cancelSessionSchema),
     DS.cancelSession
+);
+
+// get my patients
+doctorrouter.get(
+    "/my-patients",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.getMyPatientsSchema),
+    DS.getMyPatients
+);
+
+// get my prescriptions
+doctorrouter.get(
+    "/my-prescriptions",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.getMyPrescriptionsSchema),
+    DS.getMyPrescriptions
 );
 
 export default doctorrouter;
