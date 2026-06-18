@@ -20,9 +20,10 @@ const Port = PORT || 3000;
 const bootstrap = () => {
     app.use(express.json());
     
-    app.use(cors({
+     app.use(cors({
         origin: [ "http://localhost:3001",
-        "https://carehub-two.vercel.app"],
+        "https://carehub-two.vercel.app",
+        "https://carehub-6h22jtqs8-honda4codings-projects.vercel.app"],
         credentials : true,
         allowedHeaders: ["Content-Type", "Authorization"],
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
