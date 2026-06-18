@@ -11,6 +11,8 @@ import { emailenum } from "../../common/enum/emailenum.js";
 import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
 import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
 import { hash } from "../../common/utilits/security/hash.js";
+import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+
 
 export const getPendingDoctors = async (req, res, next) => {
     try {
@@ -301,6 +303,53 @@ export const resetToPending = async (req, res, next) => {
         );
         if (!doctor) throw new Error("Doctor not found");
         return successresponse({ res, message: "Doctor reset to pending", data: doctor });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+// ─── GET /admin/profile ───────────────────────────────────────────────────────
+export const getAdminProfile = async (req, res, next) => {
+    try {
+        return successresponse({
+            res,
+            status: 200,
+            message: "Profile fetched successfully",
+            data: {
+                fullName:       req.user.fullName,
+                email:          req.user.email,
+                phoneNumber:    req.user.phoneNumber ? decrypt(req.user.phoneNumber) : "",
+                address:        req.user.address,
+                profilepicture: req.user.profilepicture,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── PATCH /admin/profile ─────────────────────────────────────────────────────
+
+
+export const updateAdminProfile = async (req, res, next) => {
+    try {
+        const { fullName, phoneNumber, address } = req.body;
+
+        if (fullName    !== undefined) req.user.fullName    = fullName;
+        if (address     !== undefined) req.user.address     = address;
+        if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
+        await req.user.save();
+
+        return successresponse({
+            res,
+            message: "Profile updated successfully",
+            data: {
+                fullName:    req.user.fullName,
+                phoneNumber: phoneNumber ?? decrypt(req.user.phoneNumber),
+                address:     req.user.address,
+            }
+        });
     } catch (error) {
         next(error);
     }
