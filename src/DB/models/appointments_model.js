@@ -26,7 +26,7 @@ const appointmentsSchema = new mongoose.Schema({
 
         type: mongoose.Schema.Types.ObjectId,
 
-        ref: "availability",
+        ref: "slot",
 
         required: true
 

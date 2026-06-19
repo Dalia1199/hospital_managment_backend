@@ -68,14 +68,15 @@ export const generateMonthlySlots = async (req, res, next) => {
 
   const slots = [];
 
-  const startOfMonth = dayjs().startOf("month");
-  const endOfMonth = dayjs().endOf("month");
+const { startDate, endDate } = req.body;
+ const startOfRange = dayjs(startDate).startOf("day");
+const endOfRange = dayjs(endDate).endOf("day");
 
-  let currentDate = startOfMonth;
+  let currentDate = startOfRange;
 
   while (
-    currentDate.isBefore(endOfMonth) ||
-    currentDate.isSame(endOfMonth, "day")
+    currentDate.isBefore(endOfRange) ||
+    currentDate.isSame(endOfRange, "day")
   ) {
     const currentDay = currentDate.format("dddd").toLowerCase();
 
@@ -146,31 +147,11 @@ export const getAvailableSlots = async (req, res, next) => {
       })
       .sort({ startDateTime: 1 });
 
-    // group by day
-    const grouped = {};
-
-    slots.forEach((slot) => {
-      const dateKey = dayjs(slot.startDateTime).format("YYYY-MM-DD");
-
-      const time = dayjs(slot.startDateTime).format("HH:mm");
-
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = [];
-      }
-
-      grouped[dateKey].push(time);
-    });
-
-    const result = Object.keys(grouped).map((date) => ({
-      date,
-      slots: grouped[date],
-    }));
-
     return successresponse({
       res,
       status: 200,
       message: "available slots fetched successfully",
-      data: result,
+      data: slots,
     });
   } catch (error) {
     next(error);
@@ -316,10 +297,12 @@ export const cancelAppointment = async (req, res, next) => {
   try {
     const { appointmentId } = req.params;
 
-    const appointment = await appointmentsmodel.findById(appointmentId);
-
+    const appointment = await appointmentsmodel.findOne({
+        _id: appointmentId,
+        patientId: req.user._id,   // التاكد من ان ده ال appointment بتاعه
+    });
     if (!appointment) {
-      throw new Error("not found");
+          throw new Error("appointment not found or unauthorized", { cause: 404 });
     }
 
     appointment.status = "cancelled";
@@ -563,6 +546,8 @@ export const rescheduleAppointment = async (req, res, next) => {
       filter: { _id: appointmentId },
       update: {
         slotId: newSlotId,
+        startDateTime: newSlot.startDateTime,  // ← من الـ newSlot
+        endDateTime: newSlot.endDateTime,       // ← من الـ newSlot
       },
       options: { new: true },
     });
