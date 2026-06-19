@@ -14,15 +14,18 @@ export const getMyPrescriptions = async (req, res, next) => {
     filter: {
       patientId: req.user._id,
     },
-    populate: [
-      {
-        path: "doctorId",
-        select: "fullName email",
-      },
-      {
-        path: "medicalHistoryId",
-      },
-    ],
+    options: {
+      populate: [
+        {
+          path: "doctorId",
+          select: "fullName email",
+        },
+        {
+          path: "medicalHistoryId",
+        },
+      ],
+      lean: true
+    }
   });
 
   successresponse({
