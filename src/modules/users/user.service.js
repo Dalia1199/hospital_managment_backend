@@ -3,7 +3,7 @@ import { hash, compare } from "../../common/utilits/security/hash.js";
 import * as db_service from "../../DB/db.service.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
-import { providerenum } from "../../common/enum/user.enum.js";
+import { providerenum, roleenum } from "../../common/enum/user.enum.js";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -39,6 +39,7 @@ import { eventemitter } from "../../common/utilits/email/email.events.js";
 import { emailenum } from "../../common/enum/emailenum.js";
 import { emailtemplete } from "../../common/utilits/email/emai.templete.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import { notify } from "../notifications/notification.service.js";
 
 const sendemailotp = async ({ email, subject } = {}) => {
   const isblocked = await ttl(block_otp_key({ email }));
@@ -55,17 +56,17 @@ const sendemailotp = async ({ email, subject } = {}) => {
     );
   }
 
-if ((await get(max_otp_key({ email }))) >= 3) {
-  await setvalue({
-    key: block_otp_key({ email }),
-    value: 1,
-    ttl: 60 * 60 * 10,
-  });
+  if ((await get(max_otp_key({ email }))) >= 3) {
+    await setvalue({
+      key: block_otp_key({ email }),
+      value: 1,
+      ttl: 60 * 60 * 10,
+    });
 
-  await deleletekey(max_otp_key({ email }));
+    await deleletekey(max_otp_key({ email }));
 
-  throw new Error(`you exceed the maximmu number of trials`);
-}
+    throw new Error(`you exceed the maximmu number of trials`);
+  }
   const otp = await generateotp();
   eventemitter.emit(emailenum.confirmemail, async () => {
     await sendemail({
@@ -73,22 +74,22 @@ if ((await get(max_otp_key({ email }))) >= 3) {
       subject: "hello to Carehub app",
       html: emailtemplete(otp),
     });
-await setvalue({
-  key: otp_key({ email, subject }),
-  value: hash({ plain_text: `${otp}` }),
-  ttl: 60 * 2,
-});
+    await setvalue({
+      key: otp_key({ email, subject }),
+      value: hash({ plain_text: `${otp}` }),
+      ttl: 60 * 2,
+    });
 
-const key = max_otp_key({ email });
+    const key = max_otp_key({ email });
 
-const count = await incr(key);
+    const count = await incr(key);
 
-if (count === 1) {
-  await expire({
-    key,
-    ttl: 60 * 60, // ساعة
-  });
-}
+    if (count === 1) {
+      await expire({
+        key,
+        ttl: 60 * 60, // ساعة
+      });
+    }
   });
 };
 
@@ -127,33 +128,33 @@ export const confirmemail = async (req, res, next) => {
 export const resendotp = async (req, res, next) => {
 
 
-    const { email } = req.body;
+  const { email } = req.body;
 
-    // دور على اليوزر
-    const user = await db_service.findOne({
-        model: usermodel,
-        filter: {
-            email,
-            provider: providerenum.system,
-        }
-    });
-
-    if (!user) throw new Error("user not exist");
-
-    // لو مريض — لازم يكون لسه مش confirmed
-    if (user.role === "patient") {
-        if (user.confirmed) throw new Error("email already confirmed");
+  // دور على اليوزر
+  const user = await db_service.findOne({
+    model: usermodel,
+    filter: {
+      email,
+      provider: providerenum.system,
     }
+  });
 
-    // لو دكتور — لازم يكون اتعمله approve في الـ doctormodel
-if (user.role === "doctor") {
+  if (!user) throw new Error("user not exist");
+
+  // لو مريض — لازم يكون لسه مش confirmed
+  if (user.role === "patient") {
+    if (user.confirmed) throw new Error("email already confirmed");
+  }
+
+  // لو دكتور — لازم يكون اتعمله approve في الـ doctormodel
+  if (user.role === "doctor") {
     if (user.status !== "approved") {
-        throw new Error("doctor not approved yet");
+      throw new Error("doctor not approved yet");
     }
-}
+  }
 
-    await sendemailotp({ email, subject: emailenum.confirmemail });
-    successresponse({ res, message: "otp sent" });
+  await sendemailotp({ email, subject: emailenum.confirmemail });
+  successresponse({ res, message: "otp sent" });
 }
 export const refreshtoken = async (req, res, next) => {
   const { authorization } = req.headers;
@@ -205,9 +206,9 @@ export const resetPassword = async (req, res, next) => {
     throw new Error("user not exist or invalid provider", { cause: 400 });
   }
   await deleletekey(otp_key({ email, subject: emailenum.forgetPassword }));
- 
+
   /////to send email to user to inform them that their password has been reset successfully
-   eventemitter.emit(emailenum.confirmemail, async () => {
+  eventemitter.emit(emailenum.confirmemail, async () => {
     await sendemail({
       to: email,
       subject: "Password Reset Alert - CareHub",
@@ -216,7 +217,7 @@ export const resetPassword = async (req, res, next) => {
         <p>If you didn't do this, please contact support immediately.</p>
       `
     });
-  });  
+  });
 
   successresponse({ res, message: "success" });
 };
@@ -279,7 +280,7 @@ export const signin = async (req, res, next) => {
     filter: {
       email,
       provider: providerenum.system,
-    //confirmed: { $exists: true }, //COMMITED TO EASILY USED IN TEST
+      //confirmed: { $exists: true }, //COMMITED TO EASILY USED IN TEST
     },
   });
   if (!user) {
@@ -295,18 +296,18 @@ export const signin = async (req, res, next) => {
     );
   }
 
-  
+
   // لو patient لازم يكون confirmed
   if (user.role === "patient" && !user.confirmed) {
     throw new Error("please confirm your email first", { cause: 403 });
   }
 
   // لو doctor لازم يكون approved
-if (user.role === "doctor") {
+  if (user.role === "doctor") {
     if (user.status !== "approved") {
-        throw new Error("doctor not approved yet");
+      throw new Error("doctor not approved yet");
     }
-}
+  }
 
   const uuid = uuidv4();
   const access_token = generatetoken({
@@ -335,11 +336,12 @@ if (user.role === "doctor") {
     res,
     message: "success signin",
     data: {
-        access_token,
-        refreshtoken,   
-        role: user.role, 
-        id: user._id,
-        fullName: user.fullName, },
+      access_token,
+      refreshtoken,
+      role: user.role,
+      id: user._id,
+      fullName: user.fullName,
+    },
   });
 };
 
@@ -421,67 +423,73 @@ export const signup = async (req, res, next) => {
       },
     });
 
-        if (role === "doctor") {
-            await db_service.create({
-                model: doctormodel,
-                data: {
-                    userId: user._id,
-                    specialization: specialty,
-                    nationalId: nationalIdImage,
-                    experience,
-                    syncdicatedId: syndicateId,
-                    licenseimage: licenseImage
-                }
-            });
-        } else {
-            await db_service.create({
-                model: patientmodel,
-                data: {
-                    userId: user._id,
-                    age,
-                    gender,
-                    bloodType,
-                    address
-                }
-            });
+    if (role === "doctor") {
+      await db_service.create({
+        model: doctormodel,
+        data: {
+          userId: user._id,
+          specialization: specialty,
+          nationalId: nationalIdImage,
+          experience,
+          syncdicatedId: syndicateId,
+          licenseimage: licenseImage
         }
+      });
 
-        // بعت OTP للمريض فقط
-        if (role === "patient") {
-            const otp = await generateotp();
-            eventemitter.emit(emailenum.confirmemail, async () => {
-                await sendemail({
-                    to: email,
-                    subject: "welcome to carehub",
-                    html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
-                });
-                await setvalue({
-                    key: otp_key({ email, subject: emailenum.confirmemail }),
-                    value: hash({ plain_text: `${otp}` }),
-                    ttl: 60 * 2
-                });
-                await setvalue({
-                    key: max_otp_key({ email }),
-                    value: 1,
-                    ttl: 60 * 60
-                });
-            });
-        }
+      const admins = await usermodel.find({ role: roleenum.admin }).select("_id");
+      await Promise.all(
+        admins.map((admin) => notify.newDoctorRegistration(admin._id, user.fullName))
+      );
 
-        successresponse({
-            res,
-            status: 201,
-            message: "signup success",
-            data: user
-        });
-
-    } catch (error) {
-        if (licenseImage?.public_id) {
-            await cloudinary.uploader.destroy(licenseImage.public_id);
+    } else {
+      await db_service.create({
+        model: patientmodel,
+        data: {
+          userId: user._id,
+          age,
+          gender,
+          bloodType,
+          address
         }
-        if (nationalIdImage?.public_id) {
-            await cloudinary.uploader.destroy(nationalIdImage.public_id);
-        }
-        throw error;
+      });
     }
+
+    // بعت OTP للمريض فقط
+    if (role === "patient") {
+      const otp = await generateotp();
+      eventemitter.emit(emailenum.confirmemail, async () => {
+        await sendemail({
+          to: email,
+          subject: "welcome to carehub",
+          html: `<p>welcome to Carehub app your otp is: ${otp}</p>`
+        });
+        await setvalue({
+          key: otp_key({ email, subject: emailenum.confirmemail }),
+          value: hash({ plain_text: `${otp}` }),
+          ttl: 60 * 2
+        });
+        await setvalue({
+          key: max_otp_key({ email }),
+          value: 1,
+          ttl: 60 * 60
+        });
+      });
+    }
+
+    successresponse({
+      res,
+      status: 201,
+      message: "signup success",
+      data: user
+    });
+
+  } catch (error) {
+    if (licenseImage?.public_id) {
+      await cloudinary.uploader.destroy(licenseImage.public_id);
+    }
+    if (nationalIdImage?.public_id) {
+      await cloudinary.uploader.destroy(nationalIdImage.public_id);
+    }
+    throw error;
+  }
 };
