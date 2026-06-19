@@ -25,18 +25,25 @@ export function encrypt(text) {
 }
 
 export function decrypt(text) {
-    const [ivHex, encryptedText] = text.split(":");
+    try {
+        if (!text || !text.includes(":")) return text;
+        const [ivHex, encryptedText] = text.split(":");
+        if (!ivHex || !encryptedText) return text;
 
-    const iv = Buffer.from(ivHex, "hex");
+        const iv = Buffer.from(ivHex, "hex");
 
-    const decipher = crypto.createDecipheriv(
-        "aes-256-cbc",
-        encryption_key,
-        iv
-    );
+        const decipher = crypto.createDecipheriv(
+            "aes-256-cbc",
+            encryption_key,
+            iv
+        );
 
-    let decrypted = decipher.update(encryptedText, "hex", "utf8");
-    decrypted += decipher.final("utf8");
+        let decrypted = decipher.update(encryptedText, "hex", "utf8");
+        decrypted += decipher.final("utf8");
 
-    return decrypted;
+        return decrypted;
+    } catch (error) {
+        // If decryption fails, return the original text (fallback for legacy unencrypted data)
+        return text;
+    }
 }
