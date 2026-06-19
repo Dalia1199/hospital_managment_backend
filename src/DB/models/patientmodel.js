@@ -32,6 +32,11 @@ const patientSchema = new mongoose.Schema({
         default: [] 
     },
     pulse: { type: String, trim: true },
+     sharingSetting: {
+        type: String,
+        enum: ["all", "own_only", "otp"],
+        default: "all"
+    },
 });
 
 export default mongoose.model("patient", patientSchema);

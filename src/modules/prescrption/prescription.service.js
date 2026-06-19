@@ -3,6 +3,7 @@ import * as db_service from "../../DB/db.service.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js"; 
 import { successresponse } from "../../common/utilits/responce.success.js"
 import cloudinary from "../../common/utilits/cloudinary.js";
+import { checkDoctorAccess } from "../doctor/doctor.service.js";
 
 // Update the text fields of a prescription (diagnosis, medications list, and notes)
 export const updatePrescription = async (req, res, next) => {
@@ -183,9 +184,21 @@ export const getPatientPrescriptions = async (req, res, next) => {
             return res.status(403).json({ message: "not authorized to access this patient's prescriptions" });
         }
 
+        let filter = { patientId };
+
+        if (req.user.role === "doctor") {
+            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+            if (!hasAccess) {
+                return res.status(403).json({ message: "Access denied. Patient's medical history is protected." });
+            }
+            if (sharingSetting === "own_only") {
+                filter.doctorId = req.user._id;
+            }
+        }
+
         const prescriptions = await db_service.find({
             model: prescrptionmodel,
-            filter: { patientId },
+            filter,
             options: {
                 populate: [
                     { path: "doctorId", select: "userName email" },

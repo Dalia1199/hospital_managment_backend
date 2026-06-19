@@ -273,6 +273,12 @@ export const createSession = async (req, res, next) => {
                 throw new Error("Patient not found", { cause: 404 });
             }
 
+            const patientProfile = await db_service.findOne({
+                model: patientmodel,
+                filter: { userId: patientId }
+            });
+            const sharingSetting = patientProfile?.sharingSetting ?? "all";
+
             // Check for existing session
             const existingSession = await db_service.findOne({
                 model: sessionmodel,
@@ -285,23 +291,42 @@ export const createSession = async (req, res, next) => {
                 }
                 
                 if (existingSession.status === "pending_otp") {
-                    // Resend OTP logic
-                    const otp = generateotp().toString();
-                    existingSession.otp = otp;
-                    existingSession.validUntil = new Date(Date.now() + 10 * 60 * 1000);
-                    await existingSession.save();
+                    if (sharingSetting === "otp") {
+                        // Resend OTP logic
+                        const otp = generateotp().toString();
+                        existingSession.otp = otp;
+                        existingSession.validUntil = new Date(Date.now() + 10 * 60 * 1000);
+                        await existingSession.save();
 
-                    return successresponse({
-                        res,
-                        message: "OTP resent successfully",
-                        data: { session: existingSession, temp_otp: otp }
-                    });
+                        return successresponse({
+                            res,
+                            message: "OTP resent successfully",
+                            data: { session: existingSession, temp_otp: otp }
+                        });
+                    }
                 }
                 
-                // If existing session is completed or expired in_progress, we can delete it or proceed to create a new one.
-                // We'll proceed to create a new one below if it's not pending or valid in_progress.
-                // Actually, let's delete the old one to keep the DB clean
+                // If it was pending_otp but sharingSetting is now all/own_only, or if it is completed/expired,
+                // delete it and create a fresh one.
                 await sessionmodel.findByIdAndDelete(existingSession._id);
+            }
+
+            if (sharingSetting === "all" || sharingSetting === "own_only") {
+                const session = await db_service.create({
+                    model: sessionmodel,
+                    data: {
+                        doctorId,
+                        patientId,
+                        otp: "AUTO",
+                        status: "in_progress",
+                        validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                    }
+                });
+                return successresponse({
+                    res,
+                    message: "Session activated successfully without OTP due to privacy setting",
+                    data: session
+                });
             }
             
             const otp = generateotp().toString();
@@ -379,6 +404,11 @@ export const updatePatientAlerts = async (req, res, next) => {
     try {
         const { patientId } = req.params;
         const { allergies, chronic, surgeries } = req.body;
+
+        const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
+        if (!hasAccess) {
+            throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+        }
 
         const patient = await patientmodel.findOne({ userId: patientId });
         if (!patient) {
@@ -672,7 +702,14 @@ export const getMedicationHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
+            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+            if (!hasAccess) {
+                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+            }
             filter.patientId = patientId;
+            if (sharingSetting === "own_only") {
+                filter.doctorId = req.user._id;
+            }
         }
 
         const prescriptions = await db_service.find({
@@ -763,7 +800,14 @@ export const getPatientMedicalHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
+            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+            if (!hasAccess) {
+                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+            }
             filter.patientId = patientId;
+            if (sharingSetting === "own_only") {
+                filter.doctorId = req.user._id;
+            }
         }
 
         if (search) {
@@ -1139,4 +1183,36 @@ export const getReportsAnalytics = async (req, res, next) => {
         console.error("ANALYTICS 500 ERROR:", error);
         next(error);
     }
+};
+
+export const checkDoctorAccess = async (doctorId, patientUserId) => {
+    // 1. Get the patient's privacy setting
+    const patientProfile = await db_service.findOne({
+        model: patientmodel,
+        filter: { userId: patientUserId }
+    });
+    
+    const sharingSetting = patientProfile?.sharingSetting ?? "all";
+    
+    // 2. Evaluate access based on setting
+    if (sharingSetting === "all" || sharingSetting === "own_only") {
+        return { hasAccess: true, sharingSetting };
+    }
+    
+    // 3. For "otp", verify there is an active session
+    const activeSession = await db_service.findOne({
+        model: sessionmodel,
+        filter: {
+            doctorId,
+            patientId: patientUserId,
+            status: "in_progress",
+            validUntil: { $gt: new Date() }
+        }
+    });
+    
+    if (activeSession) {
+        return { hasAccess: true, sharingSetting };
+    }
+    
+    return { hasAccess: false, sharingSetting };
 };
