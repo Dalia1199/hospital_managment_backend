@@ -56,7 +56,7 @@ export const getMedicalHistory = async (req, res, next) => {
         }
 
         const history = await medicalhistorymodel
-            .findOne(filter)
+            .find(filter)
             .populate("answers")
             .populate("doctorId")
             .populate("prescriptions");
