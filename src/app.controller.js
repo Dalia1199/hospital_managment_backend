@@ -29,7 +29,7 @@ const bootstrap = () => {
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
 
-    checkConnectionDB();
+    // DB connection is now awaited in index.js before starting the server
     connectionredis();
 
     app.get("/", (req, res, next) => {
