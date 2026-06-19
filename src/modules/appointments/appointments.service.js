@@ -1,6 +1,6 @@
 import appointsmentmodel from "../../DB/models/appointments_model.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
-import { notify } from "../notifications/notification.controller.js";
+import { notify } from "../notifications/notification.service.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 
 import * as db_service from "../../DB/db.service.js";
