@@ -60,6 +60,20 @@ patientrouter.get(
 //     multer_host(multerenum.image).single("image"),
 //     PS.updateProfileImage
 // )
-export default patientrouter
 
+patientrouter.post(
+    "/tracking",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.addTrackingRecord
+)
+
+patientrouter.get(
+    "/tracking",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.getTrackingRecords
+)
+
+export default patientrouter
  
