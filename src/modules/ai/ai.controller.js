@@ -445,29 +445,78 @@ export const getDifferentialDiagnosis = async (req, res, next) => {
 
 export const patientChatbot = async (req, res, next) => {
     try {
-        const { message } = req.body;
+        const { message, chatHistory = [] } = req.body;
+        const userId = req.user._id;
 
         if (!message) {
             throw new Error("Message is required", { cause: 400 });
         }
 
-        // Step 1: Extract filters using AI
+        // --- 1. Fetch Patient Vitals & Info ---
+        const patientProfile = await patientmodel.findOne({ userId }).lean();
+        const userProfile = await usermodel.findById(userId).lean();
+        
+        const patientName = userProfile?.fullName || "Patient";
+        const patientGender = patientProfile?.gender || "Unknown";
+
+        let vitalsText = "No personal vitals available.";
+        if (patientProfile) {
+            vitalsText = `
+                Blood Type: ${patientProfile.bloodType || "Unknown"}
+                Height: ${patientProfile.height || "Unknown"}
+                Weight: ${patientProfile.weight || "Unknown"}
+                Pulse: ${patientProfile.pulse || "Unknown"}
+                Allergies: ${patientProfile.allergies?.join(", ") || "None"}
+                Chronic Diseases: ${patientProfile.chronic?.join(", ") || "None"}
+            `;
+        }
+
+        // --- 2. Step 1: Extract filters using AI ---
         const extractionPrompt = `
-            Extract the requested doctor specialty and location from the following user message.
-            Return ONLY a valid JSON object with keys "specialty" and "address". 
-            If a field is not mentioned, leave it empty string "". Do not include markdown code blocks.
+            Analyze the following user message.
+            Extract the requested doctor "specialty", location "address", and a broad "medicalCategory" (e.g., Orthopedics, Cardiology, General, Dermatology).
+            Return ONLY a valid JSON object with keys "specialty", "address", and "medicalCategory". 
+            If a field is not mentioned or cannot be inferred, leave it empty string "". Do not include markdown code blocks.
             Message: "${message}"
         `;
         
         const extractedText = await generateResponse(extractionPrompt, "You are a JSON parser. Output only JSON.");
-        let filters = { specialty: "", address: "" };
+        let filters = { specialty: "", address: "", medicalCategory: "" };
         try {
             filters = JSON.parse(extractedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim());
         } catch (e) {
             console.error("AI JSON Parse Error:", e);
         }
 
-        // Step 2: Query DB
+        // --- 3. Medical History Retrieval ---
+        let historyText = "No previous medical history found.";
+        if (patientProfile) {
+            const allHistory = await medicalhistorymodel.find({ patientId: patientProfile._id }).sort({ createdAt: -1 }).lean();
+            
+            let relevantHistory = [];
+            if (filters.medicalCategory && allHistory.length > 0) {
+                // Filter by keywords in diagnosis or notes matching the category
+                relevantHistory = allHistory.filter(enc => {
+                    const searchStr = `${enc.diagnosis || ""} ${enc.notes || ""}`.toLowerCase();
+                    return searchStr.includes(filters.medicalCategory.toLowerCase());
+                });
+            }
+
+            // Fallback to last 5 if no specific matches
+            if (relevantHistory.length === 0) {
+                relevantHistory = allHistory.slice(0, 5);
+            }
+
+            if (relevantHistory.length > 0) {
+                historyText = relevantHistory.map((enc, idx) => `
+                    [Visit ${idx + 1}] Date: ${new Date(enc.createdAt).toLocaleDateString()}
+                    Diagnosis: ${enc.diagnosis || "N/A"}
+                    Notes/Treatment: ${enc.notes || enc.prescriptionText || "N/A"}
+                `).join("\n");
+            }
+        }
+
+        // --- 4. Query Doctors DB ---
         const matchQuery = {};
         if (filters.specialty) {
             matchQuery.specialization = { $regex: filters.specialty, $options: "i" };
@@ -490,23 +539,37 @@ export const patientChatbot = async (req, res, next) => {
             return true;
         }).slice(0, 5); // Limit to top 5 matches
 
-        // Step 3: Formulate final response
+        // --- 5. Formulate final response ---
         const doctorsContext = availableDoctors.map(doc => 
             `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}`
         ).join("\n");
 
         const finalSystemPrompt = `
-            You are a polite, helpful patient assistant chatbot for CareHub.
-            A patient asked: "${message}"
+            You are a polite, highly skilled Medical AI Assistant for CareHub assisting a patient.
+            The patient's name is "${patientName}" and their gender is "${patientGender}".
             
-            We searched our database and found these doctors:
+            --- PATIENT CONTEXT ---
+            Vitals & Profile:
+            ${vitalsText}
+            
+            Relevant Medical History:
+            ${historyText}
+            -----------------------
+            
+            We searched our database and found these doctors that might help:
             ${doctorsContext || "No doctors found matching the criteria."}
             
-            Write a friendly, empathetic response in Arabic suggesting these doctors to the patient. 
-            If no doctors were found, politely ask them to modify their search.
+            A patient asked: "${message}"
+
+            INSTRUCTIONS:
+            1. Respond in a friendly, empathetic tone in Arabic. Address the patient directly by their name.
+            2. Answer their question or address their symptoms using their Vitals, Medical History, and Chat History context.
+            3. Provide general health advice relevant to their situation.
+            4. Suggest the doctors from the list above if they need an in-person visit.
+            5. CRITICAL RULE: You MUST conclude your response by explicitly advising the patient to consult a specialized doctor for a final diagnosis. (يجب استشارة طبيب متخصص).
         `;
 
-        const finalResponse = await generateResponse("Respond to the patient based on the search results.", finalSystemPrompt);
+        const finalResponse = await generateResponse("Respond to the patient.", finalSystemPrompt, chatHistory);
 
         return successresponse({
             res,
