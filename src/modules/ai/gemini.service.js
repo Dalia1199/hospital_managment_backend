@@ -15,14 +15,28 @@ function getGenAI() {
     return genAI;
 }
 
-export async function generateResponse(prompt, systemInstruction = "", history = [], retryCount = 0) {
+const FALLBACK_MODELS = [
+    "gemini-3.1-flash-lite", 
+    "gemini-2.5-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-flash"
+];
+
+export async function generateResponse(prompt, systemInstruction = "", history = [], modelIndex = 0) {
     const ai = getGenAI();
     if (!ai) throw new Error("AI Service is not configured. Missing API Key.");
 
-    const MAX_RETRIES = 3;
+    if (modelIndex >= FALLBACK_MODELS.length) {
+        throw new Error("All AI models have exhausted their quotas or are currently unavailable.");
+    }
+
+    const currentModelName = FALLBACK_MODELS[modelIndex];
+
     try {
         const model = ai.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: currentModelName,
             ...(systemInstruction ? { systemInstruction: { role: "system", parts: [{ text: systemInstruction }] } } : {})
         });
 
@@ -55,13 +69,15 @@ export async function generateResponse(prompt, systemInstruction = "", history =
         return response.text();
 
     } catch (error) {
-        if ((error?.message?.includes("429") || error?.message?.includes("503")) && retryCount < MAX_RETRIES) {
-            const waitTime = Math.pow(2, retryCount) * 2000;
-            console.log(`AI is busy. Waiting ${waitTime/1000}s...`);
-            await sleep(waitTime);
-            return generateResponse(prompt, systemInstruction, history, retryCount + 1);
+        const errorMsg = error?.message?.toLowerCase() || "";
+        
+        if (errorMsg.includes("429") || errorMsg.includes("404") || errorMsg.includes("503") || errorMsg.includes("not found")) {
+            console.warn(`⚠️ Model ${currentModelName} failed (${errorMsg.includes("429") ? "Quota Limit" : "Unavailable"}). Switching to next model...`);
+            if (errorMsg.includes("503")) await sleep(1500); // Small delay for 503 overloads
+            return generateResponse(prompt, systemInstruction, history, modelIndex + 1);
         }
-        console.error("Gemini API Error:", error.message || error);
+
+        console.error(`Gemini API Error on ${currentModelName}:`, error.message || error);
         throw error;
     }
 }
