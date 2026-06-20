@@ -1,5 +1,5 @@
 import { generateResponse } from "./gemini.service.js";
-import { processAndStoreDocument, queryVectorStore, getKnowledgeBaseInfo, deleteDocumentFromVectorStore, clearVectorStore } from "./vector.service.js";
+import { processAndStoreDocument, queryVectorStore, getKnowledgeBaseInfo, deleteDocumentFromVectorStore, clearVectorStore, createDatabase, setActiveDatabase } from "./vector.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import doctormodel from "../../DB/models/doctormodel.js";
@@ -64,14 +64,25 @@ export const clearKnowledgeBase = async (req, res, next) => {
     }
 };
 
-export const updateKnowledgeBaseSettings = async (req, res, next) => {
+export const createDatabaseController = async (req, res, next) => {
     try {
         const doctorId = req.user._id.toString();
-        const { vectorDbPath } = req.body;
+        const { dbName } = req.body;
         
-        await doctormodel.findOneAndUpdate({ userId: doctorId }, { vectorDbPath });
+        const result = await createDatabase(doctorId, dbName);
+        return successresponse({ res, status: 201, message: "Database created successfully", data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const setActiveDatabaseController = async (req, res, next) => {
+    try {
+        const doctorId = req.user._id.toString();
+        const { dbName } = req.body;
         
-        return successresponse({ res, status: 200, message: "Settings updated successfully" });
+        const result = await setActiveDatabase(doctorId, dbName);
+        return successresponse({ res, status: 200, message: "Active database switched successfully", data: result });
     } catch (error) {
         next(error);
     }
@@ -173,7 +184,9 @@ ${finalEncounters.map((enc, idx) => `[Encounter ${idx + 1} - ${new Date(enc.crea
         }
 
         // Get context from Vector DB
-        const medicalContext = await queryVectorStore(doctorId, symptoms);
+        const medicalContext = await queryVectorStore(doctorId, symptoms, 5); // Fetch top 5 chunks
+        const kbInfo = await getKnowledgeBaseInfo(doctorId);
+        const uploadedFilesList = kbInfo.files.length > 0 ? kbInfo.files.join(", ") : "None";
 
         const systemInstruction = `
             You are a Clinical Assistant helping a doctor (your colleague). 
@@ -181,10 +194,16 @@ ${finalEncounters.map((enc, idx) => `[Encounter ${idx + 1} - ${new Date(enc.crea
             
             ${patientContextText}
             
-            If the KNOWLEDGE BASE below contains an answer, you MUST prioritize it.
+            --- CURRENT KNOWLEDGE BASE METADATA ---
+            Active Database: ${kbInfo.activeDb || "None"}
+            Uploaded Files in Database: ${uploadedFilesList}
+            ---------------------------------------
+            If the doctor asks what files are uploaded or requests a summary of the data, use the metadata above.
             
-            KNOWLEDGE BASE:
-            ${medicalContext || "No specific protocols found in database."}
+            If the KNOWLEDGE BASE EXTRACTS below contain an answer, you MUST prioritize it.
+            
+            KNOWLEDGE BASE EXTRACTS:
+            ${medicalContext || "No specific text matches found in database for this exact query."}
         `;
 
         const response = await generateResponse(`User Query: ${symptoms}`, systemInstruction);

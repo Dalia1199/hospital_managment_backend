@@ -14,11 +14,65 @@ fs.ensureDirSync(VECTOR_DIR);
 
 export async function getVectorStorePath(doctorId) {
     const doc = await doctormodel.findOne({ userId: doctorId });
-    if (doc && doc.vectorDbPath) {
-        fs.ensureDirSync(doc.vectorDbPath);
-        return path.join(doc.vectorDbPath, `${doctorId}.json`);
+    const activeDbName = doc?.activeVectorDbName || "Default_DB";
+    const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
+    fs.ensureDirSync(userVectorDir);
+    return path.join(userVectorDir, `${activeDbName}.json`);
+}
+
+export async function getDatabasesList(doctorId) {
+    const doc = await doctormodel.findOne({ userId: doctorId });
+    const activeDbName = doc?.activeVectorDbName || "Default_DB";
+    
+    const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
+    fs.ensureDirSync(userVectorDir);
+    
+    const activeDbPath = path.join(userVectorDir, `${activeDbName}.json`);
+    if (!(await fs.pathExists(activeDbPath))) {
+        await fs.writeJson(activeDbPath, []);
     }
-    return path.join(VECTOR_DIR, `${doctorId}.json`);
+
+    const files = await fs.readdir(userVectorDir);
+    const databases = files
+        .filter(f => f.endsWith('.json'))
+        .map(f => f.replace('.json', ''));
+    
+    return {
+        activeDb: activeDbName,
+        databases: databases
+    };
+}
+
+export async function createDatabase(doctorId, dbName) {
+    if (!dbName || typeof dbName !== 'string') throw new Error("Invalid database name");
+    const safeDbName = dbName.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!safeDbName) throw new Error("Invalid database name format");
+    
+    const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
+    fs.ensureDirSync(userVectorDir);
+    const newDbPath = path.join(userVectorDir, `${safeDbName}.json`);
+    
+    if (!(await fs.pathExists(newDbPath))) {
+        await fs.writeJson(newDbPath, []);
+    }
+    
+    await doctormodel.findOneAndUpdate({ userId: doctorId }, { activeVectorDbName: safeDbName });
+    return { success: true, dbName: safeDbName };
+}
+
+export async function setActiveDatabase(doctorId, dbName) {
+    if (!dbName || typeof dbName !== 'string') throw new Error("Invalid database name");
+    const safeDbName = dbName.replace(/[^a-zA-Z0-9_-]/g, "");
+    
+    const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
+    const targetDbPath = path.join(userVectorDir, `${safeDbName}.json`);
+    
+    if (!(await fs.pathExists(targetDbPath))) {
+        throw new Error("Database not found");
+    }
+    
+    await doctormodel.findOneAndUpdate({ userId: doctorId }, { activeVectorDbName: safeDbName });
+    return { success: true, activeDb: safeDbName };
 }
 
 function cosineSimilarity(vecA, vecB) {
@@ -124,7 +178,7 @@ export async function queryVectorStore(doctorId, query, topK = 3) {
 
     let context = "";
     topResults.forEach(res => {
-        if (res.score > 0.6) { // Only include somewhat relevant context
+        if (res.score > 0.25) { // Lower threshold to allow meta-queries to match some content
             context += `[From: ${res.fileName}]\n${res.text}\n\n`;
         }
     });
@@ -134,10 +188,11 @@ export async function queryVectorStore(doctorId, query, topK = 3) {
 
 export async function getKnowledgeBaseInfo(doctorId) {
     try {
+        const { activeDb, databases } = await getDatabasesList(doctorId);
         const vectorStorePath = await getVectorStorePath(doctorId);
         
         if (!(await fs.pathExists(vectorStorePath))) {
-            return { files: [], sizeMB: "0.00", path: vectorStorePath };
+            return { files: [], sizeMB: "0.00", activeDb, databases };
         }
 
         let store = [];
@@ -159,7 +214,8 @@ export async function getKnowledgeBaseInfo(doctorId) {
         return {
             files: fileNames,
             sizeMB,
-            path: vectorStorePath
+            activeDb,
+            databases
         };
     } catch (err) {
         await fs.appendFile("kb_error.txt", new Date().toISOString() + " - " + (err.stack || err.message) + "\n");

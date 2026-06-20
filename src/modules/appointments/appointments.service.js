@@ -54,6 +54,24 @@ export const addAvailability = async (req, res, next) => {
 
 //done
 
+export const getAvailability = async (req, res, next) => {
+  const availabilities = await db_service.find({
+    model: availabilitymodel,
+    filter: {
+      doctorId: req.user._id,
+    },
+  });
+
+  successresponse({
+    res,
+    status: 200,
+    message: "availabilities fetched successfully",
+    data: availabilities,
+  });
+};
+
+//done
+
 export const generateMonthlySlots = async (req, res, next) => {
   const doctorId = req.user._id;
 
@@ -146,31 +164,11 @@ export const getAvailableSlots = async (req, res, next) => {
       })
       .sort({ startDateTime: 1 });
 
-    // group by day
-    const grouped = {};
-
-    slots.forEach((slot) => {
-      const dateKey = dayjs(slot.startDateTime).format("YYYY-MM-DD");
-
-      const time = dayjs(slot.startDateTime).format("HH:mm");
-
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = [];
-      }
-
-      grouped[dateKey].push(time);
-    });
-
-    const result = Object.keys(grouped).map((date) => ({
-      date,
-      slots: grouped[date],
-    }));
-
     return successresponse({
       res,
       status: 200,
       message: "available slots fetched successfully",
-      data: result,
+      data: slots,
     });
   } catch (error) {
     next(error);
