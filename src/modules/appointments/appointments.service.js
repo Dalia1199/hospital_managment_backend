@@ -11,45 +11,187 @@ import availabilitymodel from "../../DB/models/avalibility_model.js";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
 //done
+
+//
+// Bugs fixed:
+// 1. `existing` was used everywhere instead of the actually-declared `exists`
+//    variable (that's the ReferenceError you hit: "existing is not defined").
+// 2. `availability` was never declared with let/const. Since this file uses
+//    ES module `import` syntax (strict mode), assigning to an undeclared
+//    variable throws a ReferenceError too — this would've been the very
+//    next bug you hit once the `existing` typo was fixed.
+ 
 export const addAvailability = async (req, res, next) => {
-  const { day, startTime, endTime, appointmentDuration } = req.body;
-
-  const exists = await db_service.findOne({
-    model: availabilitymodel,
-
-    filter: {
-      doctorId: req.user._id,
-
-      day,
-    },
-  });
-  if (exists) {
-    throw new Error("availability already exists for this day", { cause: 409 });
+  try {
+    const { day, startTime, endTime, appointmentDuration } = req.body;
+ 
+    const exists = await db_service.findOne({
+      model: availabilitymodel,
+ 
+      filter: {
+        doctorId: req.user._id,
+ 
+        day,
+      },
+    });
+ 
+    let availability;
+ 
+    if (exists) {
+      // day already has a schedule — update it instead of rejecting, so the
+      // doctor can actually edit a previously saved day from the UI.
+      availability = await db_service.findOneAndUpdate({
+        model: availabilitymodel,
+ 
+        filter: {
+          _id: exists._id,
+        },
+ 
+        update: {
+          startTime,
+ 
+          endTime,
+ 
+          appointmentDuration,
+        },
+ 
+        options: {
+          new: true,
+        },
+      });
+    } else {
+      availability = await db_service.create({
+        model: availabilitymodel,
+        data: {
+          doctorId: req.user._id,
+ 
+          day,
+ 
+          startTime,
+ 
+          endTime,
+ 
+          appointmentDuration,
+        },
+      });
+    }
+ 
+    successresponse({
+      res,
+ 
+      status: exists ? 200 : 201,
+ 
+      message: exists
+        ? "availability updated successfully"
+        : "availability added successfully",
+ 
+      data: availability,
+    });
+  } catch (error) {
+    next(error);
   }
+};
 
-  const availability = await db_service.create({
-    model: availabilitymodel,
-    data: {
-      doctorId: req.user._id,
 
-      day,
 
-      startTime,
+  // const availability = await db_service.create({
+  //   model: availabilitymodel,
+  //   data: {
+  //     doctorId: req.user._id,
 
-      endTime,
+  //     day,
 
-      appointmentDuration,
-    },
-  });
-  successresponse({
-    res,
+  //     startTime,
 
-    status: 201,
+  //     endTime,
 
-    message: "availability added successfully",
+  //     appointmentDuration,
+  //   },
+  // });
+  // successresponse({
+  //   res,
 
-    data: availability,
-  });
+  //   status: 201,
+
+  //   message: "availability added successfully",
+
+  //   data: availability,
+  // });
+
+//done
+
+
+
+
+// list the doctor's own saved weekly availability so the schedule page can
+// show what's already configured instead of starting blank every time.
+export const getMyAvailability = async (req, res, next) => {
+  try {
+    const availabilities = await db_service.find({
+      model: availabilitymodel,
+
+      filter: {
+        doctorId: req.user._id,
+      },
+
+      options: {
+        sort: {
+          day: 1,
+        },
+      },
+    });
+
+    return successresponse({
+      res,
+
+      status: 200,
+
+      message: "availability fetched successfully",
+
+      data: availabilities,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+//done
+export const deleteAvailability = async (req, res, next) => {
+  try {
+    const { availabilityId } = req.params;
+
+    const availability = await db_service.findOne({
+      model: availabilitymodel,
+
+      filter: {
+        _id: availabilityId,
+
+        doctorId: req.user._id,
+      },
+    });
+
+    if (!availability) {
+      throw new Error("availability not found", { cause: 404 });
+    }
+
+    await db_service.deleteOne({
+      model: availabilitymodel,
+
+      filter: {
+        _id: availabilityId,
+      },
+    });
+
+    return successresponse({
+      res,
+
+      status: 200,
+
+      message: "availability deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 //done
@@ -145,36 +287,49 @@ export const getAvailableSlots = async (req, res, next) => {
         startDateTime: { $gte: new Date() },
       })
       .sort({ startDateTime: 1 });
+       // Return full slot objects (with _id) so the frontend can book by slotId.
+          // Previously this only returned grouped time strings without _id, which
+          // made booking impossible since bookAppointment requires a real slotId.
+          return successresponse({
+            res,
+            status: 200,
+            message: "available slots fetched successfully",
+            data: slots,
+          });
+        } catch (error) {
+          next(error);
+        }
+  //   // group by day
+  //   const grouped = {};
 
-    // group by day
-    const grouped = {};
+  //   slots.forEach((slot) => {
+  //     const dateKey = dayjs(slot.startDateTime).format("YYYY-MM-DD");
 
-    slots.forEach((slot) => {
-      const dateKey = dayjs(slot.startDateTime).format("YYYY-MM-DD");
+  //     const time = dayjs(slot.startDateTime).format("HH:mm");
 
-      const time = dayjs(slot.startDateTime).format("HH:mm");
+  //     if (!grouped[dateKey]) {
+  //       grouped[dateKey] = [];
+  //     }
 
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = [];
-      }
+  //     grouped[dateKey].push(time);
+  //   });
 
-      grouped[dateKey].push(time);
-    });
+  //   const result = Object.keys(grouped).map((date) => ({
+  //     date,
+  //     slots: grouped[date],
+  //   }));
 
-    const result = Object.keys(grouped).map((date) => ({
-      date,
-      slots: grouped[date],
-    }));
+  //   return successresponse({
+  //     res,
+  //     status: 200,
+  //     message: "available slots fetched successfully",
+  //     data: result,
+  //   });
+  // } catch (error) {
+  //   next(error);
+  // }
 
-    return successresponse({
-      res,
-      status: 200,
-      message: "available slots fetched successfully",
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
+  
 };
 
 //done

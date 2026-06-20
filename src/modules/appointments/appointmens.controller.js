@@ -55,6 +55,30 @@ appointmensrouter.get(
     AS.getAvailableSlots
 
 );
+appointmensrouter.get(
+
+    "/availability",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    AS.getMyAvailability
+
+);
+//done
+// delete a saved day's availability (new)
+appointmensrouter.delete(
+
+    "/availability/:availabilityId",
+
+    authentication,
+
+    authorization([roleenum.doctor]),
+
+    AS.deleteAvailability
+
+);
 //done
 
 appointmensrouter.post(
@@ -144,6 +168,10 @@ appointmensrouter.delete(
     AS.deleteSlot
 
 );
+
+//d
+
+
 //done
 appointmensrouter.patch(
 
