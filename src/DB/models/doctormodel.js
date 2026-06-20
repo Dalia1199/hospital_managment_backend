@@ -28,7 +28,7 @@ const doctorSchema = new mongoose.Schema({
      maxlength:200,
       minlength:20,
    },
-   vectorDbPath: String,
+   activeVectorDbName: { type: String, default: "Default_DB" },
 });
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC
