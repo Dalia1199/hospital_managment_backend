@@ -22,27 +22,24 @@ export async function generateResponse(prompt, systemInstruction = "", history =
     const MAX_RETRIES = 3;
     try {
         const model = ai.getGenerativeModel({ 
-            model: "gemini-2.5-flash" 
+            model: "gemini-2.5-flash",
+            ...(systemInstruction ? { systemInstruction: { role: "system", parts: [{ text: systemInstruction }] } } : {})
         });
 
-        const contents = [];
-        if (systemInstruction) {
-            contents.push({ role: 'user', parts: [{ text: systemInstruction }] });
-            contents.push({ role: 'model', parts: [{ text: "Understood. I will follow these instructions." }] });
+        let formattedHistory = Array.isArray(history) ? history.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content || "" }]
+        })) : [];
+
+        // Gemini API strictly requires the conversation history to start with a 'user' role.
+        // If the frontend sends a welcome message as the first item ('model'), we must drop it.
+        while (formattedHistory.length > 0 && formattedHistory[0].role === 'model') {
+            formattedHistory.shift();
         }
 
-        if (Array.isArray(history) && history.length > 0) {
-            history.forEach(msg => {
-                contents.push({ 
-                    role: msg.role === 'user' ? 'user' : 'model', 
-                    parts: [{ text: msg.content || "" }] 
-                });
-            });
-        }
-
-        contents.push({ role: 'user', parts: [{ text: prompt }] });
-
-        const result = await model.generateContent({ contents });
+        const chat = model.startChat({ history: formattedHistory });
+        const result = await chat.sendMessage([{ text: prompt }]);
+        
         const response = await result.response;
         return response.text();
 
