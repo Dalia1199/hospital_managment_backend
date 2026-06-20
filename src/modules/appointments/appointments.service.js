@@ -54,6 +54,24 @@ export const addAvailability = async (req, res, next) => {
 
 //done
 
+export const getAvailability = async (req, res, next) => {
+  const availabilities = await db_service.find({
+    model: availabilitymodel,
+    filter: {
+      doctorId: req.user._id,
+    },
+  });
+
+  successresponse({
+    res,
+    status: 200,
+    message: "availabilities fetched successfully",
+    data: availabilities,
+  });
+};
+
+//done
+
 export const generateMonthlySlots = async (req, res, next) => {
   const doctorId = req.user._id;
 
