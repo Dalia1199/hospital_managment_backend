@@ -1,4 +1,3 @@
-
 export const create = async ({ model, data } = {}) => {
     return await model.create(data);
 };
@@ -8,6 +7,7 @@ export const findOne = async ({ model, filter = {}, options = {} } = {}) => {
 
     if (options.populate) query = query.populate(options.populate);
     if (options.select) query = query.select(options.select);
+    if (options.lean) query = query.lean();
 
     return await query.exec();
 };
@@ -20,6 +20,7 @@ export const find = async ({ model, filter = {}, options = {} } = {}) => {
     if (options.skip) query = query.skip(options.skip);
     if (options.limit) query = query.limit(options.limit);
     if (options.sort) query = query.sort(options.sort);
+    if (options.lean) query = query.lean();
 
     return await query.exec();
 };
@@ -58,6 +59,10 @@ export const findById = async ({ model, id, options = {} } = {}) => {
 
     if (options.populate) {
         query = query.populate(options.populate);
+    }
+
+    if (options.lean) {
+        query = query.lean();
     }
 
     return  query.exec();

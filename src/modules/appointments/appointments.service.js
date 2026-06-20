@@ -1,6 +1,6 @@
 import appointsmentmodel from "../../DB/models/appointments_model.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
-import { notify } from "../notifications/notification.controller.js";
+import { notify } from "../notifications/notification.service.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 
 import * as db_service from "../../DB/db.service.js";
@@ -49,6 +49,24 @@ export const addAvailability = async (req, res, next) => {
     message: "availability added successfully",
 
     data: availability,
+  });
+};
+
+//done
+
+export const getAvailability = async (req, res, next) => {
+  const availabilities = await db_service.find({
+    model: availabilitymodel,
+    filter: {
+      doctorId: req.user._id,
+    },
+  });
+
+  successresponse({
+    res,
+    status: 200,
+    message: "availabilities fetched successfully",
+    data: availabilities,
   });
 };
 

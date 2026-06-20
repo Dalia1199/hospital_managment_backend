@@ -7,6 +7,7 @@ import usermodel from "../../DB/models/usermodel.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import prescriptionmodel from "../../DB/models/prescriptionmodel.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
+import healthtrackingmodel from "../../DB/models/healthtrackingmodel.js";
 
 export const getMyPrescriptions = async (req, res, next) => {
   const prescriptions = await db_service.find({
@@ -14,15 +15,18 @@ export const getMyPrescriptions = async (req, res, next) => {
     filter: {
       patientId: req.user._id,
     },
-    populate: [
-      {
-        path: "doctorId",
-        select: "fullName email",
-      },
-      {
-        path: "medicalHistoryId",
-      },
-    ],
+    options: {
+      populate: [
+        {
+          path: "doctorId",
+          select: "fullName email",
+        },
+        {
+          path: "medicalHistoryId",
+        },
+      ],
+      lean: true
+    }
   });
 
   successresponse({
@@ -469,3 +473,41 @@ export const deleteProfileImage = async (req, res, next) => {
     next(error);
   }
 };
+
+// ─── HEALTH TRACKING ─────────────────────────────────────────────────────────
+
+export const addTrackingRecord = async (req, res, next) => {
+  try {
+    const patient = await db_service.findOne({
+      model: patientmodel,
+      filter: { userId: req.user._id },
+    });
+    if (!patient) throw new Error("Patient not found", { cause: 404 });
+
+    const newRecord = await healthtrackingmodel.create({
+      patientId: patient._id,
+      ...req.body
+    });
+
+    return successresponse({ res, message: "Tracking record added successfully", data: newRecord });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTrackingRecords = async (req, res, next) => {
+  try {
+    const patient = await db_service.findOne({
+      model: patientmodel,
+      filter: { userId: req.user._id },
+    });
+    if (!patient) throw new Error("Patient not found", { cause: 404 });
+
+    const records = await healthtrackingmodel.find({ patientId: patient._id }).sort({ date: -1 });
+
+    return successresponse({ res, data: records });
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -8,6 +8,13 @@ import { validation } from "../../common/middleware/validation.js";
 const appointmensrouter = Router();
 //done
 
+appointmensrouter.get(
+    "/availability",
+    authentication,
+    authorization([roleenum.doctor]),
+    AS.getAvailability
+);
+
 appointmensrouter.patch(
 
     "/availability",

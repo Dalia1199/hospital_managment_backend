@@ -14,6 +14,8 @@ import patientrouter from "./modules/patient/patient.controller.js";
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 import appointmensrouter from "./modules/appointments/appointmens.controller.js";
 import notificationrouter from "./modules/notifications/notification.controller.js";
+import airouter from "./modules/ai/ai.routes.js";
+import drugsrouter from "./modules/drugs/drugs.routes.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -29,7 +31,7 @@ const bootstrap = () => {
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
 
-    checkConnectionDB();
+    // DB connection is now awaited in index.js before starting the server
     connectionredis();
 
     app.get("/", (req, res, next) => {
@@ -46,6 +48,8 @@ const bootstrap = () => {
     app.use("/patient", patientrouter);
     app.use("/appointmens", appointmensrouter)
     app.use("/notifications", notificationrouter);
+    app.use("/ai", airouter);
+    app.use("/drugs", drugsrouter);
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
