@@ -15,7 +15,7 @@ function getGenAI() {
     return genAI;
 }
 
-export async function generateResponse(prompt, systemInstruction = "", retryCount = 0) {
+export async function generateResponse(prompt, systemInstruction = "", history = [], retryCount = 0) {
     const ai = getGenAI();
     if (!ai) throw new Error("AI Service is not configured. Missing API Key.");
 
@@ -25,12 +25,24 @@ export async function generateResponse(prompt, systemInstruction = "", retryCoun
             model: "gemini-2.5-flash" 
         });
 
-        const result = await model.generateContent({
-            contents: [
-                { role: 'user', parts: [{ text: systemInstruction + "\n\nUser Question: " + prompt }] }
-            ]
-        });
+        const contents = [];
+        if (systemInstruction) {
+            contents.push({ role: 'user', parts: [{ text: systemInstruction }] });
+            contents.push({ role: 'model', parts: [{ text: "Understood. I will follow these instructions." }] });
+        }
 
+        if (Array.isArray(history) && history.length > 0) {
+            history.forEach(msg => {
+                contents.push({ 
+                    role: msg.role === 'user' ? 'user' : 'model', 
+                    parts: [{ text: msg.content || "" }] 
+                });
+            });
+        }
+
+        contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+        const result = await model.generateContent({ contents });
         const response = await result.response;
         return response.text();
 
@@ -39,7 +51,7 @@ export async function generateResponse(prompt, systemInstruction = "", retryCoun
             const waitTime = Math.pow(2, retryCount) * 2000;
             console.log(`AI is busy. Waiting ${waitTime/1000}s...`);
             await sleep(waitTime);
-            return generateResponse(prompt, systemInstruction, retryCount + 1);
+            return generateResponse(prompt, systemInstruction, history, retryCount + 1);
         }
         throw error;
     }
