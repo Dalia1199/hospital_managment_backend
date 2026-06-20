@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { uploadKnowledgeDocument, bulkUploadKnowledgeDocuments, clearKnowledgeBase, updateKnowledgeBaseSettings, askClinicalAssistant, getPatientInsights, checkDrugInteractions, patientChatbot, getKnowledgeBase, deleteFromKnowledgeBase } from "./ai.controller.js";
+import { uploadKnowledgeDocument, bulkUploadKnowledgeDocuments, clearKnowledgeBase, updateKnowledgeBaseSettings, askClinicalAssistant, getPatientInsights, checkDrugInteractions, patientChatbot, getKnowledgeBase, deleteFromKnowledgeBase, getDifferentialDiagnosis } from "./ai.controller.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import multer from "multer";
@@ -18,5 +18,6 @@ router.post("/ask", authentication, authorization(["doctor"]), askClinicalAssist
 router.get("/patient/:patientId/insights", authentication, authorization(["doctor"]), getPatientInsights);
 router.post("/interactions", authentication, authorization(["doctor", "pharmacist"]), checkDrugInteractions);
 router.post("/chatbot", authentication, authorization(["patient", "user"]), patientChatbot);
+router.post("/differential-diagnosis", authentication, authorization(["doctor"]), getDifferentialDiagnosis);
 
 export default router;

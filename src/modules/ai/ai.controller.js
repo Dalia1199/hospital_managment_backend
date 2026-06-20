@@ -5,6 +5,7 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import usermodel from "../../DB/models/usermodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
+import patientmodel from "../../DB/models/patientmodel.js";
 
 // Upload Knowledge Base Document
 export const uploadKnowledgeDocument = async (req, res, next) => {
@@ -312,6 +313,106 @@ export const checkDrugInteractions = async (req, res, next) => {
                 analysis: parsedResult.analysis,
                 severity: parsedResult.severity
             }
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+// -------------------------------------------------------------
+// Doctor Feature: Differential Diagnosis Assistant
+// -------------------------------------------------------------
+
+export const getDifferentialDiagnosis = async (req, res, next) => {
+    try {
+        const { symptoms, currentDiagnosis, sessionId, patientId: inputPatientId } = req.body;
+
+        if (!symptoms) {
+            throw new Error("Symptoms are required to generate a differential diagnosis.", { cause: 400 });
+        }
+
+        // --- Context Logic ---
+        let patientId = inputPatientId;
+        if (sessionId) {
+            const session = await sessionmodel.findById(sessionId);
+            if (session && session.patientId) {
+                patientId = session.patientId.toString();
+            }
+        }
+
+        let patientContextText = "No patient context provided.";
+        if (patientId) {
+            const patient = await usermodel.findById(patientId).select("fullName gender bloodType");
+            const patientProfile = await patientmodel.findOne({ userId: patientId }).lean();
+            const history = await medicalhistorymodel.find({ patientId }).sort({ createdAt: -1 }).limit(5).lean();
+
+            let historyStr = history.map((enc, idx) => `[Encounter ${idx + 1}] Diagnosis: ${enc.diagnosis || "N/A"} | Notes: ${enc.notes || "N/A"} | Vitals: BP(${enc.bloodPressure||'-'}) Sugar(${enc.sugarLevel||'-'}) Pulse(${enc.pulse||'-'}) Temp(${enc.temperature||'-'})`).join("\n");
+            
+            if (patient) {
+                patientContextText = `
+                    Name: ${patient.fullName || "Unknown"}
+                    Gender: ${patient.gender || "Unknown"}
+                    Blood Type: ${patientProfile?.bloodType || patient.bloodType || "N/A"}
+                    Allergies: ${patientProfile?.allergies?.join(", ") || "None"}
+                    Chronic Diseases: ${patientProfile?.chronic?.join(", ") || "None"}
+                    Past Surgeries: ${patientProfile?.surgeries?.map(s => s.operationName).join(", ") || "None"}
+                    
+                    Recent History (Including Vitals):
+                    ${historyStr || "No recent history."}
+                `;
+            }
+        }
+
+        const systemInstruction = `
+            You are an expert Clinical Diagnostician AI assisting a doctor.
+            The doctor is examining a patient and has provided the following Chief Complaints/Symptoms, and potentially a preliminary diagnosis.
+            
+            Your job is to analyze the symptoms alongside the patient's medical history (if any) and provide a Differential Diagnosis.
+            Provide 3 to 5 possible conditions, ordered from most likely to least likely.
+            For each condition, provide a very brief, 1-sentence rationale.
+            
+            CRITICAL: You MUST respond in pure JSON format EXACTLY matching this structure:
+            [
+              {
+                "condition": "Name of the disease/condition",
+                "rationale": "Brief 1-sentence explanation of why it fits the symptoms"
+              }
+            ]
+            
+            Do not wrap the JSON in markdown code blocks. Output pure JSON array only.
+        `;
+
+        const prompt = `
+            Patient Context:
+            ${patientContextText}
+            
+            Current Symptoms / Chief Complaints:
+            ${symptoms}
+            
+            Doctor's Preliminary Diagnosis (if any):
+            ${currentDiagnosis || "None provided"}
+            
+            Please provide the differential diagnosis in the requested JSON format.
+        `;
+
+        const aiResponse = await generateResponse(prompt, systemInstruction);
+
+        let parsedResult;
+        try {
+            // Strip any markdown json blocks if the LLM ignores instructions
+            const cleaned = aiResponse.replace(/```json/gi, '').replace(/```/gi, '').trim();
+            parsedResult = JSON.parse(cleaned);
+        } catch (e) {
+            console.error("Failed to parse differential diagnosis JSON:", e);
+            throw new Error("Failed to generate a valid differential diagnosis structure.");
+        }
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Differential diagnosis generated successfully.",
+            data: { diagnoses: parsedResult }
         });
 
     } catch (error) {
