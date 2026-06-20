@@ -1,6 +1,18 @@
 import { Router } from "express";
-import { uploadKnowledgeDocument, bulkUploadKnowledgeDocuments, clearKnowledgeBase, updateKnowledgeBaseSettings, askClinicalAssistant, getPatientInsights, checkDrugInteractions, patientChatbot, getKnowledgeBase, deleteFromKnowledgeBase, getDifferentialDiagnosis } from "./ai.controller.js";
-import { uploadKnowledgeDocument, bulkUploadKnowledgeDocuments, clearKnowledgeBase, createDatabaseController, setActiveDatabaseController, askClinicalAssistant, getPatientInsights, checkDrugInteractions, patientChatbot, getKnowledgeBase, deleteFromKnowledgeBase } from "./ai.controller.js";
+import { 
+    uploadKnowledgeDocument, 
+    bulkUploadKnowledgeDocuments, 
+    clearKnowledgeBase, 
+    createDatabaseController, 
+    setActiveDatabaseController, 
+    askClinicalAssistant, 
+    getPatientInsights, 
+    checkDrugInteractions, 
+    patientChatbot, 
+    getKnowledgeBase, 
+    deleteFromKnowledgeBase, 
+    getDifferentialDiagnosis 
+} from "./ai.controller.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import multer from "multer";
