@@ -22,7 +22,7 @@ export async function generateResponse(prompt, systemInstruction = "", history =
     const MAX_RETRIES = 3;
     try {
         const model = ai.getGenerativeModel({ 
-            model: "gemini-2.5-flash",
+            model: "gemini-1.5-flash",
             ...(systemInstruction ? { systemInstruction: { role: "system", parts: [{ text: systemInstruction }] } } : {})
         });
 
@@ -31,13 +31,24 @@ export async function generateResponse(prompt, systemInstruction = "", history =
             parts: [{ text: msg.content || "" }]
         })) : [];
 
-        // Gemini API strictly requires the conversation history to start with a 'user' role.
-        // If the frontend sends a welcome message as the first item ('model'), we must drop it.
-        while (formattedHistory.length > 0 && formattedHistory[0].role === 'model') {
-            formattedHistory.shift();
+        // Normalize history to strictly alternate between 'user' and 'model'
+        let normalizedHistory = [];
+        let expectedRole = 'user';
+        for (const msg of formattedHistory) {
+            if (msg.role === 'model' && normalizedHistory.length === 0) {
+                // Skip leading model messages
+                continue;
+            }
+            if (msg.role === expectedRole) {
+                normalizedHistory.push(msg);
+                expectedRole = expectedRole === 'user' ? 'model' : 'user';
+            } else if (normalizedHistory.length > 0) {
+                // Same role as previous, merge text
+                normalizedHistory[normalizedHistory.length - 1].parts[0].text += "\n" + msg.parts[0].text;
+            }
         }
 
-        const chat = model.startChat({ history: formattedHistory });
+        const chat = model.startChat({ history: normalizedHistory });
         const result = await chat.sendMessage([{ text: prompt }]);
         
         const response = await result.response;
@@ -50,6 +61,7 @@ export async function generateResponse(prompt, systemInstruction = "", history =
             await sleep(waitTime);
             return generateResponse(prompt, systemInstruction, history, retryCount + 1);
         }
+        console.error("Gemini API Error:", error.message || error);
         throw error;
     }
 }
