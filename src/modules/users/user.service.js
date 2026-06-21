@@ -157,14 +157,11 @@ export const resendotp = async (req, res, next) => {
   successresponse({ res, message: "otp sent" });
 }
 export const refreshtoken = async (req, res, next) => {
-  const { authorization } = req.headers;
-  if (!authorization) {
-    throw new Error("token not exist");
+  const token = req.cookies.refreshToken;
+  if (!token) {
+    throw new Error("refresh token not exist");
   }
-  const [prefix, token] = authorization.split(" ");
-  if (prefix !== Prefix) {
-    throw new Error("invalid token prefix");
-  }
+
   const decoded = verifytoken({ token, secret_key: refreshsecretkey });
   if (!decoded || !decoded?.id) {
     throw new Error("invalid token ");
@@ -176,7 +173,22 @@ export const refreshtoken = async (req, res, next) => {
   if (!user) {
     throw new Error("user not exist", { cause: 400 });
   }
-  res.json({ message: "done " });
+
+  const uuid = uuidv4();
+  const access_token = generatetoken({
+    payload: { id: user._id, email: user.email },
+    secret_key: access_secret_key,
+    options: { expiresIn: "15m", jwtid: uuid },
+  });
+
+  res.cookie("jwt", access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Strict",
+    maxAge: 15 * 60 * 1000,
+  });
+
+  res.json({ message: "done" });
 };
 
 export const resetPassword = async (req, res, next) => {
@@ -270,6 +282,8 @@ export const logout = async (req, res, next) => {
       ttl: req.decoded.exp - Math.floor(Date.now() / 1000),
     });
   }
+  res.clearCookie("jwt");
+  res.clearCookie("refreshToken");
   successresponse({ res });
 };
 
@@ -314,8 +328,7 @@ export const signin = async (req, res, next) => {
     payload: { id: user._id, email: user.email },
     secret_key: access_secret_key,
     options: {
-      expiresIn: "25h",
-
+      expiresIn: "15m",
       jwtid: uuid,
     },
   });
@@ -326,18 +339,29 @@ export const signin = async (req, res, next) => {
     },
     secret_key: refreshsecretkey,
     options: {
-      expiresIn: "20h",
+      expiresIn: "7d",
       jwtid: uuid,
     },
   });
-  console.log("REFRESH:", refreshtoken);
+
+  res.cookie("jwt", access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Strict",
+    maxAge: 15 * 60 * 1000,
+  });
+
+  res.cookie("refreshToken", refreshtoken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Strict",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
 
   successresponse({
     res,
     message: "success signin",
     data: {
-      access_token,
-      refreshtoken,
       role: user.role,
       id: user._id,
       fullName: user.fullName,

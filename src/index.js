@@ -8,11 +8,16 @@ const server = http.createServer(app);
 
 initSocket(server);
 
-// Await DB connection before accepting requests
-checkConnectionDB().then(() => {
-    server.listen(process.env.PORT || 5000, () => {
-        console.log(`Server is running on port ${process.env.PORT || 5000}`);
-    });
-}).catch((error) => {
-    console.error("Failed to start server due to DB connection error:", error);
-});
+// Only connect to DB and start server if not running tests
+if (process.env.NODE_ENV !== "test") {
+  // Await DB connection before accepting requests
+  checkConnectionDB().then(() => {
+      server.listen(process.env.PORT || 5000, () => {
+          console.log(`Server is running on port ${process.env.PORT || 5000}`);
+      });
+  }).catch((error) => {
+      console.error("Failed to start server due to DB connection error:", error);
+  });
+}
+
+export { app, server };

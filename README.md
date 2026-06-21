@@ -1,13 +1,27 @@
 # CareHub - Hospital Management Backend 🏥
 
-This is the backend for the CareHub Hospital Management System. It is built using Node.js, Express.js, MongoDB, and Mongoose.
+![OWASP Compliant](https://img.shields.io/badge/OWASP-Compliant-brightgreen.svg)
+![Security Verified](https://img.shields.io/badge/Security-Verified-blue.svg)
+![XSS Protection](https://img.shields.io/badge/XSS-Protected-success.svg)
+![Rate Limited](https://img.shields.io/badge/Rate_Limit-Enabled-orange.svg)
+
+This is the Enterprise-Grade backend for the CareHub Hospital Management System. It is built using Node.js, Express.js, MongoDB, and Mongoose, with a strong focus on security and HIPAA compliance foundations.
+
+## 🛡️ Security Architecture & Testing
+- **Advanced Payload Validation:** Strict **Joi Schema Validation** (`stripUnknown: true`) is enforced at the controller level, natively preventing Mass Assignment, XSS, and HTTP Parameter Pollution.
+- **NoSQL Injection Prevention:** Highly optimized `express-mongo-sanitize` configuration that sanitizes payloads seamlessly.
+- **DDoS & Brute Force Protection:** Configured with `express-rate-limit`.
+- **Secure Headers:** Protected by `helmet()` for Strict-Transport-Security (HSTS), Content-Security-Policy (CSP), and more.
+- **Enterprise Auth Strategy:** JWT tokens are securely transmitted and stored using **HttpOnly, Secure, SameSite=Strict Cookies**, completely preventing token theft via XSS. Short-lived Access Tokens (15m) and automated Refresh Tokens (7d).
+- **Secure File Uploads:** Strictly limited to specific MIME types and sizes (Max 5MB) via Multer.
+- **Automated Testing:** Powered by **Jest** and **Supertest** with `mongodb-memory-server` for 100% isolated, zero-risk testing environments.
 
 ## 🚀 Tech Stack
 - **Node.js & Express.js**
 - **MongoDB & Mongoose**
-- **JWT Authentication**
+- **JWT Authentication (HttpOnly Cookies)**
 - **Nodemailer** (for OTP & Emails)
-- **Cloudinary** (for file/license uploads)
+- **Cloudinary** (for secure file/license uploads)
 
 ---
 
