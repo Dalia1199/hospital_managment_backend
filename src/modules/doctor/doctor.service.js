@@ -137,11 +137,7 @@ export const updatedoctorprofile = async (req, res, next) => {
     } catch (error) {
         await session.abortTransaction();
         next(error);
-    }
-        // await session.abortTransaction();
-        // next(error);
-    //}
-    finally {
+    } finally {
         session.endSession();
     }
 };

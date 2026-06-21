@@ -11,6 +11,7 @@ import availabilitymodel from "../../DB/models/avalibility_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
+import { decrypt } from "../../common/utilits/security/encrypt.js";
 
 //done
 export const addAvailability = async (req, res, next) => {
@@ -231,10 +232,25 @@ export const getMyAppointments = async (req, res, next) => {
   try {
     const appointments = await db_service.find({
       model: appointmentsmodel,
-
       filter: {
         patientId: req.user._id,
       },
+      options: {
+        populate: [
+          {
+            path: "doctorId",
+            select: "fullName email profilepicture phoneNumber address",
+          },
+          {
+            path: "slotId",
+          },
+        ],
+        sort: {
+          createdAt: -1,
+        },
+        lean: true
+      }
+    });
 
       populate: [
         {
@@ -250,15 +266,22 @@ export const getMyAppointments = async (req, res, next) => {
         },
       ],
 
-      sort: {
-        createdAt: -1,
-      },
+    const decryptedAppointments = appointments.map(appt => {
+      if (appt.doctorId && appt.doctorId.phoneNumber) {
+        try {
+          appt.doctorId.phoneNumber = decrypt(appt.doctorId.phoneNumber);
+        } catch (e) {
+          console.error("Failed to decrypt doctor phone", e);
+        }
+      }
+      return appt;
     });
 
     return successresponse({
       res,
       status: 200,
       message: "appointments gets successfully",
+      data: decryptedAppointments,
       data: appointments,
     });
   } catch (error) {
