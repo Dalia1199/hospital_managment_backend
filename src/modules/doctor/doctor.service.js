@@ -9,7 +9,8 @@ import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
-import { decrypt , encrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { notify } from "../notifications/notification.service.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -76,7 +77,7 @@ export const getDoctorProfile = async (req, res, next) => {
                 specialization: doctor.specialization,
                 experience: doctor.experience,
                 bio: doctor.bio,
-                
+
             }
         });
     } catch (error) {
@@ -87,7 +88,7 @@ export const getDoctorProfile = async (req, res, next) => {
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
     try {
-        const {fullName, address, phoneNumber, bio, specialization, experience } = req.body;
+        const { fullName, address, phoneNumber, bio, specialization, experience } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -98,7 +99,7 @@ export const updatedoctorprofile = async (req, res, next) => {
             throw new Error("Doctor profile not found", { cause: 404 });
         }
 
-         // Update user model fields (fullName, address)
+        // Update user model fields (fullName, address)
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
         if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
@@ -114,30 +115,32 @@ export const updatedoctorprofile = async (req, res, next) => {
         return successresponse({
             res,
             message: "Profile updated successfully",
-            data:  {              
+            data: {
                 fullName: req.user.fullName,
                 address: req.user.address,
                 phoneNumber: phoneNumber ? phoneNumber : decrypt(req.user.phoneNumber),
                 bio: doctor.bio,
                 specialization: doctor.specialization,
-                experience: doctor.experience 
+                experience: doctor.experience
             }
         });
     } catch (error) {
-          next(error);
-        }
-    };
-    // Implement doctor license upload service 
-    export const uploadLicense = async (req, res, next) => {
-        try {
-            if (!req.file) {
-                throw new Error("image/pdf file is required", { cause: 400 });
-            }
+        next(error);
+    }
+};
 
-            const doctor = await db_service.findOne({
-                model: doctormodel,
-                filter: { userId: req.user._id }
-            });
+// Implement doctor license upload service 
+export const uploadLicense = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            throw new Error("image/pdf file is required", { cause: 400 });
+        }
+
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -158,6 +161,18 @@ export const updatedoctorprofile = async (req, res, next) => {
                 filter: { _id: req.user._id },
                 update: { status: "pending" }
             });
+
+            const admins = await db_service.find({
+                model: usermodel,
+                filter: { role: roleenum.admin }
+            });
+
+            // Send notification to all admins
+            await Promise.all(
+                admins.map(admin =>
+                    notify.licenseUpdated(admin._id, req.user.fullName)
+                )
+            );
 
             if (oldPublicId) {
                 await cloudinary.uploader.destroy(oldPublicId);
@@ -183,7 +198,7 @@ export const searchPatient = async (req, res, next) => {
     try {
         const { searchTerm } = req.query;
         let filter = { role: roleenum.patient };
-        
+
         if (searchTerm.match(/^[0-9a-fA-F]{24}$/)) {
             filter._id = searchTerm;
         } else if (!/^\d+$/.test(searchTerm)) {
@@ -196,7 +211,7 @@ export const searchPatient = async (req, res, next) => {
             model: usermodel,
             filter
         });
-        
+
         let decryptedPatients = patients.map(p => {
             const patientObj = p.toObject ? p.toObject() : p;
             if (patientObj.phoneNumber) {
@@ -289,7 +304,7 @@ export const createSession = async (req, res, next) => {
                 if (existingSession.status === "in_progress" && existingSession.validUntil > new Date()) {
                     throw new Error("Access already granted for this patient", { cause: 400 });
                 }
-                
+
                 if (existingSession.status === "pending_otp") {
                     if (sharingSetting === "otp") {
                         // Resend OTP logic
@@ -305,7 +320,7 @@ export const createSession = async (req, res, next) => {
                         });
                     }
                 }
-                
+
                 // If it was pending_otp but sharingSetting is now all/own_only, or if it is completed/expired,
                 // delete it and create a fresh one.
                 await sessionmodel.findByIdAndDelete(existingSession._id);
@@ -328,9 +343,9 @@ export const createSession = async (req, res, next) => {
                     data: session
                 });
             }
-            
+
             const otp = generateotp().toString();
-            
+
             const session = await db_service.create({
                 model: sessionmodel,
                 data: {
@@ -385,11 +400,11 @@ export const verifySession = async (req, res, next) => {
         if (session.validUntil < new Date()) {
             throw new Error("OTP expired", { cause: 400 });
         }
-        
+
         session.status = "in_progress";
         session.validUntil = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours access
         await session.save();
-        
+
         return successresponse({
             res,
             message: "session verified successfully, doctor access granted",
@@ -449,7 +464,7 @@ export const updatePatientAlerts = async (req, res, next) => {
     }
 };
 
-    export const endSession = async (req, res, next) => {
+export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
         const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
@@ -461,14 +476,14 @@ export const updatePatientAlerts = async (req, res, next) => {
             update: { status: "completed", fees: fees || 0 },
             options: { new: true }
         });
-        
+
         if (!session) {
             throw new Error("Session not found or already completed", { cause: 404 });
         }
 
         const documents = [];
         const folderName = session.isOfflinePatient ? `guest_${session.guestName}` : `patient_${session.patientId}`;
-        
+
         if (req.files && req.files.prescriptionImage && req.files.prescriptionImage[0]) {
             const { secure_url, public_id } = await cloudinary.uploader.upload(req.files.prescriptionImage[0].path, {
                 folder: `carehub/medicalhistory/prescriptions/${folderName}`,
@@ -493,15 +508,15 @@ export const updatePatientAlerts = async (req, res, next) => {
 
             for (let i = 0; i < req.files.attachments.length; i++) {
                 const file = req.files.attachments[i];
-                const meta = parsedMetadata[i] || { title: `Document ${i+1}`, type: "other" };
-                
+                const meta = parsedMetadata[i] || { title: `Document ${i + 1}`, type: "other" };
+
                 const { secure_url, public_id } = await cloudinary.uploader.upload(file.path, {
                     folder: `carehub/medicalhistory/documents/${folderName}`,
                     resource_type: file.mimetype === "application/pdf" ? "raw" : "auto",
                     use_filename: true,
                     unique_filename: true
                 });
-                
+
                 documents.push({
                     type: meta.type,
                     title: meta.title,
@@ -562,7 +577,7 @@ export const updatePatientAlerts = async (req, res, next) => {
                 if (parsedAllergies.length > 0) updateData.allergies = parsedAllergies;
                 if (parsedChronic.length > 0) updateData.chronic = parsedChronic;
                 if (parsedSurgeries.length > 0) updateData.surgeries = parsedSurgeries;
-                
+
                 await db_service.findOneAndUpdate({
                     model: patientmodel,
                     filter: { userId: session.patientId },
@@ -593,7 +608,7 @@ export const updatePatientAlerts = async (req, res, next) => {
             } else {
                 rxData.patientId = session.patientId;
             }
-            
+
             prescriptionRecord = await db_service.create({
                 model: prescrptionmodel,
                 data: rxData
@@ -653,12 +668,12 @@ export const getActiveSessions = async (req, res, next) => {
         const sessions = await db_service.find({
             model: sessionmodel,
             filter: { doctorId, status: { $in: ["pending_otp", "in_progress"] } },
-            options: { 
+            options: {
                 populate: { path: "patientId", select: "fullName phoneNumber profileImage bloodType height weight allergies chronic surgeries" },
                 sort: { createdAt: -1 }
             }
         });
-        
+
         // Decrypt phone numbers for online patients
         const decryptedSessions = await Promise.all(sessions.map(async (s) => {
             const sObj = s.toObject ? s.toObject() : s;
@@ -694,7 +709,7 @@ export const getActiveSessions = async (req, res, next) => {
 export const getMedicationHistory = async (req, res, next) => {
     try {
         const { patientId, isOfflinePatient, guestName, guestPhone } = req.query;
-        
+
         let filter = {};
         if (isOfflinePatient === 'true') {
             filter.isOfflinePatient = true;
@@ -715,7 +730,7 @@ export const getMedicationHistory = async (req, res, next) => {
         const prescriptions = await db_service.find({
             model: prescrptionmodel,
             filter,
-            options: { 
+            options: {
                 sort: { createdAt: -1 },
                 populate: [{ path: "doctorId", select: "fullName" }]
             }
@@ -727,9 +742,9 @@ export const getMedicationHistory = async (req, res, next) => {
 
         prescriptions.forEach(rx => {
             const recordDate = new Date(rx.createdAt);
-            
+
             if (!rx.medications) return;
-            
+
             rx.medications.forEach(med => {
                 const medNameLower = med.medicineName.toLowerCase().trim();
                 if (seenDrugs.has(medNameLower)) return;
@@ -737,7 +752,7 @@ export const getMedicationHistory = async (req, res, next) => {
 
                 const durStr = med.duration.toLowerCase();
                 const isLifelong = durStr.includes("lifelong") || durStr.includes("always");
-                
+
                 let isActive = false;
 
                 if (isLifelong) {
@@ -749,7 +764,7 @@ export const getMedicationHistory = async (req, res, next) => {
                         let days = 0;
                         if (durStr.includes("week")) days = num * 7;
                         else if (durStr.includes("month")) days = num * 30;
-                        else days = num; 
+                        else days = num;
 
                         const endDate = new Date(recordDate);
                         endDate.setDate(endDate.getDate() + days);
@@ -792,7 +807,7 @@ export const getMedicationHistory = async (req, res, next) => {
 export const getPatientMedicalHistory = async (req, res, next) => {
     try {
         const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate } = req.query;
-        
+
         let filter = {};
         if (isOfflinePatient === 'true') {
             filter.isOfflinePatient = true;
@@ -832,7 +847,7 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         const history = await db_service.find({
             model: medicalhistorymodel,
             filter,
-            options: { 
+            options: {
                 sort: { createdAt: -1 },
                 skip,
                 limit: parseInt(limit),
@@ -882,7 +897,7 @@ export const getMyPatients = async (req, res, next) => {
 
         const pipeline = [
             { $match: baseFilter },
-            { 
+            {
                 $group: {
                     _id: {
                         $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
@@ -945,7 +960,7 @@ export const getMyPatients = async (req, res, next) => {
 
         const countPipeline = [
             { $match: baseFilter },
-            { 
+            {
                 $group: {
                     _id: {
                         $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
@@ -1036,9 +1051,9 @@ export const getAllDoctors = async (req, res, next) => {
                 match: { confirmed: true }
             })
             .lean(); // Massive performance boost by returning plain JS objects
- 
+
         const activeDoctors = doctors.filter(d => d.userId);
- 
+
         return successresponse({
             res,
             status: 200,
@@ -1066,7 +1081,7 @@ export const getReportsAnalytics = async (req, res, next) => {
         }
 
         const periodLength = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
-        
+
         const prevEnd = new Date(start);
         const prevStart = new Date(start);
         prevStart.setDate(prevStart.getDate() - periodLength);
@@ -1202,14 +1217,14 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
         model: patientmodel,
         filter: { userId: patientUserId }
     });
-    
+
     const sharingSetting = patientProfile?.sharingSetting ?? "all";
-    
+
     // 2. Evaluate access based on setting
     if (sharingSetting === "all" || sharingSetting === "own_only") {
         return { hasAccess: true, sharingSetting };
     }
-    
+
     // 3. For "otp", verify there is an active session
     const activeSession = await db_service.findOne({
         model: sessionmodel,
@@ -1220,10 +1235,10 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
             validUntil: { $gt: new Date() }
         }
     });
-    
+
     if (activeSession) {
         return { hasAccess: true, sharingSetting };
     }
-    
+
     return { hasAccess: false, sharingSetting };
 };
