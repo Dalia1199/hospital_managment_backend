@@ -15,9 +15,7 @@ const appointmentsSchema = new mongoose.Schema(
         ref: "user",
         required: true
       type: mongoose.Schema.Types.ObjectId,
-
       ref: "user",
-
       required: true,
     },
 

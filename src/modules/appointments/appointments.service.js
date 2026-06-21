@@ -252,19 +252,7 @@ export const getMyAppointments = async (req, res, next) => {
       }
     });
 
-      populate: [
-        {
-          path: "doctorId",
-          select: "fullName email profilepicture",
-        },
-        {
-          path: "slotId",
-        },
-        {
-          path: "clinicId",
-          select: "name address phone",
-        },
-      ],
+
 
     const decryptedAppointments = appointments.map(appt => {
       if (appt.doctorId && appt.doctorId.phoneNumber) {
@@ -282,7 +270,6 @@ export const getMyAppointments = async (req, res, next) => {
       status: 200,
       message: "appointments gets successfully",
       data: decryptedAppointments,
-      data: appointments,
     });
   } catch (error) {
     next(error);
