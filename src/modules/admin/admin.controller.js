@@ -71,6 +71,22 @@ adminrouter.patch(
     AS.updateAdminProfile
 );
 
+adminrouter.patch(
+    "/doctor/:id/approve-license",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.approveLicenseSchema),
+    AS.approveDoctorLicense
+)
+
+adminrouter.patch(
+    "/doctor/:id/reject-license",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.rejectLicenseSchema),
+    AS.rejectDoctorLicense
+)
+
 export default adminrouter;
 
 
