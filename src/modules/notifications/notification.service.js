@@ -70,11 +70,17 @@ export const notify = {
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
             userId: adminId,
-            type: "doctor_registration",
             message: `A new doctor ${doctorName} has registered and is waiting for approval`,
             link: "/admin/approvals"
         }),
-    
+    licenseUpdated: (adminId, doctorName) =>
+        createNotification({
+            userId: adminId,
+            type: "license_update",
+            message: `A new doctor ${doctorName} has updated his license and is waiting for approval`,
+            link: "/admin/doctors/licenses"
+    }),
+
 };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────

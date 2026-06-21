@@ -10,6 +10,7 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { notify } from "../notifications/notification.service.js";
 import mongoose from "mongoose";
 
 export const getDashboard = async (req, res, next) => {
@@ -132,6 +133,8 @@ export const updatedoctorprofile = async (req, res, next) => {
             }
         });
     } catch (error) {
+        next(error);
+    }
         await session.abortTransaction();
         next(error);
     }
@@ -151,6 +154,7 @@ export const uploadLicense = async (req, res, next) => {
             model: doctormodel,
             filter: { userId: req.user._id }
         });
+
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -163,6 +167,28 @@ export const uploadLicense = async (req, res, next) => {
                 update: { pendingLicenseImage: { secure_url, public_id } },
                 options: { new: true }
             });
+
+            await db_service.findOneAndUpdate({
+                model: usermodel,
+                filter: { _id: req.user._id },
+                update: { status: "pending" }
+            });
+
+            const admins = await db_service.find({
+                model: usermodel,
+                filter: { role: roleenum.admin }
+            });
+
+            // Send notification to all admins
+            await Promise.all(
+                admins.map(admin =>
+                    notify.licenseUpdated(admin._id, req.user.fullName)
+                )
+            );
+
+            if (oldPublicId) {
+                await cloudinary.uploader.destroy(oldPublicId);
+            }
 
             return successresponse({
                 res,
