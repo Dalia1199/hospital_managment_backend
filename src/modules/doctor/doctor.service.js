@@ -11,6 +11,7 @@ import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import { notify } from "../notifications/notification.service.js";
+import mongoose from "mongoose";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -87,12 +88,16 @@ export const getDoctorProfile = async (req, res, next) => {
 
 // add update doctor profile logic
 export const updatedoctorprofile = async (req, res, next) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
         const { fullName, address, phoneNumber, bio, specialization, experience } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
-            filter: { userId: req.user._id }
+            filter: { userId: req.user._id },
+            session
         });
 
         if (!doctor) {
@@ -103,14 +108,17 @@ export const updatedoctorprofile = async (req, res, next) => {
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
         if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
-        await req.user.save();
+        await req.user.save({ session });
 
 
         // Update doctor model fields
         if (bio !== undefined) doctor.bio = bio;
         if (specialization !== undefined) doctor.specialization = specialization;
         if (experience !== undefined) doctor.experience = experience;
-        await doctor.save();
+        await doctor.save({ session });
+
+        // if all work (user and doctor --> commit session)
+        await session.commitTransaction();
 
         return successresponse({
             res,
@@ -118,7 +126,7 @@ export const updatedoctorprofile = async (req, res, next) => {
             data: {
                 fullName: req.user.fullName,
                 address: req.user.address,
-                phoneNumber: phoneNumber ? phoneNumber : decrypt(req.user.phoneNumber),
+                phoneNumber: decrypt(req.user.phoneNumber),
                 bio: doctor.bio,
                 specialization: doctor.specialization,
                 experience: doctor.experience
@@ -126,6 +134,12 @@ export const updatedoctorprofile = async (req, res, next) => {
         });
     } catch (error) {
         next(error);
+    }
+        await session.abortTransaction();
+        next(error);
+    }
+    finally {
+        session.endSession();
     }
 };
 
@@ -146,13 +160,11 @@ export const uploadLicense = async (req, res, next) => {
             folder: "carehub/doctors/licenses"
         });
 
-        const oldPublicId = doctor.licenseimage?.public_id;
-
         try {
             const updatedDoctor = await db_service.findOneAndUpdate({
                 model: doctormodel,
                 filter: { userId: req.user._id },
-                update: { licenseimage: { secure_url, public_id } },
+                update: { pendingLicenseImage: { secure_url, public_id } },
                 options: { new: true }
             });
 
@@ -180,7 +192,7 @@ export const uploadLicense = async (req, res, next) => {
 
             return successresponse({
                 res,
-                message: "license updated successfully, pending admin approval",
+                message: "license updated successfully, but it needs for admin approval first",
                 data: updatedDoctor
             });
 

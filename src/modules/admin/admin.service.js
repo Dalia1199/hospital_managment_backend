@@ -12,6 +12,7 @@ import { generateotp, sendemail } from "../../common/utilits/email/send email.js
 import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
 import { hash } from "../../common/utilits/security/hash.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import cloudinary from "../../common/utilits/cloudinary.js";
 
 
 export const getPendingDoctors = async (req, res, next) => {
@@ -22,10 +23,10 @@ export const getPendingDoctors = async (req, res, next) => {
 
         const pendingDoctors = await db_service.find({
             model: usermodel,
-            filter: { 
+            filter: {
                 role: roleenum.doctor,
                 status: "pending"
-            }, 
+            },
             options: {
                 skip,
                 limit,
@@ -239,7 +240,7 @@ export const getallusers = async (req, res, next) => {
         });
 
         const totalPages = Math.ceil(totalCount / itemsPerPage);
-        
+
         return successresponse({
             res,
             status: 200,
@@ -287,9 +288,9 @@ export const deactivateUser = async (req, res, next) => {
             { status: "blocked" },
             { new: true }
         );
-        
+
         if (!user) return next(new Error("User not found"), { cause: 404 });
-        
+
         return successresponse({ res, status: 200, message: "User deactivated successfully", data: user });
     }
     catch (error) {
@@ -320,10 +321,10 @@ export const getAdminProfile = async (req, res, next) => {
             status: 200,
             message: "Profile fetched successfully",
             data: {
-                fullName:       req.user.fullName,
-                email:          req.user.email,
-                phoneNumber:    req.user.phoneNumber ? decrypt(req.user.phoneNumber) : "",
-                address:        req.user.address,
+                fullName: req.user.fullName,
+                email: req.user.email,
+                phoneNumber: req.user.phoneNumber ? decrypt(req.user.phoneNumber) : "",
+                address: req.user.address,
                 profilepicture: req.user.profilepicture,
             }
         });
@@ -339,8 +340,8 @@ export const updateAdminProfile = async (req, res, next) => {
     try {
         const { fullName, phoneNumber, address } = req.body;
 
-        if (fullName    !== undefined) req.user.fullName    = fullName;
-        if (address     !== undefined) req.user.address     = address;
+        if (fullName !== undefined) req.user.fullName = fullName;
+        if (address !== undefined) req.user.address = address;
         if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
         await req.user.save();
 
@@ -348,12 +349,87 @@ export const updateAdminProfile = async (req, res, next) => {
             res,
             message: "Profile updated successfully",
             data: {
-                fullName:    req.user.fullName,
-                phoneNumber: phoneNumber ?? decrypt(req.user.phoneNumber),
-                address:     req.user.address,
+                fullName: req.user.fullName,
+                phoneNumber: decrypt(req.user.phoneNumber),
+                address: req.user.address,
             }
         });
     } catch (error) {
         next(error);
     }
 };
+
+export const approveDoctorLicense = async (req, res, next) => {
+    try {
+        const { id } = req.params
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: id }
+        });
+
+        if (!doctor) {
+            throw new Error("doctor not found", { cause: 404 });
+        }
+
+        if (!doctor.pendingLicenseImage?.public_id) {
+            throw new Error("No pending license update found", { cause: 400 });
+        }
+
+        const oldPublicId = doctor.licenseimage?.public_id;
+        doctor.licenseimage = doctor.pendingLicenseImage;
+        doctor.pendingLicenseImage = null;
+        
+        await doctor.save();
+        
+        if (oldPublicId) {
+            await cloudinary.uploader.destroy(oldPublicId);
+        }
+
+        return successresponse({
+            res,
+            message: "License approved successfully",
+            data: doctor
+        });
+
+    }
+    catch (error) {
+        next(error);
+    }
+};
+
+export const rejectDoctorLicense = async (req, res, next) => { 
+    try {
+        const { id } = req.params
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: id }
+        });
+        
+        if (!doctor) {
+            throw new Error("doctor not found", { cause: 404 });
+        }
+        
+        if (!doctor.pendingLicenseImage?.public_id) {
+            throw new Error("No pending license update found", { cause: 400 });
+        }
+        
+        const newPublicId = doctor.pendingLicenseImage?.public_id;
+        doctor.pendingLicenseImage = null;
+        
+        await doctor.save();
+
+        if (newPublicId) {
+            await cloudinary.uploader.destroy(newPublicId);
+        }
+
+        return successresponse({
+            res,
+            message: "License is rejected",
+            data: doctor
+        });
+
+    }
+    catch (error) {
+        next(error);
+    }
+}
