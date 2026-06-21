@@ -119,6 +119,14 @@ doctorrouter.patch(
     DS.updatePatientAlerts
 );
 
+// get patient medication compliance report
+doctorrouter.get(
+    "/patient/:patientId/compliance",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getPatientCompliance
+);
+
 // end session
 doctorrouter.patch(
     "/session/:sessionId/end",

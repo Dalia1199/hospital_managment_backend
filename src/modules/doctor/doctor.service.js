@@ -12,6 +12,8 @@ import cloudinary from "../../common/utilits/cloudinary.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import { notify } from "../notifications/notification.service.js";
 import mongoose from "mongoose";
+import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
+import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -240,11 +242,134 @@ export const searchPatient = async (req, res, next) => {
 
         return successresponse({
             res,
-            message: "patients fetched successfully",
+            message: "Patients fetched successfully",
             data: decryptedPatients
         });
     } catch (error) {
         return next(error);
+    }
+};
+
+export const getPatientCompliance = async (req, res, next) => {
+    try {
+        const { patientId } = req.params;
+        const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
+        
+        if (!hasAccess) {
+            throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+        }
+
+        const prescriptions = await db_service.find({
+            model: prescrptionmodel,
+            filter: { patientId, status: "active" }
+        });
+
+        const activeMeds = [];
+        const now = new Date();
+
+        for (const rx of prescriptions) {
+            const rxDate = new Date(rx.createdAt);
+            for (const med of rx.medications) {
+                const durationInfo = parseDuration(med.duration);
+                let isActive = false;
+                let daysCompleted = 0;
+                let totalDays = durationInfo.days;
+
+                if (durationInfo.isLifelong) {
+                    isActive = true;
+                    daysCompleted = Math.floor(Math.abs(now - rxDate) / (1000 * 60 * 60 * 24));
+                } else {
+                    const endDate = new Date(rxDate);
+                    endDate.setDate(endDate.getDate() + totalDays);
+                    if (now <= endDate || (now > endDate && (now - endDate) < 24 * 60 * 60 * 1000)) {
+                        isActive = true;
+                        daysCompleted = Math.floor(Math.abs(now - rxDate) / (1000 * 60 * 60 * 24));
+                        if (daysCompleted > totalDays) daysCompleted = totalDays;
+                    }
+                }
+
+                if (isActive) {
+                    let adjustedDaysCompleted = Math.max(1, daysCompleted);
+                    let progress = durationInfo.isLifelong ? 100 : Math.min(100, Math.floor((adjustedDaysCompleted / totalDays) * 100));
+                    activeMeds.push({
+                        medicineName: med.medicineName,
+                        dosage: med.dosage,
+                        frequency: med.frequency,
+                        startDate: rxDate,
+                        progress
+                    });
+                }
+            }
+        }
+
+        const trackingRecords = await db_service.find({
+            model: medicationtrackingmodel,
+            filter: { patientId },
+            options: { sort: { scheduledDoseDateTime: -1 } }
+        });
+
+        let totalTaken = 0;
+        let totalMissed = 0;
+        
+        trackingRecords.forEach(r => {
+            if (r.status === 'taken') totalTaken++;
+            else if (r.status === 'missed') totalMissed++;
+        });
+
+        const totalExpected = totalTaken + totalMissed;
+        let adherencePercentage = totalExpected > 0 ? Math.round((totalTaken / totalExpected) * 100) : 0;
+
+        let complianceStatus = "Poor";
+        if (adherencePercentage > 90) complianceStatus = "Excellent";
+        else if (adherencePercentage >= 70) complianceStatus = "Good";
+
+        let currentStreak = 0;
+        const recordsByDay = {};
+        trackingRecords.forEach(r => {
+            const dayStr = r.scheduledDoseDateTime.toISOString().split('T')[0];
+            if (!recordsByDay[dayStr]) recordsByDay[dayStr] = { taken: 0, missed: 0 };
+            if (r.status === 'taken') recordsByDay[dayStr].taken++;
+            else if (r.status === 'missed') recordsByDay[dayStr].missed++;
+        });
+
+        const sortedDays = Object.keys(recordsByDay).sort((a, b) => new Date(b) - new Date(a));
+        let consecutiveMissedDays = 0;
+
+        for (const day of sortedDays) {
+            if (recordsByDay[day].missed > 0 && recordsByDay[day].taken === 0) {
+                consecutiveMissedDays++;
+            }
+            if (recordsByDay[day].missed > 0) {
+                break;
+            }
+            if (recordsByDay[day].taken > 0) {
+                currentStreak++;
+            }
+        }
+
+        const alerts = [];
+        if (adherencePercentage > 0 && adherencePercentage < 80) {
+            alerts.push({ type: "warning", message: "Adherence is below 80%." });
+        }
+        if (consecutiveMissedDays >= 3) {
+            alerts.push({ type: "critical", message: "Treatment abandoned (missed >3 consecutive days)." });
+        } else if (consecutiveMissedDays > 0) {
+            alerts.push({ type: "warning", message: `Multiple missed doses (${consecutiveMissedDays} days).` });
+        }
+
+        return successresponse({ res, data: {
+            adherencePercentage,
+            complianceStatus,
+            totalTaken,
+            totalMissed,
+            currentStreak,
+            activeMedicationsCount: activeMeds.length,
+            alerts,
+            activeMeds
+        }});
+
+    } catch (error) {
+        next(error);
     }
 };
 
