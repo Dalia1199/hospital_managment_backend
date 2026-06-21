@@ -13,13 +13,9 @@ const appointmentsSchema = new mongoose.Schema({
     },
 
     doctorId: {
-
         type: mongoose.Schema.Types.ObjectId,
-
         ref: "user",
-
         required: true
-
     },
 
     slotId: {
