@@ -14,6 +14,8 @@ import patientrouter from "./modules/patient/patient.controller.js";
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 import appointmensrouter from "./modules/appointments/appointmens.controller.js";
 import notificationrouter from "./modules/notifications/notification.controller.js";
+import clinicrouter from "./modules/clinics/clinic.controller.js";
+
 import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
 const app = express();
@@ -50,6 +52,8 @@ const bootstrap = () => {
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
+    app.use("/clinics", clinicrouter);
+
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });

@@ -8,21 +8,22 @@ import slotmodel from "../../DB/models/slot_model.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import availabilitymodel from "../../DB/models/avalibility_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
+
 //done
 export const addAvailability = async (req, res, next) => {
-  const { day, startTime, endTime, appointmentDuration } = req.body;
+  const { day, startTime, endTime, appointmentDuration, clinicId } = req.body;
+
+  const filter = { doctorId: req.user._id, day };
+  if (clinicId) filter.clinicId = clinicId;
 
   const exists = await db_service.findOne({
     model: availabilitymodel,
-
-    filter: {
-      doctorId: req.user._id,
-
-      day,
-    },
+    filter,
   });
+
   if (exists) {
     throw new Error("availability already exists for this day", { cause: 409 });
   }
@@ -31,35 +32,30 @@ export const addAvailability = async (req, res, next) => {
     model: availabilitymodel,
     data: {
       doctorId: req.user._id,
-
       day,
-
       startTime,
-
       endTime,
-
       appointmentDuration,
+      clinicId: clinicId || null,
     },
   });
+
   successresponse({
     res,
-
     status: 201,
-
     message: "availability added successfully",
-
     data: availability,
   });
 };
 
 //done
-
 export const getAvailability = async (req, res, next) => {
   const availabilities = await db_service.find({
     model: availabilitymodel,
     filter: {
       doctorId: req.user._id,
     },
+    populate: [{ path: "clinicId", select: "name address" }],
   });
 
   successresponse({
@@ -71,13 +67,16 @@ export const getAvailability = async (req, res, next) => {
 };
 
 //done
-
 export const generateMonthlySlots = async (req, res, next) => {
   const doctorId = req.user._id;
+  const { clinicId } = req.body;
+
+  const filter = { doctorId };
+  if (clinicId) filter.clinicId = clinicId;
 
   const availabilities = await db_service.find({
     model: availabilitymodel,
-    filter: { doctorId },
+    filter,
   });
 
   if (!availabilities.length) {
@@ -122,6 +121,7 @@ export const generateMonthlySlots = async (req, res, next) => {
 
         slots.push({
           doctorId,
+          clinicId: clinicId || null,
           startDateTime: currentSlot.toDate(),
           endDateTime: nextSlot.toDate(),
           isBooked: false,
@@ -151,17 +151,20 @@ export const generateMonthlySlots = async (req, res, next) => {
 };
 
 //done
-
 export const getAvailableSlots = async (req, res, next) => {
   try {
     const { doctorId } = req.params;
+    const { clinicId } = req.query;
+
+    const filter = {
+      doctorId,
+      isBooked: false,
+      startDateTime: { $gte: new Date() },
+    };
+    if (clinicId) filter.clinicId = clinicId;
 
     const slots = await slotmodel
-      .find({
-        doctorId,
-        isBooked: false,
-        startDateTime: { $gte: new Date() },
-      })
+      .find(filter)
       .sort({ startDateTime: 1 });
 
     return successresponse({
@@ -198,13 +201,11 @@ export const bookAppointment = async (req, res, next) => {
       patientId: req.user._id,
       doctorId: slot.doctorId,
       slotId,
+      clinicId: slot.clinicId || null,
       reason,
       status: "booked",
-
       appointmentDate: slot.startDateTime,
-
       startDateTime: slot.startDateTime,
-
       endDateTime: slot.endDateTime,
     });
 
@@ -223,6 +224,7 @@ export const bookAppointment = async (req, res, next) => {
     next(error);
   }
 };
+
 //done
 //gets appointment for patient
 export const getMyAppointments = async (req, res, next) => {
@@ -237,12 +239,14 @@ export const getMyAppointments = async (req, res, next) => {
       populate: [
         {
           path: "doctorId",
-
           select: "fullName email profilepicture",
         },
-
         {
           path: "slotId",
+        },
+        {
+          path: "clinicId",
+          select: "name address phone",
         },
       ],
 
@@ -253,17 +257,15 @@ export const getMyAppointments = async (req, res, next) => {
 
     return successresponse({
       res,
-
       status: 200,
-
       message: "appointments gets successfully",
-
       data: appointments,
     });
   } catch (error) {
     next(error);
   }
 };
+
 //done
 export const getDoctorAppointments = async (req, res, next) => {
   try {
@@ -277,7 +279,6 @@ export const getDoctorAppointments = async (req, res, next) => {
       populate: [
         {
           path: "patientId",
-
           select: `
                         fullName
                         email
@@ -285,9 +286,12 @@ export const getDoctorAppointments = async (req, res, next) => {
                         profilepicture
                     `,
         },
-
         {
           path: "slotId",
+        },
+        {
+          path: "clinicId",
+          select: "name address phone",
         },
       ],
 
@@ -298,17 +302,15 @@ export const getDoctorAppointments = async (req, res, next) => {
 
     return successresponse({
       res,
-
       status: 200,
-
       message: "doctor appointments gets successfully",
-
       data: appointments,
     });
   } catch (error) {
     next(error);
   }
 };
+
 //done
 export const cancelAppointment = async (req, res, next) => {
   try {
@@ -338,6 +340,7 @@ export const cancelAppointment = async (req, res, next) => {
     next(error);
   }
 };
+
 //done
 export const completeAppointment = async (req, res, next) => {
   try {
@@ -348,7 +351,6 @@ export const completeAppointment = async (req, res, next) => {
 
       filter: {
         _id: appointmentId,
-
         doctorId: req.user._id,
       },
     });
@@ -385,17 +387,15 @@ export const completeAppointment = async (req, res, next) => {
 
     return successresponse({
       res,
-
       status: 200,
-
       message: "appointment completed successfully",
-
       data: updatedAppointment,
     });
   } catch (error) {
     next(error);
   }
 };
+
 //done
 export const deleteSlot = async (req, res, next) => {
   const { slotId } = req.params;
@@ -405,7 +405,6 @@ export const deleteSlot = async (req, res, next) => {
 
     filter: {
       _id: slotId,
-
       doctorId: req.user._id,
     },
   });
@@ -428,10 +427,10 @@ export const deleteSlot = async (req, res, next) => {
 
   successresponse({
     res,
-
     message: "slot deleted successfully",
   });
 };
+
 //done
 export const updateSlot = async (req, res, next) => {
   try {
@@ -490,6 +489,7 @@ export const updateSlot = async (req, res, next) => {
     next(error);
   }
 };
+
 //done
 export const rescheduleAppointment = async (req, res, next) => {
   try {
@@ -561,6 +561,7 @@ export const rescheduleAppointment = async (req, res, next) => {
       filter: { _id: appointmentId },
       update: {
         slotId: newSlotId,
+        clinicId: newSlot.clinicId || null,
       },
       options: { new: true },
     });
@@ -577,6 +578,7 @@ export const rescheduleAppointment = async (req, res, next) => {
     next(error);
   }
 };
+
 export const doctorDashboard = async (req, res, next) => {
   const doctorId = req.user._id;
 
@@ -586,24 +588,10 @@ export const doctorDashboard = async (req, res, next) => {
     completedAppointments,
     cancelledAppointments,
   ] = await Promise.all([
-    appointmentsmodel.countDocuments({
-      doctorId,
-    }),
-
-    appointmentsmodel.countDocuments({
-      doctorId,
-      status: "booked",
-    }),
-
-    appointmentsmodel.countDocuments({
-      doctorId,
-      status: "completed",
-    }),
-
-    appointmentsmodel.countDocuments({
-      doctorId,
-      status: "cancelled",
-    }),
+    appointmentsmodel.countDocuments({ doctorId }),
+    appointmentsmodel.countDocuments({ doctorId, status: "booked" }),
+    appointmentsmodel.countDocuments({ doctorId, status: "completed" }),
+    appointmentsmodel.countDocuments({ doctorId, status: "cancelled" }),
   ]);
 
   successresponse({
@@ -617,6 +605,7 @@ export const doctorDashboard = async (req, res, next) => {
     },
   });
 };
+
 export const getUpcomingAppointments = async (req, res, next) => {
   const appointments = await db_service.find({
     model: appointmentsmodel,
@@ -639,6 +628,7 @@ export const getUpcomingAppointments = async (req, res, next) => {
     data: appointments,
   });
 };
+
 export const getTodayAppointments = async (req, res, next) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -670,6 +660,7 @@ export const getTodayAppointments = async (req, res, next) => {
     data: appointments,
   });
 };
+
 export const getCompletedAppointments = async (req, res, next) => {
   const appointments = await db_service.find({
     model: appointmentsmodel,
@@ -691,16 +682,17 @@ export const getCompletedAppointments = async (req, res, next) => {
     data: appointments,
   });
 };
+
 export const getPatientAppointments = async (req, res, next) => {
-  const { status } = req.query;
+  const { status, clinicId } = req.query;
 
   const filter = {
     patientId: req.user._id,
   };
 
-  if (status) {
-    filter.status = status;
-  }
+  if (status) filter.status = status;
+  if (clinicId) filter.clinicId = clinicId;
+
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
 
@@ -711,6 +703,10 @@ export const getPatientAppointments = async (req, res, next) => {
       {
         path: "doctorId",
         select: "fullname email",
+      },
+      {
+        path: "clinicId",
+        select: "name address phone",
       },
     ],
     skip: (page - 1) * limit,
