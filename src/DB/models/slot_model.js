@@ -1,32 +1,37 @@
 import mongoose from "mongoose";
 
-const slotSchema = new mongoose.Schema({
-
+const slotSchema = new mongoose.Schema(
+  {
     doctorId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "user",
-        required: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
+    },
+    clinicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "clinic",
+      default: null,
     },
 
     startDateTime: {
-        type: Date,
-        required: true
+      type: Date,
+      required: true,
     },
 
     endDateTime: {
-        type: Date,
-        required: true
+      type: Date,
+      required: true,
     },
 
     isBooked: {
-        type: Boolean,
-        default: false
-    }
+      type: Boolean,
+      default: false,
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
 
-}, {
-    timestamps: true
-});
-
-
-const slotmodel = mongoose.models.slot || mongoose.model("slot", slotSchema)
-export default slotmodel
+const slotmodel = mongoose.models.slot || mongoose.model("slot", slotSchema);
+export default slotmodel;
