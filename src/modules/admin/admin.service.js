@@ -194,8 +194,9 @@ export const getDashboard = async (req, res, next) => {
         let matchStage = {};
         if (last30Days === 'true') {
             const startDate = new Date();
-            startDate.setDate(startDate.getDate() - 30);
-            matchStage.createdAt = { $gte: startDate };
+            startDate.setDate(startDate.getDate() - 29);
+            startDate.setHours(0, 0, 0, 0);
+            matchStage.createdAt = { $gte: startDate, $lte: new Date() };
         }
 
         const [
@@ -209,8 +210,8 @@ export const getDashboard = async (req, res, next) => {
             totalAppointments
         ] = await Promise.all([
             db_service.count({ model: usermodel, filter: matchStage }),
-            db_service.count({ model: usermodel, filter: { ...matchStage, role: roleenum.doctor } }),
-            db_service.count({ model: patientmodel, filter: matchStage }),
+            db_service.count({ model: usermodel, filter: { ...matchStage, role: roleenum.doctor, status: { $nin: ["pending", "rejected"] } } }),
+            db_service.count({ model: usermodel, filter: { ...matchStage, role: roleenum.patient } }),
             db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "pending" } }),
             db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "rejected" } }),
             db_service.count({ model: prescrptionmodel, filter: matchStage }),
@@ -528,7 +529,7 @@ export const getMonthlyStats = async (req, res, next) => {
 // ─── GET /admin/stats/daily ──────────────────────────────────────────────────
 export const getDailyStats = async (req, res, next) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, defaultAllTime } = req.query;
         let start, end;
         if (startDate || endDate) {
             start = startDate ? new Date(startDate) : new Date();
@@ -539,6 +540,17 @@ export const getDailyStats = async (req, res, next) => {
 
             end = endDate ? new Date(endDate) : new Date();
             if (endDate) end.setHours(23, 59, 59, 999);
+        } else if (defaultAllTime === 'true') {
+            const firstUser = await usermodel.findOne().sort({ createdAt: 1 }).select("createdAt").lean();
+            const firstAppt = await appointments_model.findOne().sort({ createdAt: 1 }).select("createdAt").lean();
+            
+            let earliest = new Date();
+            if (firstUser && new Date(firstUser.createdAt) < earliest) earliest = new Date(firstUser.createdAt);
+            if (firstAppt && new Date(firstAppt.createdAt) < earliest) earliest = new Date(firstAppt.createdAt);
+
+            start = earliest;
+            start.setHours(0, 0, 0, 0);
+            end = new Date();
         } else {
             end = new Date();
             start = new Date();
@@ -546,57 +558,13 @@ export const getDailyStats = async (req, res, next) => {
             start.setHours(0, 0, 0, 0);
         }
 
-        const usersAggregation = await usermodel.aggregate([
-            {
-                $match: {
-                    createdAt: { $gte: start, $lte: end }
-                }
-            },
-            {
-                $group: {
-                    _id: {
-                        year: { $year: "$createdAt" },
-                        month: { $month: "$createdAt" },
-                        day: { $dayOfMonth: "$createdAt" }
-                    },
-                    patientsCount: {
-                        $sum: { $cond: [{ $eq: ["$role", "patient"] }, 1, 0] }
-                    },
-                    doctorsCount: {
-                        $sum: {
-                            $cond: [
-                                { 
-                                    $and: [
-                                        { $eq: ["$role", "doctor"] },
-                                        { $not: { $in: ["$status", ["pending", "rejected"]] } }
-                                    ]
-                                },
-                                1,
-                                0
-                            ]
-                        }
-                    }
-                }
-            }
-        ]);
+        const users = await usermodel.find({
+            createdAt: { $gte: start, $lte: end }
+        }).select("createdAt role status").lean();
 
-        const appointmentsAggregation = await appointments_model.aggregate([
-            {
-                $match: {
-                    createdAt: { $gte: start, $lte: end }
-                }
-            },
-            {
-                $group: {
-                    _id: {
-                        year: { $year: "$createdAt" },
-                        month: { $month: "$createdAt" },
-                        day: { $dayOfMonth: "$createdAt" }
-                    },
-                    count: { $sum: 1 }
-                }
-            }
-        ]);
+        const appointments = await appointments_model.find({
+            createdAt: { $gte: start, $lte: end }
+        }).select("createdAt").lean();
 
         const diffTime = end.getTime() - start.getTime();
         const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -611,14 +579,30 @@ export const getDailyStats = async (req, res, next) => {
             const m = date.getMonth() + 1;
             const d = date.getDate();
 
-            const userStat = usersAggregation.find(u => u._id.year === y && u._id.month === m && u._id.day === d);
-            const appStat = appointmentsAggregation.find(a => a._id.year === y && a._id.month === m && a._id.day === d);
+            let patientsCount = 0;
+            let doctorsCount = 0;
+            let appointmentsCount = 0;
+
+            users.forEach(u => {
+                const ud = new Date(u.createdAt);
+                if (ud.getFullYear() === y && ud.getMonth() + 1 === m && ud.getDate() === d) {
+                    if (u.role === "patient") patientsCount++;
+                    if (u.role === "doctor" && u.status !== "pending" && u.status !== "rejected") doctorsCount++;
+                }
+            });
+
+            appointments.forEach(a => {
+                const ad = new Date(a.createdAt);
+                if (ad.getFullYear() === y && ad.getMonth() + 1 === m && ad.getDate() === d) {
+                    appointmentsCount++;
+                }
+            });
 
             data.push({
                 date: `${m}/${d}`,
-                patientsCount: userStat ? userStat.patientsCount : 0,
-                doctorsCount: userStat ? userStat.doctorsCount : 0,
-                appointmentsCount: appStat ? appStat.count : 0
+                patientsCount,
+                doctorsCount,
+                appointmentsCount
             });
         }
 
@@ -643,10 +627,16 @@ export const getAnalyticsStats = async (req, res, next) => {
         if (startDate || endDate) {
             matchStage.createdAt = {};
             if (startDate) {
-                matchStage.createdAt.$gte = new Date(startDate);
-                baseMatchStage.createdAt = { $lt: new Date(startDate) };
+                const s = new Date(startDate);
+                s.setHours(0, 0, 0, 0);
+                matchStage.createdAt.$gte = s;
+                baseMatchStage.createdAt = { $lt: s };
             }
-            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+            if (endDate) {
+                const e = new Date(endDate);
+                e.setHours(23, 59, 59, 999);
+                matchStage.createdAt.$lte = e;
+            }
             
             // If the dates are identical or invalid, ensure fallback or remove
             if (Object.keys(matchStage.createdAt).length === 0) {
