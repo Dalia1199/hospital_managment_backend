@@ -3,6 +3,7 @@ import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { sendNotificationToUser } from "../../common/socket/socket.service.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
+import doctormodel from "../../DB/models/doctormodel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -70,6 +71,7 @@ export const notify = {
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
             userId: adminId,
+            type: "doctor_registration",
             message: `A new doctor ${doctorName} has registered and is waiting for approval`,
             link: "/admin/approvals"
         }),
@@ -80,7 +82,51 @@ export const notify = {
             message: `A new doctor ${doctorName} has updated his license and is waiting for approval`,
             link: "/admin/doctors/licenses"
     }),
-
+    newDoctorUnderReview: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_under_review",
+            message:"Your registration was submitted successfully. Please wait for admin approval",
+        }),
+    doctorApproved: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_approved",
+            message:"Your account has been approved by an administrator",
+            link: "/doctor"
+        }),
+    doctorRejected: (doctorId, reason) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_rejected",
+            message: `Your account approval request has been rejected, the reason: ${reason}`,
+        }),
+    newLicenseUnderReview: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_under_review",
+            message:"Your License was uploaded successfully. Please wait for admin approval",
+        }),
+    licenseApproved: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_approved",
+            message: "Your license update has been approved",
+            link: "/doctor/profile"
+        }),
+    licenseRejected: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_rejected",
+            message: "Your license update has been rejected",
+        }),
+    patientAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_appointment",
+            message: `Patient ${patientName} booked an appointment at ${date}`,
+            link: "/doctor/appointments"
+        }),
 };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────

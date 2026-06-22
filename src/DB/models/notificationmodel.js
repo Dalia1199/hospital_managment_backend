@@ -14,7 +14,11 @@ const notificationSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ["appointment", "prescription", "medical_history", "session", "doctor_registration", "license_update"],
+            enum: [
+                "appointment", "prescription", "medical_history", "session", 
+                "doctor_registration", "license_update",
+                "doctor_under_review", "doctor_approved", "doctor_rejected", "license_under_review", "license_approved", "license_rejected", "patient_appointment",
+            ],
             required: true
         },
         isRead: {

@@ -215,6 +215,7 @@ export const bookAppointment = async (req, res, next) => {
     await slot.save();
 
     await notify.appointmentBooked(appointment.patientId);
+    await notify.patientAppointment(slot.doctorId , req.user._id , slot.startDateTime);
 
     return successresponse({
       res,

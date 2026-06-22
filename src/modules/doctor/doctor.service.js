@@ -154,6 +154,7 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
+        const oldPublicId = doctor.licenseimage?.public_id;
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -167,11 +168,13 @@ export const uploadLicense = async (req, res, next) => {
                 options: { new: true }
             });
 
-            await db_service.findOneAndUpdate({
-                model: usermodel,
-                filter: { _id: req.user._id },
-                update: { status: "pending" }
-            });
+            await notify.newLicenseUnderReview(updatedDoctor.userId);
+
+            // await db_service.findOneAndUpdate({
+            //     model: usermodel,
+            //     filter: { _id: req.user._id },
+            //     update: { status: "pending" }
+            // });
 
             const admins = await db_service.find({
                 model: usermodel,

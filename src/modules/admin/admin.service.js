@@ -14,6 +14,7 @@ import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js"
 import { hash } from "../../common/utilits/security/hash.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
+import { notify } from "../notifications/notification.service.js";
 
 
 export const getPendingDoctors = async (req, res, next) => {
@@ -75,6 +76,8 @@ export const approveDoctor = async (req, res, next) => {
             options: { new: true, select: "-password" }
         });
 
+        await notify.doctorApproved(doctor._id);
+
         // بعت OTP للدكتور بعد الـ approve
         const otp = await generateotp();
         eventemitter.emit(emailenum.confirmemail, async () => {
@@ -119,6 +122,8 @@ export const rejectDoctor = async (req, res, next) => {
             { status: "rejected" },
             { new: true, select: "-password" }
         );
+
+        await notify.doctorRejected(doctor._id , reason);
 
         // بعت email للدكتور بسبب الرفض
         eventemitter.emit(emailenum.confirmemail, async () => {
@@ -384,6 +389,7 @@ export const approveDoctorLicense = async (req, res, next) => {
         doctor.pendingLicenseImage = null;
         
         await doctor.save();
+        await notify.licenseApproved(doctor.userId);
         
         if (oldPublicId) {
             await cloudinary.uploader.destroy(oldPublicId);
@@ -421,6 +427,7 @@ export const rejectDoctorLicense = async (req, res, next) => {
         doctor.pendingLicenseImage = null;
         
         await doctor.save();
+        await notify.licenseRejected(doctor.userId);
 
         if (newPublicId) {
             await cloudinary.uploader.destroy(newPublicId);
