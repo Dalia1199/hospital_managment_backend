@@ -179,6 +179,14 @@ export const getAllDoctors = async (req, res, next) => {
 
 export const getDashboard = async (req, res, next) => {
     try {
+        const { last30Days } = req.query;
+        let matchStage = {};
+        if (last30Days === 'true') {
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 30);
+            matchStage.createdAt = { $gte: startDate };
+        }
+
         const [
             totalUsers,
             totalDoctors,
@@ -189,14 +197,14 @@ export const getDashboard = async (req, res, next) => {
             totalMedicalHistories,
             totalAppointments
         ] = await Promise.all([
-            db_service.count({ model: usermodel, filter: {} }),
-            db_service.count({ model: usermodel, filter: { role: roleenum.doctor } }),
-            db_service.count({ model: patientmodel, filter: {} }),
+            db_service.count({ model: usermodel, filter: matchStage }),
+            db_service.count({ model: usermodel, filter: { ...matchStage, role: roleenum.doctor } }),
+            db_service.count({ model: patientmodel, filter: matchStage }),
             db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "pending" } }),
             db_service.count({ model: usermodel, filter: { role: roleenum.doctor, status: "rejected" } }),
-            db_service.count({ model: prescrptionmodel, filter: {} }),
-            db_service.count({ model: medicalhistorymodel, filter: {} }),
-            db_service.count({ model: appointments_model, filter: {} })
+            db_service.count({ model: prescrptionmodel, filter: matchStage }),
+            db_service.count({ model: medicalhistorymodel, filter: matchStage }),
+            db_service.count({ model: appointments_model, filter: matchStage })
         ]);
 
         return successresponse({
@@ -527,7 +535,23 @@ export const getDailyStats = async (req, res, next) => {
                         month: { $month: "$createdAt" },
                         day: { $dayOfMonth: "$createdAt" }
                     },
-                    count: { $sum: 1 }
+                    patientsCount: {
+                        $sum: { $cond: [{ $eq: ["$role", "patient"] }, 1, 0] }
+                    },
+                    doctorsCount: {
+                        $sum: {
+                            $cond: [
+                                { 
+                                    $and: [
+                                        { $eq: ["$role", "doctor"] },
+                                        { $not: { $in: ["$status", ["pending", "rejected"]] } }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    }
                 }
             }
         ]);
@@ -563,7 +587,8 @@ export const getDailyStats = async (req, res, next) => {
 
             data.push({
                 date: `${m}/${d}`,
-                usersCount: userStat ? userStat.count : 0,
+                patientsCount: userStat ? userStat.patientsCount : 0,
+                doctorsCount: userStat ? userStat.doctorsCount : 0,
                 appointmentsCount: appStat ? appStat.count : 0
             });
         }
@@ -675,15 +700,10 @@ export const getAnalyticsStats = async (req, res, next) => {
         const totalPrescriptions = await db_service.count({ model: prescrptionmodel, filter: matchStage });
         const totalMedicalHistories = await db_service.count({ model: medicalhistorymodel, filter: matchStage });
         
-        // 2b. Cumulative Summary Totals (Users)
-        let cumulativeMatchStage = {};
-        if (endDate) {
-            cumulativeMatchStage.createdAt = { $lte: new Date(endDate) };
-        }
-
-        const totalUsers = await db_service.count({ model: usermodel, filter: cumulativeMatchStage });
-        const totalDoctors = await db_service.count({ model: usermodel, filter: { ...cumulativeMatchStage, role: "doctor" } });
-        const totalPatients = await db_service.count({ model: usermodel, filter: { ...cumulativeMatchStage, role: "patient" } });
+        // 2b. Summary Totals (Users) - Filtered by exact date range
+        const totalUsers = await db_service.count({ model: usermodel, filter: matchStage });
+        const totalDoctors = await db_service.count({ model: usermodel, filter: { ...matchStage, role: "doctor" } });
+        const totalPatients = await db_service.count({ model: usermodel, filter: { ...matchStage, role: "patient" } });
 
         // 3. Doctors by Specialty
         const specialtyAggregation = await doctormodel.aggregate([
