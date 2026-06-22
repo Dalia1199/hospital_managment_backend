@@ -6,13 +6,17 @@ import * as db_service from "../../DB/db.service.js"
 
 
 export const authentication = async (req, res, next) => {
-    const { authorization } = req.headers
-    if (!authorization) {
-        throw new Error("token not exist");
+    let token = req.cookies?.jwt;
+    
+    if (!token && req.headers.authorization) {
+        const [prefix, headerToken] = req.headers.authorization.split(" ");
+        if (prefix === "Bearer") {
+            token = headerToken;
+        }
     }
-    const [prefix, token] = authorization.split(" ")
-    if (prefix !== "Bearer") {
-        throw new Error("invalid token prefix");
+
+    if (!token) {
+        throw new Error("token not exist");
     }
     const decoded = verifytoken({ token, secret_key: access_secret_key })
     if (!decoded || !decoded?.id) {
