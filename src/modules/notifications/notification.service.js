@@ -98,16 +98,26 @@ export const notify = {
 // ─── GET /notifications ────────────────────────────────────────────────────────
 export const getNotifications = async (req, res, next) => {
     try {
-        const { page = 1, limit = 10 } = req.query;
+        const { page = 1, limit = 10, tab = "all", search = "" } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [notifications, total] = await Promise.all([
+        const filterQuery = { userId: req.user._id };
+        
+        if (tab === "read") filterQuery.isRead = true;
+        if (tab === "unread") filterQuery.isRead = false;
+        
+        if (search) {
+            filterQuery.message = { $regex: search, $options: "i" };
+        }
+
+        const [notifications, total, unreadCount] = await Promise.all([
             notificationmodel
-                .find({ userId: req.user._id })
+                .find(filterQuery)
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
-            notificationmodel.countDocuments({ userId: req.user._id }),
+            notificationmodel.countDocuments(filterQuery),
+            notificationmodel.countDocuments({ userId: req.user._id, isRead: false })
         ]);
 
         return successresponse({
@@ -116,6 +126,7 @@ export const getNotifications = async (req, res, next) => {
             message: "notifications fetched successfully",
             data: {
                 notifications,
+                unreadCount,
                 pagination: {
                     total,
                     page: parseInt(page),
