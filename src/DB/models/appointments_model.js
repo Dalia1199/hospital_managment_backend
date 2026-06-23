@@ -54,6 +54,15 @@ const appointmentsSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    
+}, {
+
+    timestamps: true
+
+});
+const appointmentsmodel = mongoose.models.appointments || mongoose.model("appointments", appointmentsSchema)
+export default appointmentsmodel
+
   },
   {
     timestamps: true,

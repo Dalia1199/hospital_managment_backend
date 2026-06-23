@@ -18,6 +18,7 @@ import clinicrouter from "./modules/clinics/clinic.controller.js";
 
 import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
+import paymentRouter from "./modules/payment/payment.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -52,6 +53,7 @@ const bootstrap = () => {
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
+    app.use( "/payments", paymentRouter);
     app.use("/clinics", clinicrouter);
 
 
