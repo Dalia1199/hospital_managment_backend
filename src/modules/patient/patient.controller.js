@@ -75,5 +75,34 @@ patientrouter.get(
     PS.getTrackingRecords
 )
 
+// Medication Tracking endpoints
+patientrouter.get(
+    "/medications/active",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.getActiveMedications
+)
+
+patientrouter.get(
+    "/medications/history",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.getMedicationHistory
+)
+
+patientrouter.post(
+    "/medications/track",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.trackMedicationDose
+)
+
+patientrouter.get(
+    "/medications/summary",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.getMedicationSummary
+)
+
 export default patientrouter
  

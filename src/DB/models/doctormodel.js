@@ -4,7 +4,8 @@ const doctorSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         ref: "user"
     },
-    syncdicatedId:Number,
+    syncdicatedId: Number,
+    
     licenseimage: {
         secure_url: {
             type: String,
@@ -15,6 +16,11 @@ const doctorSchema = new mongoose.Schema({
             required: true
         }
     },
+    pendingLicenseImage: {
+        secure_url: String,
+        public_id: String
+    },
+
     specialization: String,
     nationalId: {
         secure_url: String,
@@ -23,6 +29,12 @@ const doctorSchema = new mongoose.Schema({
     experience: Number,
 
     // add bio to the doctor model
+    bio: {
+        type: String,
+        maxlength: 200,
+        minlength: 20,
+    },
+    vectorDbPath: String,
    bio: {
     type:String,
      maxlength:200,

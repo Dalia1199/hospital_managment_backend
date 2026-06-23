@@ -14,6 +14,8 @@ import patientrouter from "./modules/patient/patient.controller.js";
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 import appointmensrouter from "./modules/appointments/appointmens.controller.js";
 import notificationrouter from "./modules/notifications/notification.controller.js";
+import clinicrouter from "./modules/clinics/clinic.controller.js";
+
 import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
@@ -52,6 +54,8 @@ const bootstrap = () => {
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
     app.use( "/payments", paymentRouter);
+    app.use("/clinics", clinicrouter);
+
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });

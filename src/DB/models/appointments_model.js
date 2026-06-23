@@ -1,69 +1,58 @@
 import mongoose from "mongoose";
 
-const appointmentsSchema = new mongoose.Schema({
-
+const appointmentsSchema = new mongoose.Schema(
+  {
     patientId: {
+      type: mongoose.Schema.Types.ObjectId,
 
-        type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
 
-        ref: "user",
-
-        required: true
-
+      required: true,
     },
 
     doctorId: {
-
-        type: mongoose.Schema.Types.ObjectId,
-
-        ref: "user",
-
-        required: true
-
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
     },
 
     slotId: {
+      type: mongoose.Schema.Types.ObjectId,
 
-        type: mongoose.Schema.Types.ObjectId,
+      ref: "availability",
 
-        ref: "availability",
-
-        required: true
-
+      required: true,
+    },
+    clinicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "clinic",
+      default: null,
     },
 
     reason: {
-
-        type: String
-
+      type: String,
     },
 
     status: {
+      type: String,
 
-        type: String,
+      enum: ["booked", "completed", "cancelled"],
 
-        enum: [
-            "booked",
-            "completed",
-            "cancelled"
-        ],
-
-        default: "booked"
-
+      default: "booked",
     },
     appointmentDate: {
-        type: Date,
-        required: true
+      type: Date,
+      required: true,
     },
 
     startDateTime: {
-        type: Date,
-        required: true
+      type: Date,
+      required: true,
     },
 
     endDateTime: {
-        type: Date,
-        required: true
+      type: Date,
+      required: true,
     },
     
 }, {
@@ -74,3 +63,12 @@ const appointmentsSchema = new mongoose.Schema({
 const appointmentsmodel = mongoose.models.appointments || mongoose.model("appointments", appointmentsSchema)
 export default appointmentsmodel
 
+  },
+  {
+    timestamps: true,
+  },
+);
+const appointmentsmodel =
+  mongoose.models.appointments ||
+  mongoose.model("appointments", appointmentsSchema);
+export default appointmentsmodel;
