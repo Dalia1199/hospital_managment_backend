@@ -471,6 +471,10 @@ export const createSession = async (req, res, next) => {
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                     }
                 });
+                
+                // Notify patient
+                await notify.profileViewed(patientId, req.user.fullName);
+
                 return successresponse({
                     res,
                     message: "Session activated successfully without OTP due to privacy setting",
@@ -503,6 +507,9 @@ export const createSession = async (req, res, next) => {
                        <p>This OTP expires in 10 minutes.</p>`
             });
             */
+
+            // Notify patient
+            await notify.accessRequested(patientId, req.user.fullName);
 
             return successresponse({
                 res,
@@ -725,6 +732,10 @@ export const endSession = async (req, res, next) => {
             data: medicalHistoryData
         });
 
+        if (!session.isOfflinePatient) {
+            await notify.medicalHistoryAdded(session.patientId);
+        }
+
         // If structured medications were provided, create a prescription record
         let prescriptionRecord = null;
         if (parsedMedications.length > 0) {
@@ -754,6 +765,10 @@ export const endSession = async (req, res, next) => {
                 filter: { _id: medicalHistory._id },
                 update: { $push: { prescriptions: prescriptionRecord._id } }
             });
+
+            if (!session.isOfflinePatient) {
+                await notify.prescriptionIssued(session.patientId);
+            }
         }
 
         return successresponse({

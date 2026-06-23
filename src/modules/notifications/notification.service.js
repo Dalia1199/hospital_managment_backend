@@ -61,11 +61,23 @@ export const notify = {
             message: "A new medical record has been added to your history",
             link: "/patient/history",
         }),
-    sessionRequested: (userId) =>
+    accessRequested: (userId, doctorName) =>
         createNotification({
             userId,
             type: "session",
-            message: "A doctor is requesting access to your medical history",
+            message: `Doctor ${doctorName} has requested access to your medical profile.`,
+        }),
+    profileViewed: (userId, doctorName) =>
+        createNotification({
+            userId,
+            type: "session",
+            message: `Doctor ${doctorName} has viewed your medical profile.`,
+        }),
+    medicationReminder: (userId, medName, msg) =>
+        createNotification({
+            userId,
+            type: "medication",
+            message: msg || `It is time to take your medication: ${medName}.`,
         }),
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
