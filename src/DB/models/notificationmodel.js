@@ -16,8 +16,9 @@ const notificationSchema = new mongoose.Schema(
             type: String,
             enum: [
                 "appointment", "prescription", "medical_history", "session", 
-                "doctor_registration", "license_update",
-                "doctor_under_review", "doctor_approved", "doctor_rejected", "license_under_review", "license_approved", "license_rejected", "patient_appointment",
+                "doctor_registration", "license_update", // admin
+                "doctor_under_review", "doctor_approved", "doctor_rejected", "license_under_review", "license_approved", "license_rejected", // doctor
+                 "patient_booked_appointment", "patient_cancelled_appointment", "patient_completed_appointment" , "patient_rescheduled_appointment", // doctor
             ],
             required: true
         },

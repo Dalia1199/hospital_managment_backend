@@ -123,8 +123,29 @@ export const notify = {
     patientAppointment: (doctorId, patientName, date) =>
         createNotification({
             userId: doctorId,
-            type: "patient_appointment",
-            message: `Patient ${patientName} booked an appointment at ${date}`,
+            type: "patient_booked_appointment",
+            message: `${patientName} booked an appointment at ${date}`,
+            link: "/doctor/appointments"
+        }),
+    patientCancelledAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_cancelled_appointment",
+            message: `${patientName} has cancelled an appointment at ${date}.`,
+            link: "/doctor/appointments"
+        }),
+    patientCompletedAppointment: (doctorId, patientName) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_completed_appointment",
+            message: `${patientName} has completed their appointment.`,
+            link: "/doctor/appointments"
+        }),
+    patientRescheduledAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_rescheduled_appointment",
+            message: `${patientName} has rescheduled their appointment from ${date} to ${date}.`,
             link: "/doctor/appointments"
         }),
 };
