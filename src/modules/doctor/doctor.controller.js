@@ -169,7 +169,7 @@ doctorrouter.get(
 
 // add a certificate
 doctorrouter.post(
-    "/certificate",
+    "/profile/certificates",
     authentication,
     authorization([roleenum.doctor]),
     multer_host([...multerenum.image, ...multerenum.pdf]).single("certificate"),
@@ -177,7 +177,7 @@ doctorrouter.post(
     DS.addCertificate
 );
 doctorrouter.patch(
-    "/certificate/:certificateId",
+    "/profile/certificates/:certificateId",
     authentication,
     authorization([roleenum.doctor]),
     multer_host([...multerenum.image, ...multerenum.pdf]).single("certificate"),
@@ -186,11 +186,25 @@ doctorrouter.patch(
 );
 
 doctorrouter.delete(
-    "/certificate/:certificateId",
+    "/profile/certificates/:certificateId",
     authentication,
     authorization([roleenum.doctor]),
     validation(DV.deleteCertificateSchema),
     DS.deleteCertificate
+);
+
+doctorrouter.get(
+    "/profile/certificates",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getCertificates
+);
+
+doctorrouter.get(
+    "/notifications",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getAllNotifications
 );
 
 export default doctorrouter;

@@ -148,6 +148,29 @@ export const notify = {
             message: `${patientName} has rescheduled their appointment from ${date} to ${date}.`,
             link: "/doctor/appointments"
         }),
+    certificateAdded: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_added",
+            message: `Certificate "${certificateName}" has been added successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
+
+    certificateUpdated: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_updated",
+            message: `Certificate "${certificateName}" has been updated successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
+
+    certificateDeleted: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_deleted",
+            message: `Certificate "${certificateName}" has been deleted successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
 };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────

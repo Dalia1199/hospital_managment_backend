@@ -14,6 +14,7 @@ import { notify } from "../notifications/notification.service.js";
 import mongoose from "mongoose";
 import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
 import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
+import notificationmodel from "../../DB/models/notificationmodel.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -1406,6 +1407,7 @@ export const addCertificate = async (req, res, next) => {
         });
 
         await doctor.save();
+        await notify.certificateAdded(req.user._id, title);
 
         return successresponse({
             res,
@@ -1427,32 +1429,34 @@ export const updateCertificate = async (req, res, next) => {
 
         const certificate = doctor.certificates.id(certificateId);
         if (!certificate) throw new Error("certificate not found", { cause: 404 });
-        
-        if(req.body.title) certificate.title = req.body.title;
-        if(req.body.issuer) certificate.title = req.body.issuer;
-        if(req.body.issueDate ) certificate.title = req.body.issueDate ;
 
-        if(req.file){
+        if (req.body.title) certificate.title = req.body.title;
+        if (req.body.issuer) certificate.title = req.body.issuer;
+        if (req.body.issueDate) certificate.title = req.body.issueDate;
+
+        if (req.file) {
             const oldPublicId = certificate.public_id;
 
-            const {secure_url , public_id} = 
-                await cloudinary.uploader.upload(req.file.path , {
+            const { secure_url, public_id } =
+                await cloudinary.uploader.upload(req.file.path, {
                     folder: "carehub/doctors/certificates"
                 })
 
             certificate.secure_url = secure_url;
             certificate.public_id = public_id;
-            await cloudinary.uploader.destroy(oldPublicId); 
+            await cloudinary.uploader.destroy(oldPublicId);
         }
 
         await doctor.save();
+        await notify.certificateUpdated(req.user._id, certificate.title);
+
         return successresponse({
             res,
             message: "certificate updated successfully",
             data: doctor.certificates
         });
 
-    } 
+    }
     catch (error) { next(error) }
 };
 
@@ -1477,8 +1481,8 @@ export const deleteCertificate = async (req, res, next) => {
 
         // pull --> work with mongoose array to delete element with id
         doctor.certificates.pull(certificateId);
-
         await doctor.save();
+        await notify.certificateDeleted(req.user._id, certificate.title);
 
         return successresponse({
             res,
@@ -1488,4 +1492,53 @@ export const deleteCertificate = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
+
+export const getCertificates = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id },
+            select: "certificates"
+        });
+
+        if (!doctor) throw new Error("doctor not found", { cause: 404 });
+
+        return successresponse({
+            res,
+            data: doctor.certificates
+        });
+    } catch (error) { next(error) }
+};
+
+export const getAllNotifications = async (req, res, next) => {
+    try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+
+        const skip = (page - 1) * limit;
+
+        const filter = {
+            userId: req.user._id,
+        };
+
+        const [notifications, totalNotifications] = await Promise.all([
+            notificationmodel
+                .find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+
+            notificationmodel.countDocuments(filter),
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            page,
+            limit,
+            totalNotifications,
+            totalPages: Math.ceil(totalNotifications / limit),
+            notifications,
+        });
+    } catch (error) { next(error) }
 };
