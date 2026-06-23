@@ -18,6 +18,7 @@ import clinicrouter from "./modules/clinics/clinic.controller.js";
 
 import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
+import { startMedicationCron } from "./common/cron/medicationCron.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
 const app = express();
 const Port = PORT || 3000;
@@ -36,6 +37,7 @@ const bootstrap = () => {
 
     // DB connection is now awaited in index.js before starting the server
     connectionredis();
+    startMedicationCron();
 
     app.get("/", (req, res, next) => {
         res.status(200).json({ message: `welcome to carehub app😊` })

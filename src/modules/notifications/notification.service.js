@@ -61,11 +61,23 @@ export const notify = {
             message: "A new medical record has been added to your history",
             link: "/patient/history",
         }),
-    sessionRequested: (userId) =>
+    accessRequested: (userId, doctorName) =>
         createNotification({
             userId,
             type: "session",
-            message: "A doctor is requesting access to your medical history",
+            message: `Doctor ${doctorName} has requested access to your medical profile.`,
+        }),
+    profileViewed: (userId, doctorName) =>
+        createNotification({
+            userId,
+            type: "session",
+            message: `Doctor ${doctorName} has viewed your medical profile.`,
+        }),
+    medicationReminder: (userId, medName, msg) =>
+        createNotification({
+            userId,
+            type: "medication",
+            message: msg || `It is time to take your medication: ${medName}.`,
         }),
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
@@ -86,16 +98,26 @@ export const notify = {
 // ─── GET /notifications ────────────────────────────────────────────────────────
 export const getNotifications = async (req, res, next) => {
     try {
-        const { page = 1, limit = 10 } = req.query;
+        const { page = 1, limit = 10, tab = "all", search = "" } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [notifications, total] = await Promise.all([
+        const filterQuery = { userId: req.user._id };
+        
+        if (tab === "read") filterQuery.isRead = true;
+        if (tab === "unread") filterQuery.isRead = false;
+        
+        if (search) {
+            filterQuery.message = { $regex: search, $options: "i" };
+        }
+
+        const [notifications, total, unreadCount] = await Promise.all([
             notificationmodel
-                .find({ userId: req.user._id })
+                .find(filterQuery)
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
-            notificationmodel.countDocuments({ userId: req.user._id }),
+            notificationmodel.countDocuments(filterQuery),
+            notificationmodel.countDocuments({ userId: req.user._id, isRead: false })
         ]);
 
         return successresponse({
@@ -104,6 +126,7 @@ export const getNotifications = async (req, res, next) => {
             message: "notifications fetched successfully",
             data: {
                 notifications,
+                unreadCount,
                 pagination: {
                     total,
                     page: parseInt(page),
