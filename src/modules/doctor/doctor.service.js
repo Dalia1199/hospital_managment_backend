@@ -257,7 +257,7 @@ export const getPatientCompliance = async (req, res, next) => {
     try {
         const { patientId } = req.params;
         const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
-        
+
         if (!hasAccess) {
             throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
         }
@@ -313,7 +313,7 @@ export const getPatientCompliance = async (req, res, next) => {
 
         let totalTaken = 0;
         let totalMissed = 0;
-        
+
         trackingRecords.forEach(r => {
             if (r.status === 'taken') totalTaken++;
             else if (r.status === 'missed') totalMissed++;
@@ -360,16 +360,18 @@ export const getPatientCompliance = async (req, res, next) => {
             alerts.push({ type: "warning", message: `Multiple missed doses (${consecutiveMissedDays} days).` });
         }
 
-        return successresponse({ res, data: {
-            adherencePercentage,
-            complianceStatus,
-            totalTaken,
-            totalMissed,
-            currentStreak,
-            activeMedicationsCount: activeMeds.length,
-            alerts,
-            activeMeds
-        }});
+        return successresponse({
+            res, data: {
+                adherencePercentage,
+                complianceStatus,
+                totalTaken,
+                totalMissed,
+                currentStreak,
+                activeMedicationsCount: activeMeds.length,
+                alerts,
+                activeMeds
+            }
+        });
 
     } catch (error) {
         next(error);
@@ -1378,4 +1380,112 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
     }
 
     return { hasAccess: false, sharingSetting };
+};
+
+export const addCertificate = async (req, res, next) => {
+    try {
+        if (!req.file) throw new Error("certificate file is required", { cause: 400 });
+
+        const { title, issuer, issueDate } = req.body;
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const { secure_url, public_id } =
+            await cloudinary.uploader.upload(req.file.path, {
+                folder: "carehub/doctors/certificates"
+            });
+
+        doctor.certificates.push({
+            title,
+            issuer,
+            issueDate,
+            secure_url,
+            public_id
+        });
+
+        await doctor.save();
+
+        return successresponse({
+            res,
+            message: "certificate added successfully",
+            data: doctor.certificates
+        })
+    }
+    catch (error) { next(error) }
+};
+
+export const updateCertificate = async (req, res, next) => {
+    try {
+        const { certificateId } = req.params;
+
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const certificate = doctor.certificates.id(certificateId);
+        if (!certificate) throw new Error("certificate not found", { cause: 404 });
+        
+        if(req.body.title) certificate.title = req.body.title;
+        if(req.body.issuer) certificate.title = req.body.issuer;
+        if(req.body.issueDate ) certificate.title = req.body.issueDate ;
+
+        if(req.file){
+            const oldPublicId = certificate.public_id;
+
+            const {secure_url , public_id} = 
+                await cloudinary.uploader.upload(req.file.path , {
+                    folder: "carehub/doctors/certificates"
+                })
+
+            certificate.secure_url = secure_url;
+            certificate.public_id = public_id;
+            await cloudinary.uploader.destroy(oldPublicId); 
+        }
+
+        await doctor.save();
+        return successresponse({
+            res,
+            message: "certificate updated successfully",
+            data: doctor.certificates
+        });
+
+    } 
+    catch (error) { next(error) }
+};
+
+export const deleteCertificate = async (req, res, next) => {
+    try {
+        const { certificateId } = req.params;
+
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const certificate = doctor.certificates.id(certificateId);
+
+        if (!certificate) {
+            throw new Error("certificate not found", { cause: 404 });
+        }
+
+        await cloudinary.uploader.destroy(
+            certificate.public_id
+        );
+
+        // pull --> work with mongoose array to delete element with id
+        doctor.certificates.pull(certificateId);
+
+        await doctor.save();
+
+        return successresponse({
+            res,
+            message: "certificate deleted successfully"
+        });
+
+    } catch (error) {
+        next(error);
+    }
 };

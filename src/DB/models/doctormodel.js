@@ -5,7 +5,7 @@ const doctorSchema = new mongoose.Schema({
         ref: "user"
     },
     syncdicatedId: Number,
-    
+
     licenseimage: {
         secure_url: {
             type: String,
@@ -35,16 +35,38 @@ const doctorSchema = new mongoose.Schema({
         minlength: 20,
     },
     vectorDbPath: String,
-   bio: {
-    type:String,
-     maxlength:200,
-      minlength:20,
-   },
-   activeVectorDbName: { type: String, default: "Default_DB" },
+
+    //CERTIFICATIONS
+    certificates: [
+        {
+            title: {
+                type: String,
+                required: true
+            },
+            
+            issuer: {
+                type: String,
+                required: true
+            },
+
+            issueDate: Date,
+            
+            secure_url: {
+                type: String,
+                required: true
+            },
+            public_id: {
+                type: String,
+                required: true
+            }
+        }
+    ],
+
+    activeVectorDbName: { type: String, default: "Default_DB" },
 });
+
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC
-//CERTIFICATIONS
 
 //appointments:{}
 
