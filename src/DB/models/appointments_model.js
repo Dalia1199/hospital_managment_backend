@@ -60,14 +60,7 @@ const appointmentsSchema = new mongoose.Schema(
     timestamps: true
 
 });
-const appointmentsmodel = mongoose.models.appointments || mongoose.model("appointments", appointmentsSchema)
-export default appointmentsmodel
 
-  },
-  {
-    timestamps: true,
-  },
-);
 const appointmentsmodel =
   mongoose.models.appointments ||
   mongoose.model("appointments", appointmentsSchema);
