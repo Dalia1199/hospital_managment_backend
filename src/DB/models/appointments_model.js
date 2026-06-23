@@ -65,7 +65,7 @@ const appointmentsSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-
+    
 }, {
 
     timestamps: true

@@ -28,6 +28,11 @@ const doctorSchema = new mongoose.Schema({
      maxlength:200,
       minlength:20,
    },
+    consultationFee: {
+        type: Number,
+        required: false,
+        min: 0
+    },
    activeVectorDbName: { type: String, default: "Default_DB" },
 });
 //CLINIC APPOINTMENT AND ADRESS
