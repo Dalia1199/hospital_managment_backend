@@ -265,6 +265,7 @@ export const getPatientCompliance = async (req, res, next) => {
         });
 
         const activeMeds = [];
+        const pastMeds = [];
         const now = new Date();
 
         for (const rx of prescriptions) {
@@ -274,12 +275,13 @@ export const getPatientCompliance = async (req, res, next) => {
                 let isActive = false;
                 let daysCompleted = 0;
                 let totalDays = durationInfo.days;
+                let endDate = new Date(rxDate);
 
                 if (durationInfo.isLifelong) {
                     isActive = true;
                     daysCompleted = Math.floor(Math.abs(now - rxDate) / (1000 * 60 * 60 * 24));
+                    endDate = null;
                 } else {
-                    const endDate = new Date(rxDate);
                     endDate.setDate(endDate.getDate() + totalDays);
                     if (now <= endDate || (now > endDate && (now - endDate) < 24 * 60 * 60 * 1000)) {
                         isActive = true;
@@ -297,6 +299,14 @@ export const getPatientCompliance = async (req, res, next) => {
                         frequency: med.frequency,
                         startDate: rxDate,
                         progress
+                    });
+                } else {
+                    pastMeds.push({
+                        medicineName: med.medicineName,
+                        dosage: med.dosage,
+                        frequency: med.frequency,
+                        startDate: rxDate,
+                        endDate: endDate
                     });
                 }
             }
@@ -365,7 +375,8 @@ export const getPatientCompliance = async (req, res, next) => {
             currentStreak,
             activeMedicationsCount: activeMeds.length,
             alerts,
-            activeMeds
+            activeMeds,
+            pastMeds
         }});
 
     } catch (error) {

@@ -615,10 +615,11 @@ export const getActiveMedications = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
+        const limit = parseInt(req.query.limit) || 5;
         const history = await db_service.find({
             model: medicationtrackingmodel,
             filter: { patientId: req.user._id },
-            options: { sort: { scheduledDoseDateTime: -1 } }
+            options: { sort: { scheduledDoseDateTime: -1 }, limit }
         });
         return successresponse({ res, data: history });
     } catch (error) {
