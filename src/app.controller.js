@@ -1,4 +1,8 @@
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import mongoSanitize from "express-mongo-sanitize";
+import cookieParser from "cookie-parser";
 import { PORT } from "../config/config.service.js";
 import checkConnectionDB from "./DB/connectiondb.js";
 import userrouter from "./modules/users/user.controller.js";
@@ -24,7 +28,23 @@ const app = express();
 const Port = PORT || 3000;
 
 const bootstrap = () => {
-    app.use(express.json());
+    app.use(express.json({ limit: "10kb" }));
+    app.use(cookieParser());
+    
+    // Security Middlewares
+    app.use(helmet());
+    app.use((req, res, next) => {
+        if (req.body) req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
+        if (req.params) req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+        next();
+    });
+
+    const limiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 100, // Limit each IP to 100 requests per 15 minutes
+        message: "Too many requests from this IP, please try again after 15 minutes",
+    });
+    app.use(limiter);
     
      app.use(cors({
         origin: [ "http://localhost:3001",

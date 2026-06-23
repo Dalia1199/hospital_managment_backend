@@ -9,8 +9,8 @@ let envpaths = {
     development: ".env.development",
     production: ".env.production"
 }
-if (NODE_ENV === 'development') {
-    dotenv.config({ path: resolve(`config/${envpaths[NODE_ENV]}`) })
+if (NODE_ENV === 'development' || NODE_ENV === 'test') {
+    dotenv.config({ path: resolve(`config/${envpaths['development']}`) })
 }
 export const PORT = +process.env.PORT;
 export const access_secret_key = process.env.ACCESS_SECRET_KEY

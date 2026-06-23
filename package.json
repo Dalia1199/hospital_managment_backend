@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": " cross-env NODE_ENV=production node src/index.js",
-    "dev": " cross-env NODE_ENV=development nodemon --ignore src/DB/vectors/ src/index.js"
+    "dev": " cross-env NODE_ENV=development nodemon --ignore src/DB/vectors/ src/index.js",
+    "test": "cross-env NODE_ENV=test SALT_ROUNDS=8 PORT=5001 node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit"
   },
   "keywords": [],
   "author": "",
@@ -15,12 +16,15 @@
     "@google/generative-ai": "^0.24.1",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
-    "cross-env": "^10.1.0",
     "dayjs": "^1.11.21",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.5.2",
     "fs-extra": "^11.3.5",
+    "helmet": "^8.2.0",
     "joi": "^18.1.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.4.1",
@@ -32,5 +36,11 @@
     "redis": "^5.12.1",
     "socket.io": "^4.8.3",
     "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "supertest": "^7.2.2"
   }
 }
