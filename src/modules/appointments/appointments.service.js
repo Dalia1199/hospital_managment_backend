@@ -1,4 +1,3 @@
-import appointsmentmodel from "../../DB/models/appointments_model.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { notify } from "../notifications/notification.service.js";
 import { roleenum } from "../../common/enum/user.enum.js";
@@ -16,18 +15,60 @@ import { decrypt } from "../../common/utilits/security/encrypt.js";
 //done
 export const addAvailability = async (req, res, next) => {
   const { day, startTime, endTime, appointmentDuration, clinicId } = req.body;
+  
 
-  const filter = { doctorId: req.user._id, day };
-  if (clinicId) filter.clinicId = clinicId;
+  ///عملت كومنت للجزء ده علشان اعطي فرصة للدوكتور يضيف اكتر من ميعاد نفس اليوم في نفس العيادة
+  // const filter = { doctorId: req.user._id, day };
+  // if (clinicId) filter.clinicId = clinicId;
 
-  const exists = await db_service.findOne({
-    model: availabilitymodel,
-    filter,
+  // const exists = await db_service.findOne({
+  //   model: availabilitymodel,
+  //   filter,
+  // });
+
+  // if (exists) {
+  //   throw new Error("availability already exists for this day", { cause: 409 });
+  // }
+
+  if (!clinicId) {
+  throw new Error("clinicId is required", { cause: 400 });
+}
+
+const availabilities = await db_service.find({
+  model: availabilitymodel,
+  filter: {
+    doctorId: req.user._id,
+    clinicId,
+    day,
+  },
+});
+
+const toMinutes = (time) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const newStart = toMinutes(startTime);
+const newEnd = toMinutes(endTime);
+
+if (newStart >= newEnd) {
+  throw new Error("end time must be greater than start time", {
+    cause: 400,
   });
+}
 
-  if (exists) {
-    throw new Error("availability already exists for this day", { cause: 409 });
-  }
+const overlap = availabilities.find((a) => {
+  const existingStart = toMinutes(a.startTime);
+  const existingEnd = toMinutes(a.endTime);
+
+  return newStart < existingEnd && newEnd > existingStart;
+});
+
+if (overlap) {
+  throw new Error("availability overlaps with existing schedule", {
+    cause: 409,
+  });
+}
 
   const availability = await db_service.create({
     model: availabilitymodel,
@@ -67,6 +108,79 @@ export const getAvailability = async (req, res, next) => {
   });
 };
 
+//to update availability we will delete the old one and add new one
+export const updateAvailability = async (req, res, next) => {
+  try {
+    const { availabilityId } = req.params;
+    const {
+      startTime,
+      endTime,
+      day,
+      appointmentDuration,
+      clinicId,
+    } = req.body;
+
+    const availability = await db_service.findOne({
+      model: availabilitymodel,
+      filter: {
+        _id: availabilityId,
+        doctorId: req.user._id,
+      },
+    });
+
+    if (!availability) {
+      throw new Error("availability not found", { cause: 404 });
+    }
+
+    
+
+    const bookedSlots = await slotmodel.countDocuments({
+      doctorId: req.user._id,
+      clinicId: availability.clinicId ,
+      isBooked: true,
+      startDateTime: { $gte: new Date() },
+    });
+
+    if (bookedSlots > 0) {
+      return successresponse({
+        res,
+        status: 409,
+        message: "cannot update availability with booked slots",
+        data: {
+          canUpdate: false,
+          bookedSlots,
+        },
+      });
+    }
+
+    await slotmodel.deleteMany({
+      doctorId: req.user._id,
+      clinicId: availability.clinicId,
+      isBooked: false,
+      startDateTime: { $gte: new Date() },
+    });
+
+    await db_service.findOneAndUpdate({
+      model: availabilitymodel,
+      filter: { _id: availabilityId },
+      update: {
+        startTime,
+        endTime,
+        day,
+        appointmentDuration,
+        clinicId: availability.clinicId ,
+      },
+    });
+
+    req.body.clinicId = availability.clinicId; // Ensure clinicId is set for slot generation
+
+    return generateMonthlySlots(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 //done
 export const generateMonthlySlots = async (req, res, next) => {
   const doctorId = req.user._id;
@@ -86,47 +200,67 @@ export const generateMonthlySlots = async (req, res, next) => {
 
   const slots = [];
 
-  const startOfMonth = dayjs().startOf("month");
-  const endOfMonth = dayjs().endOf("month");
+  const startDate = dayjs(
+    req.body.startDate || dayjs().startOf("day")
+  );
+  const endDate = dayjs(
+    req.body.endDate || dayjs().endOf("month")
+  );
 
-  let currentDate = startOfMonth;
+  // delete old unbooked slots in range
+  const deleteFilter = {
+    doctorId,
+    isBooked: false,
+    startDateTime: {
+      $gte: startDate.toDate(),
+      $lte: endDate.toDate(),
+    },
+  };
+
+  if (clinicId) deleteFilter.clinicId = clinicId;
+
+  await slotmodel.deleteMany(deleteFilter);
+
+  let currentDate = startDate;
 
   while (
-    currentDate.isBefore(endOfMonth) ||
-    currentDate.isSame(endOfMonth, "day")
+    currentDate.isBefore(endDate) ||
+    currentDate.isSame(endDate, "day")
   ) {
     const currentDay = currentDate.format("dddd").toLowerCase();
 
-    const availability = availabilities.find(
-      (a) => a.day?.toLowerCase() === currentDay,
+    const dayAvailabilities = availabilities.filter(
+      (a) => a.day?.toLowerCase() === currentDay
     );
 
-    if (availability) {
+    for (const availability of dayAvailabilities) {
       let currentSlot = dayjs(
         `${currentDate.format("YYYY-MM-DD")} ${availability.startTime}`,
-        "YYYY-MM-DD HH:mm",
+        "YYYY-MM-DD HH:mm"
       );
 
       const endSlot = dayjs(
         `${currentDate.format("YYYY-MM-DD")} ${availability.endTime}`,
-        "YYYY-MM-DD HH:mm",
+        "YYYY-MM-DD HH:mm"
       );
 
       while (currentSlot.isBefore(endSlot)) {
         const nextSlot = currentSlot.add(
           availability.appointmentDuration,
-          "minute",
+          "minute"
         );
 
         if (nextSlot.isAfter(endSlot)) break;
 
-        slots.push({
-          doctorId,
-          clinicId: clinicId || null,
-          startDateTime: currentSlot.toDate(),
-          endDateTime: nextSlot.toDate(),
-          isBooked: false,
-        });
+        if (currentSlot.isAfter(dayjs())) {
+          slots.push({
+            doctorId,
+            clinicId: availability.clinicId,
+            startDateTime: currentSlot.toDate(),
+            endDateTime: nextSlot.toDate(),
+            isBooked: false,
+          });
+        }
 
         currentSlot = nextSlot;
       }
@@ -184,20 +318,24 @@ export const bookAppointment = async (req, res, next) => {
   try {
     const { slotId, reason } = req.body;
 
-    const slot = await slotmodel.findOne({
-      _id: slotId,
-      isBooked: false,
-    });
+    const slot = await slotmodel.findOneAndUpdate(
+      {
+        _id: slotId,
+        isBooked: false,
+        startDateTime: { $gte: new Date() },
+      },
+      {
+        $set: { isBooked: true },
+      },
+      { new: true }
+    );
 
     if (!slot) {
-      throw new Error("slot not available");
+      throw new Error("slot not available or already booked", {
+        cause: 409,
+      });
     }
 
-    if (slot.isBooked) {
-      throw new Error("slot already booked");
-    }
-
-    // 1. create appointment
     const appointment = await appointmentsmodel.create({
       patientId: req.user._id,
       doctorId: slot.doctorId,
@@ -209,10 +347,6 @@ export const bookAppointment = async (req, res, next) => {
       startDateTime: slot.startDateTime,
       endDateTime: slot.endDateTime,
     });
-
-    // 2. update slot
-    slot.isBooked = true;
-    await slot.save();
 
     await notify.appointmentBooked(appointment.patientId);
 
@@ -450,6 +584,7 @@ export const updateSlot = async (req, res, next) => {
     const slot = await slotmodel.findOne({
       _id: slotId,
       isBooked: false,
+      doctorId: req.user._id,
     });
 
     if (!slot) {
@@ -462,17 +597,18 @@ export const updateSlot = async (req, res, next) => {
       }
     }
 
-    const overlappingSlot = await slotmodel.findOne({
-      doctorId: slot.doctorId,
-      _id: { $ne: slotId },
-      isBooked: false,
-      $or: [
-        {
-          startDateTime: { $lt: endDateTime },
-          endDateTime: { $gt: startDateTime },
-        },
-      ],
-    });
+  const overlappingSlot = await slotmodel.findOne({
+  doctorId: slot.doctorId,
+  clinicId: slot.clinicId,
+  _id: { $ne: slotId },
+  isBooked: false,
+  $or: [
+    {
+      startDateTime: { $lt: endDateTime },
+      endDateTime: { $gt: startDateTime },
+    },
+  ],
+});
 
     if (overlappingSlot) {
       throw new Error("slot overlaps with existing slot", { cause: 400 });

@@ -5,11 +5,11 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 // POST /clinics — doctor adds a clinic
 export const addClinic = async (req, res, next) => {
     try {
-        const { name, address, phone } = req.body;
+        const { name, address, phone , governorate, whatsapp, landline } = req.body;
 
         const clinic = await db_service.create({
             model: clinicmodel,
-            data: { doctorId: req.user._id, name, address, phone }
+            data: { doctorId: req.user._id, name, address, phone , governorate, whatsapp, landline}
         });
 
         return successresponse({ res, status: 201, message: "clinic added successfully", data: clinic });
@@ -93,6 +93,79 @@ export const getDoctorClinics = async (req, res, next) => {
         });
 
         return successresponse({ res, status: 200, message: "clinics fetched successfully", data: clinics });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+// ─── Services (embedded in clinic) ───────────────────────────────────────────
+
+// POST /clinics/:clinicId/services
+export const addService = async (req, res, next) => {
+    try {
+        const { clinicId } = req.params;
+        const { name, price } = req.body;
+
+        const clinic = await db_service.findOne({
+            model: clinicmodel,
+            filter: { _id: clinicId, doctorId: req.user._id, isActive: true }
+        });
+        if (!clinic) throw new Error("clinic not found", { cause: 404 });
+
+        clinic.services.push({ name, price });
+        await clinic.save();
+
+        const newService = clinic.services[clinic.services.length - 1];
+        return successresponse({ res, status: 201, message: "service added successfully", data: newService });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// PATCH /clinics/:clinicId/services/:serviceId
+export const updateService = async (req, res, next) => {
+    try {
+        const { clinicId, serviceId } = req.params;
+        const { name, price } = req.body;
+
+        const clinic = await db_service.findOne({
+            model: clinicmodel,
+            filter: { _id: clinicId, doctorId: req.user._id, isActive: true }
+        });
+        if (!clinic) throw new Error("clinic not found", { cause: 404 });
+
+        const service = clinic.services.id(serviceId);
+        if (!service) throw new Error("service not found", { cause: 404 });
+
+        if (name  !== undefined) service.name  = name;
+        if (price !== undefined) service.price = price;
+        await clinic.save();
+
+        return successresponse({ res, status: 200, message: "service updated successfully", data: service });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// DELETE /clinics/:clinicId/services/:serviceId
+export const deleteService = async (req, res, next) => {
+    try {
+        const { clinicId, serviceId } = req.params;
+
+        const clinic = await db_service.findOne({
+            model: clinicmodel,
+            filter: { _id: clinicId, doctorId: req.user._id, isActive: true }
+        });
+        if (!clinic) throw new Error("clinic not found", { cause: 404 });
+
+        const service = clinic.services.id(serviceId);
+        if (!service) throw new Error("service not found", { cause: 404 });
+
+        service.deleteOne();
+        await clinic.save();
+
+        return successresponse({ res, status: 200, message: "service deleted successfully" });
     } catch (error) {
         next(error);
     }

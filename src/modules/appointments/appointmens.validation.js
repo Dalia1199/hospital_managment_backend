@@ -4,7 +4,8 @@ import { generalrules } from "../../common/utilits/generalrules.js";
 export const addAvailabilitySchema = {
 
     body: Joi.object({
-
+        
+        clinicId: generalrules.id.required(),
         day: Joi.string()
             .valid(
                 "sunday",
@@ -34,7 +35,7 @@ export const addAvailabilitySchema = {
 export const generateSlotsSchema = {
 
     body: Joi.object({
-
+        clinicId: generalrules.id.required(),
         startDate: Joi.date().required(),
 
         endDate: Joi.date()
@@ -84,6 +85,11 @@ export const getAvailableSlotsSchema = {
 
             })
 
+    }).required(),
+
+    query: Joi.object({
+        
+         clinicId: generalrules.id.required()
     }).required()
 
 };
