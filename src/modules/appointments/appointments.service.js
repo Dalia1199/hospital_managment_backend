@@ -528,6 +528,10 @@ export const getMyAppointments = async (req, res, next) => {
             select: "fullName email profilepicture phoneNumber address",
           },
           {
+            path: "clinicId",
+            select: "name address governorate phone whatsapp landline",
+          },
+          {
             path: "slotId",
           },
         ],
@@ -537,7 +541,6 @@ export const getMyAppointments = async (req, res, next) => {
         lean: true
       }
     });
-
 
 
     const decryptedAppointments = appointments.map(appt => {
