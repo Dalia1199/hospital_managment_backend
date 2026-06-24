@@ -68,7 +68,7 @@ export const registerOptions = async (req, res, next) => {
       userDisplayName: user.fullName,
       // Prevent registering same authenticator multiple times
       excludeCredentials: userPasskeys.map((passkey) => ({
-        id: passkey.credentialID,
+        id: Buffer.from(passkey.credentialID, "base64url"),
         type: "public-key",
         transports: passkey.transports,
       })),
@@ -222,7 +222,7 @@ export const loginOptions = async (req, res, next) => {
     const options = await generateAuthenticationOptions({
       rpID,
       allowCredentials: userPasskeys.map((passkey) => ({
-        id: passkey.credentialID,
+        id: Buffer.from(passkey.credentialID, "base64url"),
         type: "public-key",
         transports: passkey.transports,
       })),
