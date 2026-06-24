@@ -269,6 +269,7 @@ export const getPatientCompliance = async (req, res, next) => {
         });
 
         const activeMeds = [];
+        const pastMeds = [];
         const now = new Date();
 
         for (const rx of prescriptions) {
@@ -278,12 +279,13 @@ export const getPatientCompliance = async (req, res, next) => {
                 let isActive = false;
                 let daysCompleted = 0;
                 let totalDays = durationInfo.days;
+                let endDate = new Date(rxDate);
 
                 if (durationInfo.isLifelong) {
                     isActive = true;
                     daysCompleted = Math.floor(Math.abs(now - rxDate) / (1000 * 60 * 60 * 24));
+                    endDate = null;
                 } else {
-                    const endDate = new Date(rxDate);
                     endDate.setDate(endDate.getDate() + totalDays);
                     if (now <= endDate || (now > endDate && (now - endDate) < 24 * 60 * 60 * 1000)) {
                         isActive = true;
@@ -301,6 +303,14 @@ export const getPatientCompliance = async (req, res, next) => {
                         frequency: med.frequency,
                         startDate: rxDate,
                         progress
+                    });
+                } else {
+                    pastMeds.push({
+                        medicineName: med.medicineName,
+                        dosage: med.dosage,
+                        frequency: med.frequency,
+                        startDate: rxDate,
+                        endDate: endDate
                     });
                 }
             }
@@ -373,6 +383,17 @@ export const getPatientCompliance = async (req, res, next) => {
                 activeMeds
             }
         });
+        return successresponse({ res, data: {
+            adherencePercentage,
+            complianceStatus,
+            totalTaken,
+            totalMissed,
+            currentStreak,
+            activeMedicationsCount: activeMeds.length,
+            alerts,
+            activeMeds,
+            pastMeds
+        }});
 
     } catch (error) {
         next(error);
@@ -477,6 +498,10 @@ export const createSession = async (req, res, next) => {
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                     }
                 });
+                
+                // Notify patient
+                await notify.profileViewed(patientId, req.user.fullName);
+
                 return successresponse({
                     res,
                     message: "Session activated successfully without OTP due to privacy setting",
@@ -509,6 +534,9 @@ export const createSession = async (req, res, next) => {
                        <p>This OTP expires in 10 minutes.</p>`
             });
             */
+
+            // Notify patient
+            await notify.accessRequested(patientId, req.user.fullName);
 
             return successresponse({
                 res,
@@ -731,6 +759,10 @@ export const endSession = async (req, res, next) => {
             data: medicalHistoryData
         });
 
+        if (!session.isOfflinePatient) {
+            await notify.medicalHistoryAdded(session.patientId);
+        }
+
         // If structured medications were provided, create a prescription record
         let prescriptionRecord = null;
         if (parsedMedications.length > 0) {
@@ -760,6 +792,10 @@ export const endSession = async (req, res, next) => {
                 filter: { _id: medicalHistory._id },
                 update: { $push: { prescriptions: prescriptionRecord._id } }
             });
+
+            if (!session.isOfflinePatient) {
+                await notify.prescriptionIssued(session.patientId);
+            }
         }
 
         return successresponse({

@@ -63,6 +63,23 @@ const doctorSchema = new mongoose.Schema({
     ],
 
     activeVectorDbName: { type: String, default: "Default_DB" },
+   bio: {
+    type:String,
+     maxlength:200,
+      minlength:20,
+   },
+    consultationFee: {
+        type: Number,
+        required: false,
+        min: 0
+    },
+    activeVectorDbName: { type: String, default: "Default_DB" },
+    vectorDatabases: { type: [String], default: ["Default_DB"] },
+    knowledgeBaseFiles: [{
+        fileName: String,
+        dbName: String,
+        uploadedAt: { type: Date, default: Date.now }
+    }],
 });
 
 //CLINIC APPOINTMENT AND ADRESS

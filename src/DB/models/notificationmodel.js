@@ -22,6 +22,7 @@ const notificationSchema = new mongoose.Schema(
                 "patient_completed_appointment" , "patient_rescheduled_appointment", // doctor
                 "certificate_added", "certificate_updated", "certificate_deleted", // doctor
             ],
+            enum: ["appointment", "prescription", "medical_history", "session", "doctor_registration", "license_update", "medication"],
             required: true
         },
         isRead: {
