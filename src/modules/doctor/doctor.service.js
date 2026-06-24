@@ -154,6 +154,9 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
+        // Save old public_id before uploading new one
+        const oldPublicId = doctor?.licenseimage?.public_id ?? null;
+
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -185,9 +188,7 @@ export const uploadLicense = async (req, res, next) => {
                 )
             );
 
-            if (oldPublicId) {
-                await cloudinary.uploader.destroy(oldPublicId);
-            }
+            // Note: old licenseimage is kept as-is until admin approves the new one
 
             return successresponse({
                 res,

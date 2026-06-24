@@ -20,6 +20,10 @@ const doctorSchema = new mongoose.Schema({
         secure_url: String,
         public_id: String
     },
+    previousLicenseImage: {
+        secure_url: String,
+        public_id: String
+    },
 
     specialization: String,
     nationalId: {

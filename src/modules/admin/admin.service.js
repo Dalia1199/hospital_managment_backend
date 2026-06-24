@@ -379,15 +379,26 @@ export const approveDoctorLicense = async (req, res, next) => {
             throw new Error("No pending license update found", { cause: 400 });
         }
 
-        const oldPublicId = doctor.licenseimage?.public_id;
+        // Move current license to previousLicenseImage (keep it, don't delete)
+        if (doctor.licenseimage?.public_id) {
+            doctor.previousLicenseImage = doctor.licenseimage;
+        }
+
+        // Promote pending to active
         doctor.licenseimage = doctor.pendingLicenseImage;
         doctor.pendingLicenseImage = null;
-        
+
         await doctor.save();
-        
-        if (oldPublicId) {
-            await cloudinary.uploader.destroy(oldPublicId);
-        }
+
+        // Update doctor user status to approved
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: id },
+            update: { status: "approved" }
+        });
+
+        // Notify doctor that license was approved
+        await notify.licenseApproved(id);
 
         return successresponse({
             res,

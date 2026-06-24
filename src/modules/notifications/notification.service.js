@@ -70,16 +70,24 @@ export const notify = {
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
             userId: adminId,
+            type: "license_update",
             message: `A new doctor ${doctorName} has registered and is waiting for approval`,
             link: "/admin/approvals"
         }),
-    licenseUpdated: (adminId, doctorName) =>
+    licenseApproved: (doctorUserId) =>
         createNotification({
-            userId: adminId,
+            userId: doctorUserId,
             type: "license_update",
-            message: `A new doctor ${doctorName} has updated his license and is waiting for approval`,
-            link: "/admin/doctors/licenses"
-    }),
+            message: "Your license has been approved by the admin. Your account is now active.",
+            link: "/doctor/profile"
+        }),
+    licenseRejected: (doctorUserId) =>
+        createNotification({
+            userId: doctorUserId,
+            type: "license_update",
+            message: "Your license has been rejected by the admin. Please upload a valid license.",
+            link: "/doctor/profile"
+        }),
 
 };
 
