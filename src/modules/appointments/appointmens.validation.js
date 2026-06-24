@@ -32,6 +32,58 @@ export const addAvailabilitySchema = {
 
 };
 
+export const getAvailabilitySchema = {
+ 
+    query: Joi.object({
+ 
+        clinicId: generalrules.id
+ 
+    })
+ 
+};
+ 
+export const updateAvailabilitySchema = {
+ 
+    params: Joi.object({
+ 
+        availabilityId: generalrules.id.required()
+ 
+    }).required(),
+ 
+    body: Joi.object({
+ 
+        day: Joi.string()
+            .valid(
+                "sunday",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday"
+            ),
+ 
+        startTime: Joi.string(),
+ 
+        endTime: Joi.string(),
+ 
+        appointmentDuration: Joi.number()
+            .valid(15, 20, 30, 45, 60)
+ 
+    }).min(1).required()
+ 
+};
+ 
+export const deleteAvailabilitySchema = {
+ 
+    params: Joi.object({
+ 
+        availabilityId: generalrules.id.required()
+ 
+    }).required()
+ 
+};
+
 export const generateSlotsSchema = {
 
     body: Joi.object({
@@ -89,7 +141,7 @@ export const getAvailableSlotsSchema = {
 
     query: Joi.object({
         
-         clinicId: generalrules.id.required()
+         clinicId: generalrules.id
     }).required()
 
 };

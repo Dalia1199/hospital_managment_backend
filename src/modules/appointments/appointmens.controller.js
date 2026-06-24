@@ -15,7 +15,7 @@ appointmensrouter.get(
     AS.getAvailability
 );
 
-appointmensrouter.patch(
+appointmensrouter.post(
 
     "/availability",
 
@@ -29,6 +29,22 @@ appointmensrouter.patch(
 
 );
 //done
+
+appointmensrouter.patch(
+    "/availability/:availabilityId",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(AV.updateAvailabilitySchema),
+    AS.updateAvailability
+);
+
+appointmensrouter.delete(
+    "/availability/:availabilityId",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(AV.deleteAvailabilitySchema),
+    AS.deleteAvailability
+);
 
 appointmensrouter.post(
 
