@@ -16,11 +16,46 @@ import { generatetoken } from "../../common/utilits/token.service.js";
 import { v4 as uuidv4 } from "uuid";
 
 const rpName = "CareHub Hospital";
-const rpID = "localhost"; // Must match client domain (e.g. localhost)
+
+// Dynamically resolve Relying Party ID to match client's current domain (local IP, localhost, or production domain)
+function getRelyingPartyID(req) {
+  if (process.env.WEBAUTHN_RP_ID) {
+    return process.env.WEBAUTHN_RP_ID;
+  }
+  const origin = req.headers.origin || req.headers.referer;
+  if (origin) {
+    try {
+      if (origin.startsWith("http://") || origin.startsWith("https://")) {
+        return new URL(origin).hostname;
+      }
+      return origin.split(":")[0];
+    } catch (e) {
+      console.error("Error parsing request origin/referer in getRelyingPartyID:", e.message);
+    }
+  }
+  return "localhost";
+}
+
+// Dynamically resolve client origin to support local dev, mobile access, and production deployments
+function getClientOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin) return origin;
+
+  const referer = req.headers.referer;
+  if (referer) {
+    try {
+      return new URL(referer).origin;
+    } catch (e) {
+      console.error("Error parsing referer in getClientOrigin:", e.message);
+    }
+  }
+  return "http://localhost:3001";
+}
 
 export const registerOptions = async (req, res, next) => {
   try {
     const user = req.user; // from auth middleware
+    const rpID = getRelyingPartyID(req);
 
     // Get user's existing passkeys
     const userPasskeys = await passkeyModel.find({ userId: user._id });
@@ -64,6 +99,7 @@ export const registerVerification = async (req, res, next) => {
   try {
     const user = req.user;
     const { credential } = req.body;
+    const rpID = getRelyingPartyID(req);
 
     if (!credential) {
       return res
@@ -80,7 +116,7 @@ export const registerVerification = async (req, res, next) => {
         .json({ message: "Registration challenge expired or not found." });
     }
 
-    const clientOrigin = req.headers.origin || "http://localhost:3001";
+    const clientOrigin = getClientOrigin(req);
 
     let verification;
     try {
@@ -120,11 +156,7 @@ export const registerVerification = async (req, res, next) => {
       // Clear challenge from Redis
       await deleletekey(`webauthn:challenge:register:${user._id}`);
 
-      return successresponse({
-        res,
-        status: 201,
-        message: "Biometrics registered successfully",
-      });
+      return successcall(res, 201, "Biometrics registered successfully");
     } else {
       return res
         .status(400)
@@ -135,9 +167,20 @@ export const registerVerification = async (req, res, next) => {
   }
 };
 
+// Helper for consistency with original success response helper
+function successcall(res, status, message) {
+  return successresponse({
+    res,
+    status,
+    message,
+  });
+}
+
 export const loginOptions = async (req, res, next) => {
   try {
     const { email } = req.body;
+    const rpID = getRelyingPartyID(req);
+
     if (!email) {
       return res
         .status(400)
@@ -194,6 +237,8 @@ export const loginOptions = async (req, res, next) => {
 export const loginVerification = async (req, res, next) => {
   try {
     const { email, credential } = req.body;
+    const rpID = getRelyingPartyID(req);
+
     if (!email || !credential) {
       return res
         .status(400)
@@ -231,7 +276,7 @@ export const loginVerification = async (req, res, next) => {
         });
     }
 
-    const clientOrigin = req.headers.origin || "http://localhost:3001";
+    const clientOrigin = getClientOrigin(req);
 
     let verification;
     try {
