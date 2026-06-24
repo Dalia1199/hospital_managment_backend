@@ -86,10 +86,14 @@ export const deleteClinic = async (req, res, next) => {
 export const getDoctorClinics = async (req, res, next) => {
     try {
         const { doctorId } = req.params;
+        const { governorate } = req.query;
+
+         const filter = { doctorId, isActive: true };
+        if (governorate) filter.governorate = governorate;
 
         const clinics = await db_service.find({
             model: clinicmodel,
-            filter: { doctorId, isActive: true }
+            filter,
         });
 
         return successresponse({ res, status: 200, message: "clinics fetched successfully", data: clinics });
