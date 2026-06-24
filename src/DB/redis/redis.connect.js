@@ -1,8 +1,11 @@
 import { createClient } from "redis";
 import { redisurl } from "../../../config/config.service.js";
 export const redisclient = createClient({
-
     url: redisurl
+});
+
+redisclient.on("error", (error) => {
+    console.error("Redis connection error:", error.message || error);
 });
 
 
