@@ -7,34 +7,25 @@ import { authorization } from "../../common/middleware/authorization.js";
 
 import { roleenum } from "../../common/enum/user.enum.js";
 
-
 const paymentRouter = Router();
 
 paymentRouter.post(
-
-    "/checkout/:appointmentId",
-
+    "/checkout",
     authentication,
-
-    authorization([
-        roleenum.patient
-    ]),
-
-    validation(
-        PV.createCheckoutSchema
-    ),
-
+    authorization([roleenum.doctor,roleenum.patient]),
     PS.createCheckout
-
 );
+
 paymentRouter.get(
     "/callback",
+
     PS.paymentCallback
 );
+
 paymentRouter.post(
-    "/callback",
-    PS.paymentCallback
+    "/webhook",
+
+    PS.paymentWebhook
 );
 
 export default paymentRouter;
-

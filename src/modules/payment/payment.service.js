@@ -1,366 +1,306 @@
 
-// import appointmentsmodel from "../../DB/models/appointments_model.js";
-// import paymentmodel from "../../DB/models/paymentmodel.js";
 
-// import { successresponse } from "../../common/utilits/responce.success.js"
+import paymentmodel from "../../DB/models/paymentmodel.js";
+import * as db_service from "../../DB/db.service.js";
+import {  successresponse} from "../../common/utilits/responce.success.js";
 
-// import * as db_service from "../../DB/db.service.js";
-// import doctormodel from "../../DB/models/doctormodel.js";
-// import { generateKashierHash } from "./payment.helper.js";
-// import { KASHIER_BASE_URL, KASHIER_CALLBACK_URL, KASHIER_MERCHANT_ID } from "../../../config/config.service.js";
+import {
+    KASHIER_API_KEY
+} from "../../../config/config.service.js";
 
-// // import { generateKashierHash } from "./payment.helper.js";
-// export const createCheckout = async (
-//     req,
-//     res,
-//     next
-// ) => {
 
+
+
+import { generateCheckoutUrl, normalizeStatus } from "./payment.helper.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
+import doctormodel from "../../DB/models/doctormodel.js";
+
+// =========================
+// CREATE PAYMENT (GENERIC)
+// =========================
+// export const createCheckout = async (req, res, next) => {
 //     try {
+//         const {
+//             amount,
+//             purpose,
+//             referenceId,
+//             paymentMethod = "card"
+//         } = req.body;
 
-//         const { appointmentId } =
-//             req.params;
+//         const paidPayment = await paymentmodel.findOne({
+//             purpose,
+//             referenceId,
+//             paymentStatus: "paid"
+//         });
 
-//         const appointment =
-//             await db_service.findOne({
-
-//                 model:
-//                     appointmentsmodel,
-
-//                 filter: {
-
-//                     _id:
-//                         appointmentId,
-
-//                     patientId:
-//                         req.user._id
-
-//                 }
-
-//             });
-
-//         if (!appointment) {
-
-//             throw new Error(
-//                 "appointment not found",
-//                 { cause: 404 }
-//             );
-
+//         if (paidPayment) {
+//             throw new Error("already paid");
 //         }
+//         const orderId = Date.now().toString();
 
-//         const doctor =
-//             await db_service.findOne({
+//         const payment = await paymentmodel.create({
+//             userId: req.user._id,
+//             amount,
+//             purpose,
+//             referenceId,
+//             orderId,
+//             paymentMethod,
+//             paymentStatus: "pending"
+//         });
 
-//                 model:
-//                     doctormodel,
-
-//                 filter: {
-
-//                     userId:
-//                         appointment.doctorId
-
-//                 }
-
-//             });
-
-//         if (!doctor) {
-
-//             throw new Error(
-//                 "doctor not found",
-//                 { cause: 404 }
-//             );
-
-//         }
-//         console.log("doctor", doctor);
-//         console.log(
-//             "consultationFee",
-//             doctor.consultationFee
-//         );
-//         if (
-//             !doctor.consultationFee
-//         ) {
-
-//             throw new Error(
-//                 "doctor consultation fee not found",
-//                 { cause: 400 }
-//             );
-
-//         }
-
-//         const orderId =
-//             Date.now().toString();
-
-//         const payment =
-//             await paymentmodel.create({
-
-//                 userId:
-//                     req.user._id,
-
-//                 amount:
-//                     doctor.consultationFee,
-
-//                 purpose:
-//                     "appointment",
-
-//                 referenceId:
-//                     appointment._id,
-
-//                 orderId
-
-//             });
-
-//         const hash =
-//             generateKashierHash({
-
-//                 merchantId:
-//                     KASHIER_MERCHANT_ID,
-
-//                 orderId,
-
-//                 amount:
-//                     payment.amount,
-
-//                 currency:
-//                     "EGP"
-
-//             });
-
-//         const paymentUrl =
-
-//             `${KASHIER_BASE_URL}?` +
-
-//             `merchantId=${KASHIER_MERCHANT_ID}` +
-
-//             `&orderId=${orderId}` +
-
-//             `&amount=${payment.amount}` +
-
-//             `&currency=EGP` +
-
-//             `&hash=${hash}` +
-
-//             `&merchantRedirect=${KASHIER_CALLBACK_URL}`
-//             +
-//             `&redirectMethod=get`+
-//             `&allowedMethods=card`+
-//             `&mode=test`;
-//         console.log(paymentUrl);
-//         return successresponse({
-
-//             res,
-
-//             message:
-//                 "checkout url generated successfully",
-
-//             data: {
-
-//                 payment,
-
-//                 paymentUrl
-
+//         const paymentUrl = generateCheckoutUrl({
+//             orderId,
+//             amount,
+//             metaData: {
+//                 userId: req.user._id,
+//                 purpose,
+//                 referenceId
 //             }
-
 //         });
 
-//     } catch (error) {
-
-//         next(error);
-
-//     }
-
-// };
-// export const paymentCallback = async (req, res, next) => {
-
-//     try {
-
-//         const data = req.query;
-
-//         const payment = await paymentmodel.findOne({
-//             orderId: data.orderId
+//         successresponse({
+//             res,
+//             message: "done",
+//             data: {
+//                 payment,
+//                 paymentUrl
+//             }
 //         });
-
-//         if (!payment) {
-//             return res.status(404).send("payment not found");
-//         }
-
-//         if (payment.paymentStatus === "paid") {
-//             return res.send("already processed");
-//         }
-
-//         payment.paymentStatus =
-//             data.paymentStatus === "SUCCESS"
-//                 ? "paid"
-//                 : "failed";
-
-//         payment.transactionId = data.transactionId;
-
-//         await payment.save();
-
-//         return res.send("payment processed");
-
 //     } catch (err) {
 //         next(err);
 //     }
 // };
-import appointmentsmodel from "../../DB/models/appointments_model.js";
-import paymentmodel from "../../DB/models/paymentmodel.js";
-import { successresponse } from "../../common/utilits/responce.success.js"
-import * as db_service from "../../DB/db.service.js";
-import doctormodel from "../../DB/models/doctormodel.js";
-import { generateKashierHash } from "./payment.helper.js";
-import {
-    KASHIER_BASE_URL,
-    KASHIER_CALLBACK_URL,
-    KASHIER_MERCHANT_ID,
-    KASHIER_API_KEY  // FIX: محتاجه للـ validateSignature
-} from "../../../config/config.service.js";
-import crypto from "crypto"; // FIX: محتاجه للـ validateSignature
-function validateKashierSignature(query, secret) {
-    let queryString =
-        "&paymentStatus=" + (query["paymentStatus"] || "") +
-        "&cardDataToken=" + (query["cardDataToken"] || "") +
-        "&maskedCard=" + (query["maskedCard"] || "") +
-        "&merchantOrderId=" + (query["merchantOrderId"] || "") +
-        "&orderId=" + (query["orderId"] || "") +
-        "&cardBrand=" + (query["cardBrand"] || "") +
-        "&orderReference=" + (query["orderReference"] || "") +
-        "&transactionId=" + (query["transactionId"] || "") +
-        "&amount=" + (query["amount"] || "") +
-        "&currency=" + (query["currency"] || "");
+export const createCheckout = async (
+    req,
+    res,
+    next
+) => {
 
-    const finalUrl = queryString.substring(1);
-    const signature = crypto.createHmac("sha256", secret)
-        .update(finalUrl)
-        .digest("hex");
-
-    return signature === query.signature;
-}
-
-export const createCheckout = async (req, res, next) => {
     try {
-        const { appointmentId } = req.params;
 
-        const appointment = await db_service.findOne({
-            model: appointmentsmodel,
-            filter: { _id: appointmentId, patientId: req.user._id }
-        });
-        if (!appointment) {
-            throw new Error("appointment not found", { cause: 404 });
+        let {
+            amount,
+            purpose,
+            referenceId,
+            paymentMethod = "card"
+        } = req.body;
+
+  
+
+        const paidPayment =
+            await paymentmodel.findOne({
+
+                purpose,
+
+                referenceId,
+
+                paymentStatus: "paid"
+
+            });
+
+        if (paidPayment) {
+
+            throw new Error(
+                "this item is already paid"
+            );
+
         }
 
-        const doctor = await db_service.findOne({
-            model: doctormodel,
-            filter: { userId: appointment.doctorId }
-        });
-        if (!doctor) {
-            throw new Error("doctor not found", { cause: 404 });
+        // =========================
+        // Appointment Payment
+        // =========================
+
+        if (
+            purpose === "appointment"
+        ) {
+
+            const appointment =
+                await appointmentsmodel.findById(
+                    referenceId
+                );
+
+            if (!appointment) {
+
+                throw new Error(
+                    "appointment not found"
+                );
+
+            }
+
+            const doctor =
+                await doctormodel.findOne({
+
+                    userId:
+                        appointment.doctorId
+
+                });
+
+            if (!doctor) {
+
+                throw new Error(
+                    "doctor not found"
+                );
+
+            }
+
+            amount =
+                doctor.consultationFee;
+
         }
-        if (!doctor.consultationFee) {
-            throw new Error("doctor consultation fee not found", { cause: 400 });
-        }
 
-        const orderId = Date.now().toString();
+        // =========================
+        // Subscription Payment
+        // =========================
 
-        const amount = Number(doctor.consultationFee).toFixed(2); // "500.00" مش 500
+        // if (
+        //     purpose === "subscription"
+        // ) {
+// subscribtionmodel:to be 
 
-        const payment = await paymentmodel.create({
-            userId: req.user._id,
-            amount: amount,          
-            purpose: "appointment",
-            referenceId: appointment._id,
-            orderId
-        });
+        // }
 
-        
-        const hash = generateKashierHash({
-            merchantId: KASHIER_MERCHANT_ID,
-            orderId,
-            amount: amount,     
-            currency: "EGP"
-        });
+        const formattedAmount =
+            Number(amount).toFixed(2);
 
-        const metaData = JSON.stringify({
-            "Patient ID": req.user._id.toString(),
-            "Appointment ID": appointment._id.toString(),
-            "Doctor": doctor._id.toString()
-        });
+        const orderId =
+            Date.now().toString();
+
+        const payment =
+            await paymentmodel.create({
+
+                userId:
+                    req.user._id,
+
+                amount:
+                    formattedAmount,
+
+                purpose,
+
+                referenceId,
+
+                orderId,
+
+                paymentMethod,
+
+                paymentStatus:
+                    "pending"
+
+            });
 
         const paymentUrl =
-            `${KASHIER_BASE_URL}?` +
-            `merchantId=${KASHIER_MERCHANT_ID}` +
-            `&orderId=${orderId}` +
-            `&amount=${amount}` +       
-            `&currency=EGP` +
-            `&hash=${hash}` +
-            `&merchantRedirect=${encodeURIComponent(KASHIER_CALLBACK_URL)}` + // FIX: encode
-            `&redirectMethod=get` +
-            `&allowedMethods=card` +
-            `&metaData=${encodeURIComponent(metaData)}` 
-            `&mode=test`;
+            generateCheckoutUrl({
 
-        console.log({
-            merchantId: KASHIER_MERCHANT_ID,
-            orderId,
-            amount,
-            hash,
-            paymentUrl
-        });
+                orderId,
+
+                amount:
+                    formattedAmount,
+
+                metaData: {
+
+                    userId:
+                        req.user._id,
+
+                    purpose,
+
+                    referenceId
+
+                }
+
+            });
+
         return successresponse({
+
             res,
-            message: "checkout url generated successfully",
-            data: { payment, paymentUrl }
+
+            message:
+                "checkout created successfully",
+
+            data: {
+
+                payment,
+
+                paymentUrl
+
+            }
+
         });
 
     } catch (error) {
+
         next(error);
+
     }
+
 };
 
 export const paymentCallback = async (req, res, next) => {
     try {
-        console.log("================================");
-        console.log("PAYMENT CALLBACK HIT");
-        console.log("METHOD:", req.method);
-        console.log("QUERY:", req.query);
-        console.log("BODY:", req.body);
-        console.log("================================");
-        const data = { ...req.query, ...req.body };
+        const data = req.query;
 
-        console.log("Kashier Callback data:", data);
+        const payment = await paymentmodel.findOne({
+            orderId: data.orderId
+        });
 
-        if (data.signature) {
-            const isValid = validateKashierSignature(data, KASHIER_API_KEY);
-            if (!isValid) {
-                console.error("Invalid Kashier signature!");
-                return res.status(400).send("invalid signature");
-            }
-        }
-
-        if (!data.orderId) {
-            return res.status(400).send("missing orderId");
-        }
-
-        const payment = await paymentmodel.findOne({ orderId: data.orderId });
-        if (!payment) {
-            return res.status(404).send("payment not found");
-        }
+        if (!payment) return res.status(404).send("not found");
 
         if (payment.paymentStatus === "paid") {
-            return res.redirect("/payment/success"); // أو أي route عندك
+            return res.send("already processed");
         }
 
-        payment.paymentStatus = data.paymentStatus === "SUCCESS" ? "paid" : "failed";
-        payment.transactionId = data.transactionId || "";
+        payment.transactionId = data.transactionId;
+        payment.paymentMethod = data.paymentMethod || "card";
+        payment.paymentStatus = normalizeStatus(data.paymentStatus);
+
         await payment.save();
 
-        if (payment.paymentStatus === "paid") {
-            return res.redirect("/payment/success");
-        } else {
-            return res.redirect("/payment/failed");
-        }
-
+successresponse({
+        res,
+        message: "Payment proceeded"
+    });
     } catch (err) {
         next(err);
     }
 };
 
+
+export const paymentWebhook = async (req, res, next) => {
+    try {
+        const data = req.body;
+
+        const payment = await paymentmodel.findOne({
+            orderId: data.orderId
+        });
+
+        if (!payment) return res.status(404).send("not found");
+
+        if (payment.paymentStatus === "paid") {
+            return res.json({ ok: true });
+        }
+
+        payment.transactionId = data.transactionId;
+        payment.paymentMethod = data.paymentMethod || "unknown";
+        payment.paymentStatus = normalizeStatus(data.paymentStatus);
+
+        await payment.save();
+        if (
+            payment.purpose === "appointment" &&
+            payment.paymentStatus === "paid"
+        ) {
+
+            await appointmentsmodel.findByIdAndUpdate(
+                payment.referenceId,
+                {
+                    paymentStatus: "paid"
+                }
+            );
+
+        }
+
+successresponse({
+        res,
+        message: "done already"
+    });
+    } catch (err) {
+        next(err);
+    }
+};
