@@ -362,3 +362,32 @@ export const loginVerification = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getBiometricStatus = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const userPasskeys = await passkeyModel.find({ userId: user._id });
+    return res.status(200).json({
+      message: "Biometrics status retrieved",
+      data: {
+        hasBiometrics: userPasskeys.length > 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const removeBiometrics = async (req, res, next) => {
+  try {
+    const user = req.user;
+    await passkeyModel.deleteMany({ userId: user._id });
+    return successresponse({
+      res,
+      status: 200,
+      message: "Biometrics disabled successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
