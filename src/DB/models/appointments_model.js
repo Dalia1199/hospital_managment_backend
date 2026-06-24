@@ -54,6 +54,14 @@ const appointmentsSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    paymentStatus: {
+        type: String,
+        enum: [
+            "unpaid",
+            "paid"
+        ],
+        default: "unpaid"
+    }
     
 }, {
 

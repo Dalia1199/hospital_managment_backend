@@ -73,6 +73,7 @@ const doctorSchema = new mongoose.Schema({
         required: false,
         min: 0
     },
+   activeVectorDbName: { type: String, default: "Default_DB" },
     activeVectorDbName: { type: String, default: "Default_DB" },
     vectorDatabases: { type: [String], default: ["Default_DB"] },
     knowledgeBaseFiles: [{

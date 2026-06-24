@@ -56,6 +56,7 @@ const bootstrap = () => {
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
+    app.use( "/payments", paymentRouter);
     app.use("/payments", paymentRouter);
     app.use("/clinics", clinicrouter);
     app.use("/webauthn", webauthnrouter);
