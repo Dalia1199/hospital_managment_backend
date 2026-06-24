@@ -3,14 +3,41 @@ import path from "path";
 import { generateEmbeddings } from "./gemini.service.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import { createRequire } from "module";
+import { Pinecone } from "@pinecone-database/pinecone";
+import { v4 as uuidv4 } from "uuid";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
 
 const VECTOR_DIR = path.resolve("src/DB/vectors");
 
-// Ensure directory exists
+// Ensure local directory exists
 fs.ensureDirSync(VECTOR_DIR);
+
+let pineconeClient = null;
+let pineconeIndex = null;
+
+const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
+const PINECONE_INDEX_NAME = process.env.PINECONE_INDEX_NAME;
+
+if (PINECONE_API_KEY && PINECONE_INDEX_NAME) {
+    try {
+        console.log(`[Pinecone] Initializing Pinecone client with index: ${PINECONE_INDEX_NAME}`);
+        pineconeClient = new Pinecone({
+            apiKey: PINECONE_API_KEY,
+        });
+        pineconeIndex = pineconeClient.index(PINECONE_INDEX_NAME);
+        console.log("[Pinecone] Client and Index initialized successfully.");
+    } catch (error) {
+        console.error("[Pinecone] Initialization failed, falling back to local files:", error);
+    }
+} else {
+    console.log("[Pinecone] API key or Index Name not set. Running in local filesystem mode.");
+}
+
+function isPineconeActive() {
+    return !!(pineconeClient && pineconeIndex);
+}
 
 export async function getVectorStorePath(doctorId) {
     const doc = await doctormodel.findOne({ userId: doctorId });
@@ -24,6 +51,16 @@ export async function getDatabasesList(doctorId) {
     const doc = await doctormodel.findOne({ userId: doctorId });
     const activeDbName = doc?.activeVectorDbName || "Default_DB";
     
+    if (isPineconeActive()) {
+        const databases = doc?.vectorDatabases && doc.vectorDatabases.length > 0
+            ? doc.vectorDatabases
+            : ["Default_DB"];
+        return {
+            activeDb: activeDbName,
+            databases: databases
+        };
+    }
+
     const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
     fs.ensureDirSync(userVectorDir);
     
@@ -48,6 +85,23 @@ export async function createDatabase(doctorId, dbName) {
     const safeDbName = dbName.replace(/[^a-zA-Z0-9_-]/g, "");
     if (!safeDbName) throw new Error("Invalid database name format");
     
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        let databases = doc?.vectorDatabases || [];
+        if (!databases.includes(safeDbName)) {
+            databases.push(safeDbName);
+        }
+        await doctormodel.findOneAndUpdate(
+            { userId: doctorId },
+            { 
+                activeVectorDbName: safeDbName,
+                vectorDatabases: databases
+            },
+            { upsert: true, new: true }
+        );
+        return { success: true, dbName: safeDbName };
+    }
+
     const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
     fs.ensureDirSync(userVectorDir);
     const newDbPath = path.join(userVectorDir, `${safeDbName}.json`);
@@ -56,7 +110,19 @@ export async function createDatabase(doctorId, dbName) {
         await fs.writeJson(newDbPath, []);
     }
     
-    await doctormodel.findOneAndUpdate({ userId: doctorId }, { activeVectorDbName: safeDbName });
+    // Sync databases array to MongoDB as well to maintain schema consistency
+    const doc = await doctormodel.findOne({ userId: doctorId });
+    let databases = doc?.vectorDatabases || [];
+    if (!databases.includes(safeDbName)) {
+        databases.push(safeDbName);
+    }
+    await doctormodel.findOneAndUpdate(
+        { userId: doctorId }, 
+        { 
+            activeVectorDbName: safeDbName,
+            vectorDatabases: databases
+        }
+    );
     return { success: true, dbName: safeDbName };
 }
 
@@ -64,6 +130,16 @@ export async function setActiveDatabase(doctorId, dbName) {
     if (!dbName || typeof dbName !== 'string') throw new Error("Invalid database name");
     const safeDbName = dbName.replace(/[^a-zA-Z0-9_-]/g, "");
     
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        const databases = doc?.vectorDatabases || ["Default_DB"];
+        if (!databases.includes(safeDbName)) {
+            throw new Error("Database not found");
+        }
+        await doctormodel.findOneAndUpdate({ userId: doctorId }, { activeVectorDbName: safeDbName });
+        return { success: true, activeDb: safeDbName };
+    }
+
     const userVectorDir = path.join(VECTOR_DIR, String(doctorId));
     const targetDbPath = path.join(userVectorDir, `${safeDbName}.json`);
     
@@ -108,12 +184,74 @@ export async function processAndStoreDocument(doctorId, fileBuffer, fileName, fi
     } else {
         text = fileBuffer.toString("utf-8");
     }
-
-    if (!text || text.trim().length === 0) return;
+    if (!text || text.trim().length === 0) {
+        console.log("[processAndStoreDocument] Empty text extracted from file.");
+        return;
+    }
 
     const chunks = chunkText(text);
+    console.log(`[processAndStoreDocument] Text length: ${text.length}, Chunks count: ${chunks.length}`);
+
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        const activeDbName = doc?.activeVectorDbName || "Default_DB";
+        const namespace = `doctor_${doctorId}_db_${activeDbName}`;
+
+        const vectors = [];
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (chunk) => {
+                if (chunk.trim().length < 10) {
+                    console.log(`[processAndStoreDocument] Chunk too short: "${chunk}"`);
+                    return null;
+                }
+                const embedding = await generateEmbeddings(chunk);
+                console.log(`[processAndStoreDocument] Generated embedding. Length: ${embedding?.length}`);
+                return {
+                    id: uuidv4(),
+                    values: embedding,
+                    metadata: {
+                        fileName,
+                        text: chunk
+                    }
+                };
+            });
+            
+            const results = await Promise.all(batchPromises);
+            results.forEach(res => {
+                if (res) vectors.push(res);
+            });
+        }
+
+        console.log(`[processAndStoreDocument] Prepared ${vectors.length} vectors to upsert to Pinecone namespace: ${namespace}`);
+        if (vectors.length > 0) {
+            await pineconeIndex.namespace(namespace).upsert({ records: vectors });
+
+            // Update doctor's knowledgeBaseFiles in MongoDB
+            const fileExists = doc?.knowledgeBaseFiles?.some(
+                f => f.fileName === fileName && f.dbName === activeDbName
+            );
+            if (!fileExists) {
+                await doctormodel.findOneAndUpdate(
+                    { userId: doctorId },
+                    {
+                        $push: {
+                            knowledgeBaseFiles: {
+                                fileName,
+                                dbName: activeDbName,
+                                uploadedAt: new Date()
+                            }
+                        }
+                    }
+                );
+            }
+        }
+        return vectors.length;
+    }
+
+    // Local fallback
     const vectorStorePath = await getVectorStorePath(doctorId);
-    
     let store = [];
     if (await fs.pathExists(vectorStorePath)) {
         for (let i = 0; i < 3; i++) {
@@ -127,7 +265,6 @@ export async function processAndStoreDocument(doctorId, fileBuffer, fileName, fi
         }
     }
 
-    // Process chunks in parallel batches to avoid rate limits and timeouts
     const BATCH_SIZE = 20;
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
         const batch = chunks.slice(i, i + BATCH_SIZE);
@@ -148,14 +285,45 @@ export async function processAndStoreDocument(doctorId, fileBuffer, fileName, fi
     }
 
     await fs.writeJson(vectorStorePath, store);
-    return store.length; // Returns total chunks stored
+    return store.length;
 }
 
 export async function queryVectorStore(doctorId, query, topK = 3) {
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        const activeDbName = doc?.activeVectorDbName || "Default_DB";
+        const namespace = `doctor_${doctorId}_db_${activeDbName}`;
+
+        const queryEmbedding = await generateEmbeddings(query);
+        
+        try {
+            const queryResponse = await pineconeIndex.namespace(namespace).query({
+                vector: queryEmbedding,
+                topK: topK,
+                includeMetadata: true
+            });
+
+            let context = "";
+            if (queryResponse.matches && queryResponse.matches.length > 0) {
+                queryResponse.matches.forEach(match => {
+                    if (match.score > 0.25) {
+                        const file = match.metadata?.fileName || "Unknown";
+                        const txt = match.metadata?.text || "";
+                        context += `[From: ${file}]\n${txt}\n\n`;
+                    }
+                });
+            }
+            return context;
+        } catch (error) {
+            console.error("[Pinecone] Query error, falling back to local search if exists:", error);
+        }
+    }
+
+    // Local fallback
     const vectorStorePath = await getVectorStorePath(doctorId);
     
     if (!(await fs.pathExists(vectorStorePath))) {
-        return ""; // No knowledge base for this doctor
+        return "";
     }
 
     const store = await fs.readJson(vectorStorePath);
@@ -163,22 +331,18 @@ export async function queryVectorStore(doctorId, query, topK = 3) {
 
     const queryEmbedding = await generateEmbeddings(query);
 
-    // Calculate similarities
     const results = store.map(item => ({
         text: item.text,
         fileName: item.fileName,
         score: cosineSimilarity(queryEmbedding, item.embedding)
     }));
 
-    // Sort descending by score
     results.sort((a, b) => b.score - a.score);
-
-    // Get top K results
     const topResults = results.slice(0, topK);
 
     let context = "";
     topResults.forEach(res => {
-        if (res.score > 0.25) { // Lower threshold to allow meta-queries to match some content
+        if (res.score > 0.25) {
             context += `[From: ${res.fileName}]\n${res.text}\n\n`;
         }
     });
@@ -189,6 +353,23 @@ export async function queryVectorStore(doctorId, query, topK = 3) {
 export async function getKnowledgeBaseInfo(doctorId) {
     try {
         const { activeDb, databases } = await getDatabasesList(doctorId);
+        
+        if (isPineconeActive()) {
+            const doc = await doctormodel.findOne({ userId: doctorId });
+            const files = doc?.knowledgeBaseFiles
+                ? doc.knowledgeBaseFiles
+                    .filter(f => f.dbName === activeDb)
+                    .map(f => f.fileName)
+                : [];
+            
+            return {
+                files: [...new Set(files)],
+                sizeMB: "N/A (Pinecone Index)",
+                activeDb,
+                databases
+            };
+        }
+
         const vectorStorePath = await getVectorStorePath(doctorId);
         
         if (!(await fs.pathExists(vectorStorePath))) {
@@ -224,6 +405,36 @@ export async function getKnowledgeBaseInfo(doctorId) {
 }
 
 export async function deleteDocumentFromVectorStore(doctorId, fileName) {
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        const activeDbName = doc?.activeVectorDbName || "Default_DB";
+        const namespace = `doctor_${doctorId}_db_${activeDbName}`;
+
+        try {
+            await pineconeIndex.namespace(namespace).deleteMany({
+                filter: {
+                    fileName: { '$eq': fileName }
+                }
+            });
+
+            await doctormodel.findOneAndUpdate(
+                { userId: doctorId },
+                {
+                    $pull: {
+                        knowledgeBaseFiles: {
+                            fileName: fileName,
+                            dbName: activeDbName
+                        }
+                    }
+                }
+            );
+            return true;
+        } catch (error) {
+            console.error("[Pinecone] Delete vector error:", error);
+            return false;
+        }
+    }
+
     const vectorStorePath = await getVectorStorePath(doctorId);
     
     if (!(await fs.pathExists(vectorStorePath))) {
@@ -244,7 +455,7 @@ export async function deleteDocumentFromVectorStore(doctorId, fileName) {
     const filteredStore = store.filter(item => item.fileName !== fileName);
 
     if (store.length === filteredStore.length) {
-        return false; // File not found
+        return false;
     }
 
     await fs.writeJson(vectorStorePath, filteredStore);
@@ -252,6 +463,30 @@ export async function deleteDocumentFromVectorStore(doctorId, fileName) {
 }
 
 export async function clearVectorStore(doctorId) {
+    if (isPineconeActive()) {
+        const doc = await doctormodel.findOne({ userId: doctorId });
+        const activeDbName = doc?.activeVectorDbName || "Default_DB";
+        const namespace = `doctor_${doctorId}_db_${activeDbName}`;
+
+        try {
+            await pineconeIndex.deleteNamespace(namespace);
+        } catch (error) {
+            console.log("[Pinecone] Clear namespace info/warning:", error.message);
+        }
+
+        await doctormodel.findOneAndUpdate(
+            { userId: doctorId },
+            {
+                $pull: {
+                    knowledgeBaseFiles: {
+                        dbName: activeDbName
+                    }
+                }
+            }
+        );
+        return true;
+    }
+
     const vectorStorePath = await getVectorStorePath(doctorId);
     if (await fs.pathExists(vectorStorePath)) {
         await fs.remove(vectorStorePath);
@@ -259,3 +494,4 @@ export async function clearVectorStore(doctorId) {
     }
     return false;
 }
+

@@ -14,26 +14,31 @@ import patientrouter from "./modules/patient/patient.controller.js";
 import doctorrouter from "./modules/doctor/doctor.controller.js";
 import appointmensrouter from "./modules/appointments/appointmens.controller.js";
 import notificationrouter from "./modules/notifications/notification.controller.js";
+import clinicrouter from "./modules/clinics/clinic.controller.js";
+
 import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
+import { startMedicationCron } from "./common/cron/medicationCron.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
+import webauthnrouter from "./modules/webauthn/webauthn.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
 const bootstrap = () => {
     app.use(express.json());
-    
-     app.use(cors({
-        origin: [ "http://localhost:3001",
-        "https://carehub-two.vercel.app",
-        "https://carehub-6h22jtqs8-honda4codings-projects.vercel.app"],
-        credentials : true,
+
+    app.use(cors({
+        origin: ["http://localhost:3001",
+            "https://carehub-two.vercel.app",
+            "http://192.168.1.2:3001"],
+        credentials: true,
         allowedHeaders: ["Content-Type", "Authorization"],
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
 
     // DB connection is now awaited in index.js before starting the server
     connectionredis();
+    startMedicationCron();
 
     app.get("/", (req, res, next) => {
         res.status(200).json({ message: `welcome to carehub app😊` })
@@ -52,6 +57,10 @@ const bootstrap = () => {
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
     app.use( "/payments", paymentRouter);
+    app.use("/payments", paymentRouter);
+    app.use("/clinics", clinicrouter);
+    app.use("/webauthn", webauthnrouter);
+
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });

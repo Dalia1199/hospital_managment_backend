@@ -3,6 +3,9 @@ import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { sendNotificationToUser } from "../../common/socket/socket.service.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
+import doctormodel from "../../DB/models/doctormodel.js";
+import { sendWebPush } from "./push.service.js";
+import pushPermissionModel from "../../DB/models/pushPermissionModel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -13,6 +16,13 @@ export const createNotification = async ({ userId, message, type, link }) => {
 
     // send real-time if user is online
     sendNotificationToUser(userId, notification);
+
+    // send push notification (non-blocking)
+    sendWebPush(userId, {
+        title: "CareHub Notification",
+        body: message,
+        link: link
+    }).catch(err => console.error("Web Push trigger error:", err));
 
     return notification;
 };
@@ -61,11 +71,23 @@ export const notify = {
             message: "A new medical record has been added to your history",
             link: "/patient/history",
         }),
-    sessionRequested: (userId) =>
+    accessRequested: (userId, doctorName) =>
         createNotification({
             userId,
             type: "session",
-            message: "A doctor is requesting access to your medical history",
+            message: `Doctor ${doctorName} has requested access to your medical profile.`,
+        }),
+    profileViewed: (userId, doctorName) =>
+        createNotification({
+            userId,
+            type: "session",
+            message: `Doctor ${doctorName} has viewed your medical profile.`,
+        }),
+    medicationReminder: (userId, medName, msg) =>
+        createNotification({
+            userId,
+            type: "medication",
+            message: msg || `It is time to take your medication: ${medName}.`,
         }),
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
@@ -74,22 +96,127 @@ export const notify = {
             message: `A new doctor ${doctorName} has registered and is waiting for approval`,
             link: "/admin/approvals"
         }),
-    
+    licenseUpdated: (adminId, doctorName) =>
+        createNotification({
+            userId: adminId,
+            type: "license_update",
+            message: `A new doctor ${doctorName} has updated his license and is waiting for approval`,
+            link: "/admin/doctors/licenses"
+    }),
+    newDoctorUnderReview: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_under_review",
+            message:"Your registration was submitted successfully. Please wait for admin approval",
+        }),
+    doctorApproved: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_approved",
+            message:"Your account has been approved by an administrator",
+            link: "/doctor"
+        }),
+    doctorRejected: (doctorId, reason) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_rejected",
+            message: `Your account approval request has been rejected, the reason: ${reason}`,
+        }),
+    newLicenseUnderReview: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_under_review",
+            message:"Your License was uploaded successfully. Please wait for admin approval",
+        }),
+    licenseApproved: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_approved",
+            message: "Your license update has been approved",
+            link: "/doctor/profile"
+        }),
+    licenseRejected: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_rejected",
+            message: "Your license update has been rejected",
+        }),
+    patientAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_booked_appointment",
+            message: `${patientName} booked an appointment at ${date}`,
+            link: "/doctor/appointments"
+        }),
+    patientCancelledAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_cancelled_appointment",
+            message: `${patientName} has cancelled an appointment at ${date}.`,
+            link: "/doctor/appointments"
+        }),
+    patientCompletedAppointment: (doctorId, patientName) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_completed_appointment",
+            message: `${patientName} has completed their appointment.`,
+            link: "/doctor/appointments"
+        }),
+    patientRescheduledAppointment: (doctorId, patientName, date) =>
+        createNotification({
+            userId: doctorId,
+            type: "patient_rescheduled_appointment",
+            message: `${patientName} has rescheduled their appointment from ${date} to ${date}.`,
+            link: "/doctor/appointments"
+        }),
+    certificateAdded: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_added",
+            message: `Certificate "${certificateName}" has been added successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
+
+    certificateUpdated: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_updated",
+            message: `Certificate "${certificateName}" has been updated successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
+
+    certificateDeleted: (doctorId, certificateName) =>
+        createNotification({
+            userId: doctorId,
+            type: "certificate_deleted",
+            message: `Certificate "${certificateName}" has been deleted successfully.`,
+            link: "/doctor/profile/certificates"
+        }),
 };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────
 export const getNotifications = async (req, res, next) => {
     try {
-        const { page = 1, limit = 10 } = req.query;
+        const { page = 1, limit = 10, tab = "all", search = "" } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [notifications, total] = await Promise.all([
+        const filterQuery = { userId: req.user._id };
+        
+        if (tab === "read") filterQuery.isRead = true;
+        if (tab === "unread") filterQuery.isRead = false;
+        
+        if (search) {
+            filterQuery.message = { $regex: search, $options: "i" };
+        }
+
+        const [notifications, total, unreadCount] = await Promise.all([
             notificationmodel
-                .find({ userId: req.user._id })
+                .find(filterQuery)
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
-            notificationmodel.countDocuments({ userId: req.user._id }),
+            notificationmodel.countDocuments(filterQuery),
+            notificationmodel.countDocuments({ userId: req.user._id, isRead: false })
         ]);
 
         return successresponse({
@@ -98,6 +225,7 @@ export const getNotifications = async (req, res, next) => {
             message: "notifications fetched successfully",
             data: {
                 notifications,
+                unreadCount,
                 pagination: {
                     total,
                     page: parseInt(page),
@@ -145,3 +273,36 @@ export const markAllAsRead = async (req, res, next) => {
         next(error);
     }
 };
+
+// ─── POST /notifications/push-permission ───────────────────────────────────────
+export const savePushPermission = async (req, res, next) => {
+    try {
+        const { subscription } = req.body;
+        if (!subscription || !subscription.endpoint || !subscription.keys) {
+            return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
+        }
+
+        // Check if subscription already exists for this user/endpoint
+        const existing = await pushPermissionModel.findOne({
+            userId: req.user._id,
+            "subscription.endpoint": subscription.endpoint
+        });
+
+        if (!existing) {
+            await pushPermissionModel.create({
+                userId: req.user._id,
+                subscription
+            });
+        }
+
+        return successresponse({
+            res,
+            status: 201,
+            message: "Push permission registered successfully",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+

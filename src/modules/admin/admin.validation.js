@@ -13,15 +13,22 @@ export const rejectDoctorSchema = {
     })
 };
 
+export const approveLicenseSchema = approveDoctorSchema
 
-
-
+export const rejectLicenseSchema = {
+    params: Joi.object({
+        id: generalrules.id.required()
+    }),
+    body: Joi.object({
+        reason: Joi.string().min(5).max(500).required()
+    })
+};
 
 // add validation for admin to get all users
 export const getusersschema = {
     query: Joi.object({
         page: Joi.number().integer().min(1).default(1).optional(),
-        limit: Joi.number().integer().min(1).max(100).default(20).optional(), 
+        limit: Joi.number().integer().min(1).max(100).default(20).optional(),
         role: Joi.string().valid("admin", "doctor", "patient").optional()
     }).required()
 };
@@ -42,12 +49,12 @@ export const activateAndDeactivateSchema = {
     })
 }
 
-
 // ─── Admin Profile ────────────────────────────────────────────────────────────
 export const updateAdminProfileSchema = {
     body: Joi.object({
-        fullName:    Joi.string().min(3).max(100).trim().optional(),
+        fullName: Joi.string().min(3).max(100).trim().optional(),
         phoneNumber: Joi.string().trim().min(10).max(15).optional(),
-        address:     Joi.string().trim().optional(),
+        address: Joi.string().trim().optional(),
     }).required()
 };
+

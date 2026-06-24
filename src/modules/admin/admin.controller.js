@@ -71,7 +71,21 @@ adminrouter.patch(
     AS.updateAdminProfile
 );
 
-export default adminrouter;
+adminrouter.patch(
+    "/doctor/:id/approve-license",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.approveLicenseSchema),
+    AS.approveDoctorLicense
+)
+
+adminrouter.patch(
+    "/doctor/:id/reject-license",
+    authentication,
+    authorization([roleenum.admin]),
+    validation(AV.rejectLicenseSchema),
+    AS.rejectDoctorLicense
+)
 
 
 adminrouter.patch(
@@ -104,6 +118,25 @@ adminrouter.patch(
     AS.resetToPending
 );
 
+adminrouter.get(
+    "/stats/monthly",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getMonthlyStats
+);
 
+adminrouter.get(
+    "/stats/daily",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getDailyStats
+);
 
+adminrouter.get(
+    "/stats/analytics",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getAnalyticsStats
+);
 
+export default adminrouter;
