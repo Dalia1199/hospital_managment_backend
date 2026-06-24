@@ -1,4 +1,6 @@
 import Joi from "joi";
+import { title } from "node:process";
+import { generalrules } from "../../common/utilits/generalrules.js"
 
 // add validation for update doctor profile
 export const updatedoctorprofileschema = {
@@ -154,4 +156,29 @@ export const getMyPrescriptionsSchema = {
         page: Joi.number().min(1).optional(),
         limit: Joi.number().min(1).optional()
     }).unknown(true).optional()
+};
+
+export const addCertificateSchema = {
+    body: Joi.object({
+        title: Joi.string().min(2).max(100).required(),
+        issuer: Joi.string().min(2).max(100).required(),
+        issueDate: Joi.date().optional()
+    })
+};
+
+export const updateCertificateSchema = {
+    params: Joi.object({
+        certificateId: generalrules.id.required()
+    }),
+    body: Joi.object({
+        title: Joi.string().min(2).max(100),
+        issuer: Joi.string().min(2).max(100),
+        issueDate: Joi.date()
+    }).min(1)
+};
+
+export const deleteCertificateSchema = {
+    params: Joi.object({
+        certificateId: generalrules.id.required()
+    })
 };

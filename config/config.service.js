@@ -25,3 +25,10 @@ export const CLOUDINARY_CLOUD_NAME =process.env.CLOUDINARY_CLOUD_NAME
 export const CLOUDINARY_API_KEY= process.env.CLOUDINARY_API_KEY
 export const CLOUDINARY_API_SECRET=process.env.CLOUDINARY_API_SECRET
 export const DB_URL_ONLINE = process.env.DB_URL_ONLINE
+export const KASHIER_MERCHANT_ID =process.env.KASHIER_MERCHANT_ID
+
+export const KASHIER_API_KEY = process.env.KASHIER_API_KEY
+
+export const KASHIER_BASE_URL = process.env.KASHIER_BASE_URL
+
+export const KASHIER_CALLBACK_URL = process.env.KASHIER_CALLBACK_URL

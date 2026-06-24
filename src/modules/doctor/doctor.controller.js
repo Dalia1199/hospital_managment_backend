@@ -45,7 +45,7 @@ doctorrouter.get(
 // add update doctor profile api
 doctorrouter.patch(
     "/profile",
-    authentication,              
+    authentication,
     authorization([roleenum.doctor]),
     validation(DV.updatedoctorprofileschema),
     DS.updatedoctorprofile
@@ -165,6 +165,46 @@ doctorrouter.get(
     authorization([roleenum.doctor]),
     validation(DV.getMyPrescriptionsSchema),
     DS.getMyPrescriptions
+);
+
+// add a certificate
+doctorrouter.post(
+    "/profile/certificates",
+    authentication,
+    authorization([roleenum.doctor]),
+    multer_host([...multerenum.image, ...multerenum.pdf]).single("certificate"),
+    validation(DV.addCertificateSchema),
+    DS.addCertificate
+);
+doctorrouter.patch(
+    "/profile/certificates/:certificateId",
+    authentication,
+    authorization([roleenum.doctor]),
+    multer_host([...multerenum.image, ...multerenum.pdf]).single("certificate"),
+    validation(DV.updateCertificateSchema),
+    DS.updateCertificate
+);
+
+doctorrouter.delete(
+    "/profile/certificates/:certificateId",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(DV.deleteCertificateSchema),
+    DS.deleteCertificate
+);
+
+doctorrouter.get(
+    "/profile/certificates",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getCertificates
+);
+
+doctorrouter.get(
+    "/notifications",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.getAllNotifications
 );
 
 export default doctorrouter;
