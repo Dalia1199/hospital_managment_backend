@@ -68,7 +68,7 @@ export const registerOptions = async (req, res, next) => {
       userDisplayName: user.fullName,
       // Prevent registering same authenticator multiple times
       excludeCredentials: userPasskeys.map((passkey) => ({
-        id: passkey.credentialID,
+        id: Buffer.from(passkey.credentialID, "base64url"),
         type: "public-key",
         transports: passkey.transports,
       })),
@@ -167,6 +167,7 @@ export const registerVerification = async (req, res, next) => {
       // Clear challenge from Redis
       await deleletekey(`webauthn:challenge:register:${user._id}`);
 
+      // Auto enable biometric status or do success callback
       return successcall(res, 201, "Biometrics registered successfully");
     } else {
       return res
@@ -180,6 +181,10 @@ export const registerVerification = async (req, res, next) => {
 
 // Helper for consistency with original success response helper
 function successcall(res, status, message) {
+  return successcall_internal(res, status, message);
+}
+
+function successcall_internal(res, status, message) {
   return successresponse({
     res,
     status,
@@ -222,7 +227,7 @@ export const loginOptions = async (req, res, next) => {
     const options = await generateAuthenticationOptions({
       rpID,
       allowCredentials: userPasskeys.map((passkey) => ({
-        id: passkey.credentialID,
+        id: Buffer.from(passkey.credentialID, "base64url"),
         type: "public-key",
         transports: passkey.transports,
       })),
@@ -297,7 +302,7 @@ export const loginVerification = async (req, res, next) => {
         expectedOrigin: clientOrigin,
         expectedRPID: rpID,
         credential: {
-          id: dbPasskey.credentialID,
+          id: Buffer.from(dbPasskey.credentialID, "base64url"),
           publicKey: Buffer.from(dbPasskey.publicKey, "base64url"),
           counter: dbPasskey.counter,
           transports: dbPasskey.transports,
