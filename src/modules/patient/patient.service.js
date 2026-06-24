@@ -536,7 +536,22 @@ async function _getActiveMedicationsList(patientId) {
             scheduledDoseDateTime: { $gte: todayStart, $lte: todayEnd }
         }
     });
-    const trackedMedsIds = new Set(todaysTracking.map(t => t.medicationId.toString()));
+    const todaysTrackingCounts = {};
+    for (const t of todaysTracking) {
+        todaysTrackingCounts[t.medicationId] = (todaysTrackingCounts[t.medicationId] || 0) + 1;
+    }
+
+    const allTracking = await db_service.find({
+        model: medicationtrackingmodel,
+        filter: { patientId }
+    });
+
+    const takenCounts = {};
+    for (const t of allTracking) {
+        if (t.status === 'taken') {
+            takenCounts[t.medicationId] = (takenCounts[t.medicationId] || 0) + 1;
+        }
+    }
 
     for (const rx of prescriptions) {
         const rxDate = new Date(rx.createdAt);
@@ -572,15 +587,20 @@ async function _getActiveMedicationsList(patientId) {
             }
 
             if (isActive) {
-                // Calculate progress %
+                // Calculate progress % based on doses taken vs doses expected
                 let progress = 0;
-                let adjustedDaysCompleted = Math.max(1, daysCompleted); // Day 1 should not be 0%
-                
+                let totalTaken = takenCounts[med._id] || 0;
+
                 if (durationInfo.isLifelong) {
-                    progress = 100;
+                    const expectedSoFar = (daysCompleted + 1) * frequency;
+                    progress = expectedSoFar > 0 ? Math.min(100, Math.floor((totalTaken / expectedSoFar) * 100)) : 0;
                 } else if (totalDays > 0) {
-                    progress = Math.min(100, Math.floor((adjustedDaysCompleted / totalDays) * 100));
+                    const totalExpected = totalDays * frequency;
+                    progress = totalExpected > 0 ? Math.min(100, Math.floor((totalTaken / totalExpected) * 100)) : 0;
                 }
+
+                const trackedToday = todaysTrackingCounts[med._id] || 0;
+                const hasTrackedToday = trackedToday >= frequency;
 
                 activeMeds.push({
                     prescriptionId: rx._id,
@@ -596,7 +616,7 @@ async function _getActiveMedicationsList(patientId) {
                     daysCompleted,
                     daysRemaining,
                     progress,
-                    hasTrackedToday: trackedMedsIds.has(med._id.toString())
+                    hasTrackedToday
                 });
             }
         }
@@ -615,10 +635,11 @@ export const getActiveMedications = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
+        const limit = parseInt(req.query.limit) || 5;
         const history = await db_service.find({
             model: medicationtrackingmodel,
             filter: { patientId: req.user._id },
-            options: { sort: { scheduledDoseDateTime: -1 } }
+            options: { sort: { scheduledDoseDateTime: -1 }, limit }
         });
         return successresponse({ res, data: history });
     } catch (error) {
@@ -639,7 +660,23 @@ export const trackMedicationDose = async (req, res, next) => {
         const todayEnd = new Date();
         todayEnd.setHours(23, 59, 59, 999);
 
-        const existingRecord = await db_service.findOne({
+        const prescription = await db_service.findOne({
+            model: prescriptionmodel,
+            filter: { _id: prescriptionId, patientId: req.user._id }
+        });
+
+        if (!prescription) {
+            throw new Error("Prescription not found", { cause: 404 });
+        }
+
+        const medication = prescription.medications.find(m => m._id.toString() === medicationId);
+        if (!medication) {
+            throw new Error("Medication not found", { cause: 404 });
+        }
+
+        const frequency = parseFrequency(medication.frequency);
+
+        const existingRecordsCount = await db_service.count({
             model: medicationtrackingmodel,
             filter: {
                 patientId: req.user._id,
@@ -648,8 +685,8 @@ export const trackMedicationDose = async (req, res, next) => {
             }
         });
 
-        if (existingRecord) {
-            return next(new Error("This dose has already been tracked today", { cause: 400 }));
+        if (existingRecordsCount >= frequency) {
+            return next(new Error("You have already tracked all scheduled doses for this medication today", { cause: 400 }));
         }
 
         const record = await medicationtrackingmodel.create({
