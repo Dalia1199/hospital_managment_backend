@@ -136,12 +136,23 @@ export const registerVerification = async (req, res, next) => {
     const { verified, registrationInfo } = verification;
 
     if (verified && registrationInfo) {
-      const { credentialPublicKey, credentialID, counter } = registrationInfo;
+      const credentialInfo = registrationInfo.credential;
+      const publicKey = credentialInfo ? credentialInfo.publicKey : registrationInfo.credentialPublicKey;
+      const id = credentialInfo ? credentialInfo.id : registrationInfo.credentialID;
+      const counter = registrationInfo.counter;
 
-      const base64PublicKey =
-        Buffer.from(credentialPublicKey).toString("base64url");
-      const base64CredentialID =
-        Buffer.from(credentialID).toString("base64url");
+      if (!publicKey || !id) {
+        return res
+          .status(400)
+          .json({ message: "Verification response missing credential public key or ID." });
+      }
+
+      const base64PublicKey = typeof publicKey === "string"
+        ? publicKey
+        : Buffer.from(publicKey).toString("base64url");
+      const base64CredentialID = typeof id === "string"
+        ? id
+        : Buffer.from(id).toString("base64url");
 
       await passkeyModel.create({
         userId: user._id,
