@@ -4,6 +4,8 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import { sendNotificationToUser } from "../../common/socket/socket.service.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import { sendWebPush } from "./push.service.js";
+import pushPermissionModel from "../../DB/models/pushPermissionModel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -14,6 +16,13 @@ export const createNotification = async ({ userId, message, type, link }) => {
 
     // send real-time if user is online
     sendNotificationToUser(userId, notification);
+
+    // send push notification (non-blocking)
+    sendWebPush(userId, {
+        title: "CareHub Notification",
+        body: message,
+        link: link
+    }).catch(err => console.error("Web Push trigger error:", err));
 
     return notification;
 };
@@ -264,3 +273,36 @@ export const markAllAsRead = async (req, res, next) => {
         next(error);
     }
 };
+
+// ─── POST /notifications/push-permission ───────────────────────────────────────
+export const savePushPermission = async (req, res, next) => {
+    try {
+        const { subscription } = req.body;
+        if (!subscription || !subscription.endpoint || !subscription.keys) {
+            return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
+        }
+
+        // Check if subscription already exists for this user/endpoint
+        const existing = await pushPermissionModel.findOne({
+            userId: req.user._id,
+            "subscription.endpoint": subscription.endpoint
+        });
+
+        if (!existing) {
+            await pushPermissionModel.create({
+                userId: req.user._id,
+                subscription
+            });
+        }
+
+        return successresponse({
+            res,
+            status: 201,
+            message: "Push permission registered successfully",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+

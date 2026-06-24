@@ -25,12 +25,12 @@ const Port = PORT || 3000;
 
 const bootstrap = () => {
     app.use(express.json());
-    
-     app.use(cors({
-        origin: [ "http://localhost:3001",
-        "https://carehub-two.vercel.app",
-        "https://carehub-6h22jtqs8-honda4codings-projects.vercel.app"],
-        credentials : true,
+
+    app.use(cors({
+        origin: ["http://localhost:3001",
+            "https://carehub-two.vercel.app",
+            "http://192.168.1.2:3001"],
+        credentials: true,
         allowedHeaders: ["Content-Type", "Authorization"],
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
@@ -55,7 +55,7 @@ const bootstrap = () => {
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
-    app.use( "/payments", paymentRouter);
+    app.use("/payments", paymentRouter);
     app.use("/clinics", clinicrouter);
 
 
