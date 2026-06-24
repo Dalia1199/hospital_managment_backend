@@ -16,11 +16,46 @@ import { generatetoken } from "../../common/utilits/token.service.js";
 import { v4 as uuidv4 } from "uuid";
 
 const rpName = "CareHub Hospital";
-const rpID = "localhost"; // Must match client domain (e.g. localhost)
+
+// Dynamically resolve Relying Party ID to match client's current domain (local IP, localhost, or production domain)
+function getRelyingPartyID(req) {
+  if (process.env.WEBAUTHN_RP_ID) {
+    return process.env.WEBAUTHN_RP_ID;
+  }
+  const origin = req.headers.origin || req.headers.referer;
+  if (origin) {
+    try {
+      if (origin.startsWith("http://") || origin.startsWith("https://")) {
+        return new URL(origin).hostname;
+      }
+      return origin.split(":")[0];
+    } catch (e) {
+      console.error("Error parsing request origin/referer in getRelyingPartyID:", e.message);
+    }
+  }
+  return "localhost";
+}
+
+// Dynamically resolve client origin to support local dev, mobile access, and production deployments
+function getClientOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin) return origin;
+
+  const referer = req.headers.referer;
+  if (referer) {
+    try {
+      return new URL(referer).origin;
+    } catch (e) {
+      console.error("Error parsing referer in getClientOrigin:", e.message);
+    }
+  }
+  return "http://localhost:3001";
+}
 
 export const registerOptions = async (req, res, next) => {
   try {
     const user = req.user; // from auth middleware
+    const rpID = getRelyingPartyID(req);
 
     // Get user's existing passkeys
     const userPasskeys = await passkeyModel.find({ userId: user._id });
@@ -64,6 +99,7 @@ export const registerVerification = async (req, res, next) => {
   try {
     const user = req.user;
     const { credential } = req.body;
+    const rpID = getRelyingPartyID(req);
 
     if (!credential) {
       return res
@@ -80,7 +116,7 @@ export const registerVerification = async (req, res, next) => {
         .json({ message: "Registration challenge expired or not found." });
     }
 
-    const clientOrigin = req.headers.origin || "http://localhost:3001";
+    const clientOrigin = getClientOrigin(req);
 
     let verification;
     try {
@@ -100,12 +136,23 @@ export const registerVerification = async (req, res, next) => {
     const { verified, registrationInfo } = verification;
 
     if (verified && registrationInfo) {
-      const { credentialPublicKey, credentialID, counter } = registrationInfo;
+      const credentialInfo = registrationInfo.credential;
+      const publicKey = credentialInfo ? credentialInfo.publicKey : registrationInfo.credentialPublicKey;
+      const id = credentialInfo ? credentialInfo.id : registrationInfo.credentialID;
+      const counter = registrationInfo.counter;
 
-      const base64PublicKey =
-        Buffer.from(credentialPublicKey).toString("base64url");
-      const base64CredentialID =
-        Buffer.from(credentialID).toString("base64url");
+      if (!publicKey || !id) {
+        return res
+          .status(400)
+          .json({ message: "Verification response missing credential public key or ID." });
+      }
+
+      const base64PublicKey = typeof publicKey === "string"
+        ? publicKey
+        : Buffer.from(publicKey).toString("base64url");
+      const base64CredentialID = typeof id === "string"
+        ? id
+        : Buffer.from(id).toString("base64url");
 
       await passkeyModel.create({
         userId: user._id,
@@ -138,6 +185,8 @@ export const registerVerification = async (req, res, next) => {
 export const loginOptions = async (req, res, next) => {
   try {
     const { email } = req.body;
+    const rpID = getRelyingPartyID(req);
+
     if (!email) {
       return res
         .status(400)
@@ -194,6 +243,8 @@ export const loginOptions = async (req, res, next) => {
 export const loginVerification = async (req, res, next) => {
   try {
     const { email, credential } = req.body;
+    const rpID = getRelyingPartyID(req);
+
     if (!email || !credential) {
       return res
         .status(400)
@@ -231,7 +282,7 @@ export const loginVerification = async (req, res, next) => {
         });
     }
 
-    const clientOrigin = req.headers.origin || "http://localhost:3001";
+    const clientOrigin = getClientOrigin(req);
 
     let verification;
     try {
@@ -302,6 +353,35 @@ export const loginVerification = async (req, res, next) => {
     } else {
       return res.status(400).json({ message: "Verification failed." });
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBiometricStatus = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const userPasskeys = await passkeyModel.find({ userId: user._id });
+    return res.status(200).json({
+      message: "Biometrics status retrieved",
+      data: {
+        hasBiometrics: userPasskeys.length > 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const removeBiometrics = async (req, res, next) => {
+  try {
+    const user = req.user;
+    await passkeyModel.deleteMany({ userId: user._id });
+    return successresponse({
+      res,
+      status: 200,
+      message: "Biometrics disabled successfully",
+    });
   } catch (error) {
     next(error);
   }
