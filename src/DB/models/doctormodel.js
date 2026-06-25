@@ -77,9 +77,6 @@ const doctorSchema = new mongoose.Schema({
         required: false,
         min: 0
     },
-   activeVectorDbName: { type: String, default: "Default_DB" },
-   
-},{ timestamps: true });
     activeVectorDbName: { type: String, default: "Default_DB" },
     vectorDatabases: { type: [String], default: ["Default_DB"] },
     knowledgeBaseFiles: [{
@@ -87,7 +84,7 @@ const doctorSchema = new mongoose.Schema({
         dbName: String,
         uploadedAt: { type: Date, default: Date.now }
     }],
-});
+}, { timestamps: true });
 
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC
