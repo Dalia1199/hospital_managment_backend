@@ -92,15 +92,41 @@ export const notify = {
     newDoctorRegistration: (adminId, doctorName) =>
         createNotification({
             userId: adminId,
+            type: "license_update",
             type: "doctor_registration",
             message: `A new doctor ${doctorName} has registered and is waiting for approval`,
             link: "/admin/approvals"
+        }),
+    licenseApproved: (doctorUserId) =>
+        createNotification({
+            userId: doctorUserId,
+            type: "license_update",
+            message: "Your updated license has been approved.",
+            link: "/doctor/profile"
+        }),
+    licenseRejected: (doctorUserId, reason) =>
+        createNotification({
+            userId: doctorUserId,
+            type: "license_update",
+            message: reason
+                ? `Your license update was rejected: ${reason}`
+                : "Your license has been rejected by the admin. Please upload a valid license.",
+            link: "/doctor/profile"
         }),
     licenseUpdated: (adminId, doctorName) =>
         createNotification({
             userId: adminId,
             type: "license_update",
-            message: `A new doctor ${doctorName} has updated his license and is waiting for approval`,
+            message: `Dr. ${doctorName} has uploaded a new license and is waiting for approval`,
+            link: "/admin/doctors/licenses"
+        }),
+    licenseReviewed: (adminId, doctorName, decision) =>
+        createNotification({
+            userId: adminId,
+            type: "license_update",
+            message: decision === "approved"
+                ? `You approved Dr. ${doctorName}'s license update`
+                : `You rejected Dr. ${doctorName}'s license update`,
             link: "/admin/doctors/licenses"
     }),
     newDoctorUnderReview: (doctorId) =>
@@ -272,6 +298,7 @@ export const markAllAsRead = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
 };
 
 // ─── POST /notifications/push-permission ───────────────────────────────────────

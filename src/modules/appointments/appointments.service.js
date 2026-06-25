@@ -200,6 +200,13 @@ async function regenerateSlotsForRange({ doctorId, clinicId, startDate, endDate 
   if (slots.length) {
     await slotmodel.insertMany(slots);
   }
+};
+
+
+//done
+export const generateMonthlySlots = async (req, res, next) => {
+  const doctorId = req.user._id;
+  const { clinicId } = req.body;
 
   return { totalSlots: slots.length, hasAvailability: true };
 }

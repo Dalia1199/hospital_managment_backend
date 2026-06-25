@@ -20,6 +20,10 @@ const doctorSchema = new mongoose.Schema({
         secure_url: String,
         public_id: String
     },
+    previousLicenseImage: {
+        secure_url: String,
+        public_id: String
+    },
 
     specialization: String,
     nationalId: {
@@ -74,6 +78,8 @@ const doctorSchema = new mongoose.Schema({
         min: 0
     },
    activeVectorDbName: { type: String, default: "Default_DB" },
+   
+},{ timestamps: true });
     activeVectorDbName: { type: String, default: "Default_DB" },
     vectorDatabases: { type: [String], default: ["Default_DB"] },
     knowledgeBaseFiles: [{
