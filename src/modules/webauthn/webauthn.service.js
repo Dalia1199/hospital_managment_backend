@@ -167,11 +167,7 @@ export const registerVerification = async (req, res, next) => {
       // Clear challenge from Redis
       await deleletekey(`webauthn:challenge:register:${user._id}`);
 
-      return successresponse({
-        res,
-        status: 201,
-        message: "Biometrics registered successfully",
-      });
+      return successcall(res, 201, "Biometrics registered successfully");
     } else {
       return res
         .status(400)
@@ -181,6 +177,15 @@ export const registerVerification = async (req, res, next) => {
     next(error);
   }
 };
+
+// Helper for consistency with original success response helper
+function successcall(res, status, message) {
+  return successresponse({
+    res,
+    status,
+    message,
+  });
+}
 
 export const loginOptions = async (req, res, next) => {
   try {
