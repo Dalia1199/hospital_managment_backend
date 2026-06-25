@@ -71,8 +71,19 @@ adminrouter.patch(
     AS.updateAdminProfile
 );
 
+// GET /admin/doctors/pending-licenses — list doctors with a license update
+// awaiting review. Must come before "/doctors/:id/..." routes below would
+// otherwise still match fine since Express matches static segments first,
+// but kept together here for readability.
+adminrouter.get(
+    "/doctors/pending-licenses",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getPendingLicenseDoctors
+);
+
 adminrouter.patch(
-    "/doctor/:id/approve-license",
+    "/doctors/:id/approve-license",
     authentication,
     authorization([roleenum.admin]),
     validation(AV.approveLicenseSchema),
@@ -80,7 +91,7 @@ adminrouter.patch(
 )
 
 adminrouter.patch(
-    "/doctor/:id/reject-license",
+    "/doctors/:id/reject-license",
     authentication,
     authorization([roleenum.admin]),
     validation(AV.rejectLicenseSchema),

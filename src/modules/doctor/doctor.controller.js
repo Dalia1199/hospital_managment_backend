@@ -34,6 +34,14 @@ doctorrouter.get(
     DS.getReportsAnalytics
 );
 
+
+// DELETE /doctor/license/pending — cancel pending license
+doctorrouter.delete(
+    "/license/pending",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.cancelPendingLicense
+);
 // GET /doctor/profile - fetch full profile data
 doctorrouter.get(
     "/profile",

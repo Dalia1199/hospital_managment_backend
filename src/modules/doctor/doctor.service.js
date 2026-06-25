@@ -81,7 +81,9 @@ export const getDoctorProfile = async (req, res, next) => {
                 specialization: doctor.specialization,
                 experience: doctor.experience,
                 bio: doctor.bio,
-
+                licenseimage: doctor.licenseimage ?? null,
+                pendingLicenseImage: doctor.pendingLicenseImage ?? null,
+                previousLicenseImage: doctor.previousLicenseImage ?? null,
             }
         });
     } catch (error) {
@@ -189,13 +191,11 @@ export const uploadLicense = async (req, res, next) => {
                 )
             );
 
-            if (oldPublicId) {
-                await cloudinary.uploader.destroy(oldPublicId);
-            }
+            // Note: old licenseimage is kept as-is until admin approves the new one
 
             return successresponse({
                 res,
-                message: "license updated successfully, but it needs for admin approval first",
+                message: "license submitted successfully and is awaiting admin review",
                 data: updatedDoctor
             });
 
