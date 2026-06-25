@@ -132,7 +132,7 @@ export const notify = {
     newLicenseUnderReview: (doctorId) =>
         createNotification({
             userId: doctorId,
-            type: "license_update",
+            type: "license_under_review",
             message: "Your updated license has been submitted and is waiting for admin approval",
             link: "/doctor/profile"
         }),
