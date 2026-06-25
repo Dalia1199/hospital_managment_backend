@@ -14,6 +14,7 @@ import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js"
 import { hash } from "../../common/utilits/security/hash.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
+import { notify } from "../notifications/notification.service.js";
 
 
 export const getPendingDoctors = async (req, res, next) => {
@@ -167,11 +168,24 @@ export const getAllDoctors = async (req, res, next) => {
                     licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
                     nationalIdUrl: doctorDetails?.nationalId?.secure_url ?? null,
                     specialty: doctorDetails?.specialization ?? null,
+                    _hasPendingLicenseUpdate: !!doctorDetails?.pendingLicenseImage?.public_id,
                 };
             })
         );
 
-        return successresponse({ res, data: doctorsWithDetails });
+        // "pending" here means "first-time signup awaiting initial review".
+        // An already-approved doctor whose status got bumped to "pending"
+        // by a license *update* is a different thing entirely — they
+        // belong exclusively on /admin/doctors/licenses, with their NEW
+        // image, not mixed in here showing their old/irrelevant license.
+        const visible =
+            status === "pending"
+                ? doctorsWithDetails.filter((d) => !d._hasPendingLicenseUpdate)
+                : doctorsWithDetails;
+
+        const data = visible.map(({ _hasPendingLicenseUpdate, ...rest }) => rest);
+
+        return successresponse({ res, data });
     } catch (error) {
         next(error);
     }
@@ -391,7 +405,7 @@ export const approveDoctorLicense = async (req, res, next) => {
         await doctor.save();
 
         // Update doctor user status to approved
-        await db_service.findOneAndUpdate({
+        const updatedUser = await db_service.findOneAndUpdate({
             model: usermodel,
             filter: { _id: id },
             update: { status: "approved" }
@@ -399,6 +413,11 @@ export const approveDoctorLicense = async (req, res, next) => {
 
         // Notify doctor that license was approved
         await notify.licenseApproved(id);
+
+        // Notify the admin who took the action, so they have a record
+        // confirming the decision (instead of the request just vanishing
+        // from the pending list with no trace)
+        await notify.licenseReviewed(req.user._id, updatedUser?.fullName, "approved");
 
         return successresponse({
             res,
@@ -415,6 +434,7 @@ export const approveDoctorLicense = async (req, res, next) => {
 export const rejectDoctorLicense = async (req, res, next) => { 
     try {
         const { id } = req.params
+        const { reason } = req.body;
         const doctor = await db_service.findOne({
             model: doctormodel,
             filter: { userId: id }
@@ -437,6 +457,22 @@ export const rejectDoctorLicense = async (req, res, next) => {
             await cloudinary.uploader.destroy(newPublicId);
         }
 
+        // the doctor still has a valid, previously-approved licenseimage —
+        // rejecting the *update* must not lock them out of login, which
+        // requires status === "approved"
+        const updatedUser = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: id },
+            update: { status: "approved" }
+        });
+
+        // notify the doctor, including the reason if the admin gave one
+        await notify.licenseRejected(id, reason);
+
+        // Notify the admin who took the action, so they have a record
+        // confirming the decision
+        await notify.licenseReviewed(req.user._id, updatedUser?.fullName, "rejected");
+
         return successresponse({
             res,
             message: "License is rejected",
@@ -448,6 +484,44 @@ export const rejectDoctorLicense = async (req, res, next) => {
         next(error);
     }
 }
+
+// GET /admin/doctors/pending-licenses — doctors with a license UPDATE
+// awaiting review (different from /admin/doctors/pending, which is the
+// initial-signup approval queue)
+export const getPendingLicenseDoctors = async (req, res, next) => {
+    try {
+        const doctors = await db_service.find({
+            model: doctormodel,
+            filter: {
+                "pendingLicenseImage.public_id": { $exists: true, $ne: null }
+            },
+            populate: [{ path: "userId", select: "fullName email" }],
+            sort: { updatedAt: -1 },
+        });
+
+        const data = doctors.map((doc) => {
+            const d = doc.toObject ? doc.toObject() : doc;
+            return {
+                _id: d._id,
+                userId: d.userId?._id ?? d.userId,
+                fullName: d.userId?.fullName,
+                email: d.userId?.email,
+                specialty: d.specialization,
+                pendingLicenseImage: d.pendingLicenseImage,
+                licenseimage: d.licenseimage,
+                updatedAt: d.updatedAt,
+            };
+        });
+
+        return successresponse({
+            res,
+            message: "pending license doctors fetched successfully",
+            data,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 
 // ─── GET /admin/stats/monthly ────────────────────────────────────────────────
 export const getMonthlyStats = async (req, res, next) => {

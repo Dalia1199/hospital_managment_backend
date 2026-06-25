@@ -45,7 +45,8 @@ const doctorSchema = new mongoose.Schema({
       minlength:20,
    },
    activeVectorDbName: { type: String, default: "Default_DB" },
-});
+   
+},{ timestamps: true });
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC
 //CERTIFICATIONS
