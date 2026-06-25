@@ -299,7 +299,6 @@ export const markAllAsRead = async (req, res, next) => {
         next(error);
     }
 };
-};
 
 // ─── POST /notifications/push-permission ───────────────────────────────────────
 export const savePushPermission = async (req, res, next) => {
