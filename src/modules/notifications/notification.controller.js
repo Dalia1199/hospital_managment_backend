@@ -14,6 +14,14 @@ notificationrouter.get(
     NS.getNotifications
 );
 
+// POST /notifications/push-permission
+notificationrouter.post(
+    "/push-permission",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
+    NS.savePushPermission
+);
+
 // PATCH /notifications/read-all
 notificationrouter.patch(
     "/read-all",

@@ -82,13 +82,16 @@ export async function generateResponse(prompt, systemInstruction = "", history =
     }
 }
 
-export async function generateEmbeddings(text) {
+export async function generateEmbeddings(text, outputDimensionality = 768) {
     const ai = getGenAI();
     if (!ai) throw new Error("AI Service is not configured. Missing API Key.");
 
     try {
         const model = ai.getGenerativeModel({ model: "gemini-embedding-2" });
-        const result = await model.embedContent(text);
+        const result = await model.embedContent({
+            content: { parts: [{ text }], role: "user" },
+            outputDimensionality
+        });
         return result.embedding.values;
     } catch (error) {
         console.error("Error generating embeddings:", error);

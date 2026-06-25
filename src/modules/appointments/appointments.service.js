@@ -11,6 +11,7 @@ import clinicmodel from "../../DB/models/clinic_model.js";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
 import { decrypt } from "../../common/utilits/security/encrypt.js";
+import usermodel from "../../DB/models/usermodel.js";
 
 //done
 export const addAvailability = async (req, res, next) => {
@@ -199,6 +200,13 @@ async function regenerateSlotsForRange({ doctorId, clinicId, startDate, endDate 
   if (slots.length) {
     await slotmodel.insertMany(slots);
   }
+};
+
+
+//done
+export const generateMonthlySlots = async (req, res, next) => {
+  const doctorId = req.user._id;
+  const { clinicId } = req.body;
 
   return { totalSlots: slots.length, hasAvailability: true };
 }
@@ -500,7 +508,14 @@ export const bookAppointment = async (req, res, next) => {
       endDateTime: slot.endDateTime,
     });
 
+    // 2. update slot
+    slot.isBooked = true;
+    await slot.save();
+
+    const patient = await usermodel.findById(appointment.patientId);
+
     await notify.appointmentBooked(appointment.patientId);
+    await notify.patientAppointment(slot.doctorId , patient.fullName , slot.startDateTime);
 
     return successresponse({
       res,
@@ -528,6 +543,10 @@ export const getMyAppointments = async (req, res, next) => {
             select: "fullName email profilepicture phoneNumber address",
           },
           {
+            path: "clinicId",
+            select: "name address governorate phone whatsapp landline",
+          },
+          {
             path: "slotId",
           },
         ],
@@ -537,7 +556,6 @@ export const getMyAppointments = async (req, res, next) => {
         lean: true
       }
     });
-
 
 
     const decryptedAppointments = appointments.map(appt => {
@@ -625,7 +643,10 @@ export const cancelAppointment = async (req, res, next) => {
       isBooked: false,
     });
 
+    const patient = await usermodel.findById(appointment.patientId);
+
     await notify.appointmentCancelled(appointment.patientId);
+    await notify.patientCancelledAppointment(appointment.doctorId, patient.fullName, appointment.startDateTime);
 
     return successresponse({
       res,
@@ -679,7 +700,10 @@ export const completeAppointment = async (req, res, next) => {
       },
     });
 
+    const patient = await usermodel.findById(appointment.patientId);
+
     await notify.appointmentCompleted(updatedAppointment.patientId);
+    await notify.patientCompletedAppointment(appointment.doctorId, patient.fullName);
 
     return successresponse({
       res,
@@ -865,6 +889,7 @@ export const rescheduleAppointment = async (req, res, next) => {
     });
 
     await notify.appointmentRescheduled(updatedAppointment.patientId);
+    await notify.patientRescheduledAppointment(updatedAppointment.doctorId, updatedAppointment.patientId, appointment.startDateTime, updatedAppointment.startDateTime);
 
     return successresponse({
       res,
