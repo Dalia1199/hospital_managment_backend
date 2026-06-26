@@ -200,6 +200,7 @@ export const uploadLicense = async (req, res, next) => {
             });
 
         } catch (dbError) {
+            console.error("License upload dbError:", dbError);
             await cloudinary.uploader.destroy(public_id);
             throw new Error("Failed to save license. Please try again.", { cause: 500 });
         }
