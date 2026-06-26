@@ -25,7 +25,10 @@ initWebPush();
 export const sendWebPush = async (userId, { title, body, link }) => {
   try {
     const subscriptions = await pushPermissionModel.find({ userId });
-    if (!subscriptions.length) return;
+    if (!subscriptions.length) {
+      console.log(`No Web Push subscriptions found for user ${userId}. Skipping push.`);
+      return;
+    }
 
     const notificationPayload = JSON.stringify({
       notification: {
@@ -41,8 +44,11 @@ export const sendWebPush = async (userId, { title, body, link }) => {
 
     const promises = subscriptions.map(async (subDoc) => {
       try {
+        console.log(`Sending Web Push to user ${userId}, subId: ${subDoc._id}`);
         await webpush.sendNotification(subDoc.subscription, notificationPayload);
+        console.log(`Web Push sent successfully to ${subDoc._id}`);
       } catch (error) {
+        console.error(`Web Push failed for ${subDoc._id}:`, error);
         // If subscription has expired or is no longer valid, delete it
         if (error.statusCode === 410 || error.statusCode === 404) {
           console.log(`Deleting expired push subscription: ${subDoc._id}`);

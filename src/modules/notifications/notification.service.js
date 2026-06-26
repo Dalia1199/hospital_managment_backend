@@ -129,6 +129,13 @@ export const notify = {
                 : `You rejected Dr. ${doctorName}'s license update`,
             link: "/admin/doctors/licenses"
     }),
+    newLicenseUnderReview: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "license_under_review",
+            message: "Your updated license has been submitted and is waiting for admin approval",
+            link: "/doctor/profile"
+        }),
     newDoctorUnderReview: (doctorId) =>
         createNotification({
             userId: doctorId,
