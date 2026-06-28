@@ -42,6 +42,19 @@ export const createStaff = async (req, res, next) => {
         res.status(201).json({ message: "Staff member created successfully", data: newAssistant });
     } catch (error) {
         console.error(error);
+        
+        // Handle Mongoose validation errors
+        if (error.name === "ValidationError") {
+            const messages = Object.values(error.errors).map(val => val.message);
+            return res.status(400).json({ message: messages.join(", ") });
+        }
+        
+        // Handle MongoDB duplicate key errors
+        if (error.code === 11000) {
+            const field = error.keyValue ? Object.keys(error.keyValue)[0] : "A field";
+            return res.status(400).json({ message: `${field} is already in use.` });
+        }
+        
         res.status(500).json({ message: "Server error", error: error.message });
     }
 };
