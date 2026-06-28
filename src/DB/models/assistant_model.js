@@ -24,7 +24,8 @@ const assistantSchema = new mongoose.Schema({
         canManageAppointments: { type: Boolean, default: false },
         canManagePatients: { type: Boolean, default: false },
         canManageBilling: { type: Boolean, default: false },
-        canManageClinics: { type: Boolean, default: false }
+        canManageClinics: { type: Boolean, default: false },
+        canManageReports: { type: Boolean, default: false }
     }
 }, { timestamps: true });
 

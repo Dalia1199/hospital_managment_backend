@@ -42,6 +42,10 @@ const sessionSchema = new mongoose.Schema({
     fees: {
         type: Number,
         default: 0
+    },
+    order: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true

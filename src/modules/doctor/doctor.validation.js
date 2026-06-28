@@ -182,3 +182,35 @@ export const deleteCertificateSchema = {
         certificateId: generalrules.id.required()
     })
 };
+
+export const reorderSessionSchema = {
+    body: Joi.object({
+        sessions: Joi.array().items(Joi.object({
+            id: Joi.string().pattern(/^[a-f\d]{24}$/i).required(),
+            order: Joi.number().required()
+        })).min(1).required()
+    }).required()
+};
+
+export const updateSessionVitalsSchema = {
+    params: Joi.object({
+        sessionId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
+    }).required(),
+    body: Joi.object({
+        bloodPressure: Joi.string().allow("").optional(),
+        heartRate: Joi.string().allow("").optional(),
+        sugarLevel: Joi.string().allow("").optional(),
+        temperature: Joi.string().allow("").optional(),
+        weight: Joi.string().allow("").optional(),
+        height: Joi.string().allow("").optional()
+    }).required()
+};
+
+export const updateSessionFeesSchema = {
+    params: Joi.object({
+        sessionId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
+    }).required(),
+    body: Joi.object({
+        fees: Joi.number().min(0).required()
+    }).required()
+};

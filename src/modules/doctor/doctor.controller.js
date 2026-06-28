@@ -116,6 +116,36 @@ doctorrouter.get(
     DS.getActiveSessions
 );
 
+// reorder sessions
+doctorrouter.patch(
+    "/session/reorder",
+    authentication,
+    requirePermission("canManageAppointments"),
+    authorization([roleenum.doctor]),
+    validation(DV.reorderSessionSchema),
+    DS.reorderSessions
+);
+
+// update session vitals
+doctorrouter.patch(
+    "/session/:sessionId/vitals",
+    authentication,
+    requirePermission("canManagePatients"),
+    authorization([roleenum.doctor]),
+    validation(DV.updateSessionVitalsSchema),
+    DS.updateSessionVitals
+);
+
+// update session fees
+doctorrouter.patch(
+    "/session/:sessionId/fees",
+    authentication,
+    requirePermission("canManageAppointments"),
+    authorization([roleenum.doctor]),
+    validation(DV.updateSessionFeesSchema),
+    DS.updateSessionFees
+);
+
 // get medication history
 doctorrouter.get(
     "/medications/history",

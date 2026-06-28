@@ -772,10 +772,17 @@ export const endSession = async (req, res, next) => {
             }
         }
 
-        const medicalHistory = await db_service.create({
-            model: medicalhistorymodel,
-            data: medicalHistoryData
-        });
+        let medicalHistory = await medicalhistorymodel.findOne({ sessionId });
+        if (medicalHistory) {
+            Object.assign(medicalHistory, medicalHistoryData);
+            await medicalHistory.save();
+        } else {
+            medicalHistoryData.sessionId = sessionId;
+            medicalHistory = await db_service.create({
+                model: medicalhistorymodel,
+                data: medicalHistoryData
+            });
+        }
 
         if (!session.isOfflinePatient) {
             await notify.medicalHistoryAdded(session.patientId);
@@ -859,12 +866,26 @@ export const cancelSession = async (req, res, next) => {
 export const getActiveSessions = async (req, res, next) => {
     try {
         const doctorId = req.user._id;
+        let statuses = ["pending_otp", "in_progress"];
+        if (req.query.status === "completed") {
+            statuses = ["completed"];
+        }
+
+        const filterQuery = { doctorId, status: { $in: statuses } };
+        
+        // If fetching completed, only fetch for today
+        if (req.query.status === "completed") {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            filterQuery.createdAt = { $gte: startOfDay };
+        }
+
         const sessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: { $in: ["pending_otp", "in_progress"] } },
+            filter: filterQuery,
             options: {
                 populate: { path: "patientId", select: "fullName phoneNumber profileImage bloodType height weight allergies chronic surgeries" },
-                sort: { createdAt: -1 }
+                sort: { order: 1, createdAt: 1 }
             }
         });
 
@@ -1593,6 +1614,90 @@ export const getAllNotifications = async (req, res, next) => {
             totalNotifications,
             totalPages: Math.ceil(totalNotifications / limit),
             notifications,
+        });
+    } catch (error) { next(error) }
+};
+
+export const reorderSessions = async (req, res, next) => {
+    try {
+        const { sessions } = req.body;
+        // sessions is an array of { id, order }
+        
+        const bulkOps = sessions.map(s => ({
+            updateOne: {
+                filter: { _id: s.id, doctorId: req.user._id },
+                update: { $set: { order: s.order } }
+            }
+        }));
+
+        await sessionmodel.bulkWrite(bulkOps);
+
+        return successresponse({
+            res,
+            message: "Queue reordered successfully"
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionVitals = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { bloodPressure, heartRate, sugarLevel, temperature, weight, height } = req.body;
+
+        const session = await sessionmodel.findOne({ _id: sessionId, doctorId: req.user._id });
+        if (!session) throw new Error("session not found", { cause: 404 });
+
+        let history = await medicalhistorymodel.findOne({ sessionId });
+        if (!history) {
+            history = await medicalhistorymodel.create({
+                doctorId: req.user._id,
+                patientId: session.patientId, // Null if guest
+                sessionId: session._id,
+                bloodPressure,
+                pulse: heartRate,
+                sugarLevel,
+                temperature,
+                weight,
+                height
+            });
+        } else {
+            history.bloodPressure = bloodPressure || history.bloodPressure;
+            history.pulse = heartRate || history.pulse;
+            history.sugarLevel = sugarLevel || history.sugarLevel;
+            history.temperature = temperature || history.temperature;
+            history.weight = weight || history.weight;
+            history.height = height || history.height;
+            await history.save();
+        }
+
+        return successresponse({
+            res,
+            message: "Vitals updated successfully",
+            data: history
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionFees = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { fees } = req.body;
+
+        const session = await db_service.findOneAndUpdate({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id },
+            update: { fees },
+            options: { new: true }
+        });
+
+        if (!session) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        return successresponse({
+            res,
+            message: "Fees updated successfully",
+            data: session
         });
     } catch (error) { next(error) }
 };

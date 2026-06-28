@@ -335,7 +335,9 @@ export const signin = async (req, res, next) => {
 
   let assistantData = null;
   if (user.role === roleenum.assistant) {
-    assistantData = await AssistantModel.findOne({ userId: user._id });
+    assistantData = await AssistantModel.findOne({ userId: user._id })
+      .populate('doctorId', 'fullName')
+      .populate('clinicId', 'name');
   }
 
   successresponse({
@@ -350,7 +352,10 @@ export const signin = async (req, res, next) => {
       fullName: user.fullName,
       ...(assistantData && { 
           permissions: assistantData.permissions,
-          doctorId: assistantData.doctorId
+          doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+          jobTitle: assistantData.jobTitle,
+          doctorName: assistantData.doctorId?.fullName,
+          clinicName: assistantData.clinicId?.name
       })
     },
   });
