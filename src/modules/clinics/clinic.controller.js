@@ -4,6 +4,7 @@ import * as CV from "./clinic.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
+import { spoofAssistantToDoctor } from "../../common/middleware/assistant.middleware.js";
 import { validation } from "../../common/middleware/validation.js";
 
 const clinicrouter = Router();
@@ -21,6 +22,7 @@ clinicrouter.post(
 clinicrouter.get(
     "/",
     authentication,
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     CS.getMyClinics
 );

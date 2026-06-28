@@ -4,7 +4,7 @@ import * as SS from "./staff.service.js";
 import * as DV from "./doctor.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
-import { requirePermission, auditLogger } from "../../common/middleware/assistant.middleware.js";
+import { requirePermission, auditLogger, spoofAssistantToDoctor } from "../../common/middleware/assistant.middleware.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { multer_host } from "../../common/middleware/multer.js";
 import { multerenum } from "../../common/enum/multerenum.js";
@@ -30,6 +30,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/dashboard",
     authentication,
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     DS.getDashboard
 );
@@ -39,6 +40,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/reports/analytics",
     authentication,
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     DS.getReportsAnalytics
 );
@@ -90,6 +92,7 @@ doctorrouter.get(
 doctorrouter.post(
     "/session/request",
     authentication,
+    requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
     validation(DV.createSessionSchema),
     DS.createSession
@@ -98,6 +101,7 @@ doctorrouter.post(
 doctorrouter.post(
     "/session/verify",
     authentication,
+    requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
     validation(DV.verifySessionSchema),
     DS.verifySession
@@ -107,6 +111,7 @@ doctorrouter.post(
 doctorrouter.get(
     "/session",
     authentication,
+    requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
     DS.getActiveSessions
 );

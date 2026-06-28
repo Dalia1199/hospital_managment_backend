@@ -35,6 +35,28 @@ export const requirePermission = (permissionKey) => {
     };
 };
 
+export const spoofAssistantToDoctor = async (req, res, next) => {
+    try {
+        if (req.user.role === roleenum.assistant) {
+            const assistant = await AssistantModel.findOne({ userId: req.user._id });
+            if (!assistant) {
+                return res.status(403).json({ message: "Assistant record not found." });
+            }
+
+            req.assistant = assistant;
+            req.originalUserId = req.user._id;
+            req.user._id = assistant.doctorId; // Trick downstream services to use doctor's data
+            req.originalRole = req.user.role;
+            req.user.role = roleenum.doctor; // Spoof role
+            
+            return next();
+        }
+        return next();
+    } catch (error) {
+        return res.status(500).json({ message: "Server error in role spoofing.", error: error.message });
+    }
+};
+
 export const logAction = async (req, action, details = {}) => {
     try {
         if (req.user.role === roleenum.assistant && req.assistant) {

@@ -1,4 +1,5 @@
 import usermodel from "../../DB/models/usermodel.js";
+import { AssistantModel } from "../../DB/models/assistant_model.js";
 import { hash, compare } from "../../common/utilits/security/hash.js";
 import * as db_service from "../../DB/db.service.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
@@ -332,15 +333,25 @@ export const signin = async (req, res, next) => {
   });
   console.log("REFRESH:", refreshtoken);
 
+  let assistantData = null;
+  if (user.role === roleenum.assistant) {
+    assistantData = await AssistantModel.findOne({ userId: user._id });
+  }
+
   successresponse({
     res,
     message: "success signin",
     data: {
       access_token,
       refreshtoken,
+      email: user.email,
       role: user.role,
       id: user._id,
       fullName: user.fullName,
+      ...(assistantData && { 
+          permissions: assistantData.permissions,
+          doctorId: assistantData.doctorId
+      })
     },
   });
 };
