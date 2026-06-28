@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const assistantSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        ref: "user",
         required: true
     },
     doctorId: {
@@ -13,7 +13,7 @@ const assistantSchema = new mongoose.Schema({
     },
     clinicId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Clinic",
+        ref: "clinic",
         required: true
     },
     jobTitle: {
