@@ -1,8 +1,8 @@
 import { AssistantModel } from "../../DB/models/assistant_model.js";
 import { ActionLogModel } from "../../DB/models/action_log_model.js";
-import { usermodel } from "../../DB/models/usermodel.js";
+import usermodel from "../../DB/models/usermodel.js";
 import { roleenum } from "../../common/enum/user.enum.js";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 
 export const createStaff = async (req, res, next) => {
     try {
