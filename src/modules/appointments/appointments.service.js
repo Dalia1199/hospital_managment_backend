@@ -12,6 +12,7 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
 import { decrypt } from "../../common/utilits/security/encrypt.js";
 import usermodel from "../../DB/models/usermodel.js";
+import { logAction } from "../../common/middleware/assistant.middleware.js";
 
 //done
 export const addAvailability = async (req, res, next) => {

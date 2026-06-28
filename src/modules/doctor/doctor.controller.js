@@ -1,14 +1,23 @@
 import { Router } from "express";
 import * as DS from "./doctor.service.js";
+import * as SS from "./staff.service.js";
 import * as DV from "./doctor.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
+import { requirePermission, auditLogger } from "../../common/middleware/assistant.middleware.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { multer_host } from "../../common/middleware/multer.js";
 import { multerenum } from "../../common/enum/multerenum.js";
 import { validation } from "../../common/middleware/validation.js";
 
 const doctorrouter = Router();
+
+// Staff Management Routes
+doctorrouter.post("/staff", authentication, authorization([roleenum.doctor]), SS.createStaff);
+doctorrouter.get("/staff", authentication, authorization([roleenum.doctor]), SS.getStaff);
+doctorrouter.put("/staff/:id", authentication, authorization([roleenum.doctor]), SS.updateStaff);
+doctorrouter.delete("/staff/:id", authentication, authorization([roleenum.doctor]), SS.deleteStaff);
+doctorrouter.get("/staff/logs", authentication, authorization([roleenum.doctor]), SS.getLogs);
 
 // GET /doctor/all — accessible by patient + doctor + admin
 doctorrouter.get(
@@ -106,6 +115,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/medications/history",
     authentication,
+    requirePermission("canManagePatients"),
     authorization([roleenum.doctor]),
     DS.getMedicationHistory
 );
@@ -114,6 +124,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/patient/history",
     authentication,
+    requirePermission("canManagePatients"),
     authorization([roleenum.doctor]),
     DS.getPatientMedicalHistory
 );
@@ -122,8 +133,10 @@ doctorrouter.get(
 doctorrouter.patch(
     "/patient/:patientId/alerts",
     authentication,
+    requirePermission("canManagePatients"),
     authorization([roleenum.doctor]),
     validation(DV.updatePatientAlertsSchema),
+    auditLogger("UPDATE_PATIENT_ALERTS"),
     DS.updatePatientAlerts
 );
 
@@ -131,6 +144,7 @@ doctorrouter.patch(
 doctorrouter.get(
     "/patient/:patientId/compliance",
     authentication,
+    requirePermission("canManagePatients"),
     authorization([roleenum.doctor]),
     DS.getPatientCompliance
 );
@@ -161,6 +175,7 @@ doctorrouter.delete(
 doctorrouter.get(
     "/my-patients",
     authentication,
+    requirePermission("canManagePatients"),
     authorization([roleenum.doctor]),
     validation(DV.getMyPatientsSchema),
     DS.getMyPatients
