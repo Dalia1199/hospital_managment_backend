@@ -14,6 +14,7 @@ import { notify } from "../notifications/notification.service.js";
 import mongoose from "mongoose";
 import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
 import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
+import notificationmodel from "../../DB/models/notificationmodel.js";
 
 export const getDashboard = async (req, res, next) => {
     try {
@@ -80,7 +81,9 @@ export const getDoctorProfile = async (req, res, next) => {
                 specialization: doctor.specialization,
                 experience: doctor.experience,
                 bio: doctor.bio,
-
+                licenseimage: doctor.licenseimage ?? null,
+                pendingLicenseImage: doctor.pendingLicenseImage ?? null,
+                previousLicenseImage: doctor.previousLicenseImage ?? null,
             }
         });
     } catch (error) {
@@ -154,6 +157,7 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
+        const oldPublicId = doctor.licenseimage?.public_id;
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -167,11 +171,13 @@ export const uploadLicense = async (req, res, next) => {
                 options: { new: true }
             });
 
-            await db_service.findOneAndUpdate({
-                model: usermodel,
-                filter: { _id: req.user._id },
-                update: { status: "pending" }
-            });
+            await notify.newLicenseUnderReview(updatedDoctor.userId);
+
+            // await db_service.findOneAndUpdate({
+            //     model: usermodel,
+            //     filter: { _id: req.user._id },
+            //     update: { status: "pending" }
+            // });
 
             const admins = await db_service.find({
                 model: usermodel,
@@ -185,23 +191,53 @@ export const uploadLicense = async (req, res, next) => {
                 )
             );
 
-            if (oldPublicId) {
-                await cloudinary.uploader.destroy(oldPublicId);
-            }
+            // Note: old licenseimage is kept as-is until admin approves the new one
 
             return successresponse({
                 res,
-                message: "license updated successfully, but it needs for admin approval first",
+                message: "license submitted successfully and is awaiting admin review",
                 data: updatedDoctor
             });
 
         } catch (dbError) {
+            console.error("License upload dbError:", dbError);
             await cloudinary.uploader.destroy(public_id);
-            throw dbError;
+            throw new Error("Failed to save license. Please try again.", { cause: 500 });
         }
 
     } catch (error) {
         return next(error);
+    }
+};
+
+export const cancelPendingLicense = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor?.pendingLicenseImage?.public_id) {
+            return next(new Error("No pending license to cancel", { cause: 400 }));
+        }
+
+        // Delete from cloudinary
+        await cloudinary.uploader.destroy(doctor.pendingLicenseImage.public_id);
+
+        const updatedDoctor = await db_service.findOneAndUpdate({
+            model: doctormodel,
+            filter: { userId: req.user._id },
+            update: { $unset: { pendingLicenseImage: 1 } },
+            options: { new: true }
+        });
+
+        return successresponse({
+            res,
+            message: "Pending license cancelled successfully",
+            data: updatedDoctor
+        });
+    } catch (error) {
+        next(error);
     }
 };
 
@@ -254,7 +290,7 @@ export const getPatientCompliance = async (req, res, next) => {
     try {
         const { patientId } = req.params;
         const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
-        
+
         if (!hasAccess) {
             throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
         }
@@ -320,7 +356,7 @@ export const getPatientCompliance = async (req, res, next) => {
 
         let totalTaken = 0;
         let totalMissed = 0;
-        
+
         trackingRecords.forEach(r => {
             if (r.status === 'taken') totalTaken++;
             else if (r.status === 'missed') totalMissed++;
@@ -367,6 +403,18 @@ export const getPatientCompliance = async (req, res, next) => {
             alerts.push({ type: "warning", message: `Multiple missed doses (${consecutiveMissedDays} days).` });
         }
 
+        return successresponse({
+            res, data: {
+                adherencePercentage,
+                complianceStatus,
+                totalTaken,
+                totalMissed,
+                currentStreak,
+                activeMedicationsCount: activeMeds.length,
+                alerts,
+                activeMeds
+            }
+        });
         return successresponse({ res, data: {
             adherencePercentage,
             complianceStatus,
@@ -1401,4 +1449,164 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
     }
 
     return { hasAccess: false, sharingSetting };
+};
+
+export const addCertificate = async (req, res, next) => {
+    try {
+        if (!req.file) throw new Error("certificate file is required", { cause: 400 });
+
+        const { title, issuer, issueDate } = req.body;
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const { secure_url, public_id } =
+            await cloudinary.uploader.upload(req.file.path, {
+                folder: "carehub/doctors/certificates"
+            });
+
+        doctor.certificates.push({
+            title,
+            issuer,
+            issueDate,
+            secure_url,
+            public_id
+        });
+
+        await doctor.save();
+        await notify.certificateAdded(req.user._id, title);
+
+        return successresponse({
+            res,
+            message: "certificate added successfully",
+            data: doctor.certificates
+        })
+    }
+    catch (error) { next(error) }
+};
+
+export const updateCertificate = async (req, res, next) => {
+    try {
+        const { certificateId } = req.params;
+
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const certificate = doctor.certificates.id(certificateId);
+        if (!certificate) throw new Error("certificate not found", { cause: 404 });
+
+        if (req.body.title) certificate.title = req.body.title;
+        if (req.body.issuer) certificate.title = req.body.issuer;
+        if (req.body.issueDate) certificate.title = req.body.issueDate;
+
+        if (req.file) {
+            const oldPublicId = certificate.public_id;
+
+            const { secure_url, public_id } =
+                await cloudinary.uploader.upload(req.file.path, {
+                    folder: "carehub/doctors/certificates"
+                })
+
+            certificate.secure_url = secure_url;
+            certificate.public_id = public_id;
+            await cloudinary.uploader.destroy(oldPublicId);
+        }
+
+        await doctor.save();
+        await notify.certificateUpdated(req.user._id, certificate.title);
+
+        return successresponse({
+            res,
+            message: "certificate updated successfully",
+            data: doctor.certificates
+        });
+
+    }
+    catch (error) { next(error) }
+};
+
+export const deleteCertificate = async (req, res, next) => {
+    try {
+        const { certificateId } = req.params;
+
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        const certificate = doctor.certificates.id(certificateId);
+
+        if (!certificate) {
+            throw new Error("certificate not found", { cause: 404 });
+        }
+
+        await cloudinary.uploader.destroy(
+            certificate.public_id
+        );
+
+        // pull --> work with mongoose array to delete element with id
+        doctor.certificates.pull(certificateId);
+        await doctor.save();
+        await notify.certificateDeleted(req.user._id, certificate.title);
+
+        return successresponse({
+            res,
+            message: "certificate deleted successfully"
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getCertificates = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id },
+            select: "certificates"
+        });
+
+        if (!doctor) throw new Error("doctor not found", { cause: 404 });
+
+        return successresponse({
+            res,
+            data: doctor.certificates
+        });
+    } catch (error) { next(error) }
+};
+
+export const getAllNotifications = async (req, res, next) => {
+    try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+
+        const skip = (page - 1) * limit;
+
+        const filter = {
+            userId: req.user._id,
+        };
+
+        const [notifications, totalNotifications] = await Promise.all([
+            notificationmodel
+                .find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+
+            notificationmodel.countDocuments(filter),
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            page,
+            limit,
+            totalNotifications,
+            totalPages: Math.ceil(totalNotifications / limit),
+            notifications,
+        });
+    } catch (error) { next(error) }
 };

@@ -20,8 +20,12 @@ export const rejectLicenseSchema = {
         id: generalrules.id.required()
     }),
     body: Joi.object({
-        reason: Joi.string().min(5).max(500).required()
-    })
+        reason: Joi.string().trim().min(5).max(500).required().messages({
+            "string.empty": "rejection reason is required",
+            "string.min": "rejection reason must be at least 5 characters",
+            "any.required": "rejection reason is required"
+        })
+    }).required()
 };
 
 // add validation for admin to get all users

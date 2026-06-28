@@ -43,7 +43,7 @@ clinicrouter.delete(
     CS.deleteClinic
 );
 
-// GET /clinics/doctor/:doctorId — patient views doctor clinics
+// ⚠️ لازم يجي قبل /:clinicId عشان مايتطابقش غلط
 clinicrouter.get(
     "/doctor/:doctorId",
     authentication,
@@ -51,5 +51,41 @@ clinicrouter.get(
     validation(CV.doctorIdSchema),
     CS.getDoctorClinics
 );
+
+// // GET /clinics/doctor/:doctorId — patient views doctor clinics
+// clinicrouter.get(
+//     "/doctor/:doctorId",
+//     authentication,
+//     authorization([roleenum.patient, roleenum.doctor]),
+//     validation(CV.doctorIdSchema),
+//     CS.getDoctorClinics
+// );
+
+// ─── Service Routes ───────────────────────────────────────────────────────────
+
+clinicrouter.post(
+    "/:clinicId/services",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(CV.addServiceSchema),
+    CS.addService
+);
+
+clinicrouter.patch(
+    "/:clinicId/services/:serviceId",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(CV.updateServiceSchema),
+    CS.updateService
+);
+
+clinicrouter.delete(
+    "/:clinicId/services/:serviceId",
+    authentication,
+    authorization([roleenum.doctor]),
+    validation(CV.serviceIdSchema),
+    CS.deleteService
+);
+
 
 export default clinicrouter;

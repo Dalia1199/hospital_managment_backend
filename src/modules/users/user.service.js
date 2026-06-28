@@ -442,6 +442,8 @@ export const signup = async (req, res, next) => {
         }
       });
 
+      await notify.newDoctorUnderReview(user._id);
+
       const admins = await usermodel.find({ role: roleenum.admin }).select("_id");
       await Promise.all(
         admins.map((admin) => notify.newDoctorRegistration(admin._id, user.fullName))

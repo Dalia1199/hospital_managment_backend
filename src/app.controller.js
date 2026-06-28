@@ -21,6 +21,7 @@ import drugsrouter from "./modules/drugs/drugs.routes.js";
 import { startMedicationCron } from "./common/cron/medicationCron.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
 import reviewrouter from "./modules/reviews/review.controller.js";
+import webauthnrouter from "./modules/webauthn/webauthn.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -59,6 +60,40 @@ const bootstrap = () => {
         app.use( "/payments", paymentRouter);
         app.use("/clinics", clinicrouter);
         app.use("/reviews", reviewrouter);
+
+    app.use(cors({
+        origin: ["http://localhost:3001",
+            "https://carehub-two.vercel.app",
+            "http://192.168.1.2:3001"],
+        credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+    }));
+
+    // DB connection is now awaited in index.js before starting the server
+    connectionredis();
+    startMedicationCron();
+
+    app.get("/", (req, res, next) => {
+        res.status(200).json({ message: `welcome to carehub app😊` })
+    })
+
+    app.use("/users", userrouter),
+        app.use("/questions", questionrouter)
+    app.use("/answers", answerrouter);
+    app.use("/medical-history", medicalrouter);
+    app.use("/prescrption", prescrptionrouter);
+    app.use("/admin", adminrouter);
+    app.use("/doctor", doctorrouter);
+    app.use("/patient", patientrouter);
+    app.use("/appointmens", appointmensrouter)
+    app.use("/notifications", notificationrouter);
+    app.use("/ai", airouter);
+    app.use("/drugs", drugsrouter);
+    app.use( "/payments", paymentRouter);
+    app.use("/payments", paymentRouter);
+    app.use("/clinics", clinicrouter);
+    app.use("/webauthn", webauthnrouter);
 
 
     app.use("{/*demo}", (req, res, next) => {
