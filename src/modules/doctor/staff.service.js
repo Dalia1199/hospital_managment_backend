@@ -39,6 +39,12 @@ export const createStaff = async (req, res, next) => {
             permissions: permissions || {}
         });
 
+        // Populate the response for immediate frontend display
+        await newAssistant.populate([
+            { path: "userId", select: "fullName email phoneNumber profilepicture" },
+            { path: "clinicId", select: "name" }
+        ]);
+
         res.status(201).json({ message: "Staff member created successfully", data: newAssistant });
     } catch (error) {
         console.error(error);
@@ -82,6 +88,12 @@ export const updateStaff = async (req, res, next) => {
         );
 
         if (!assistant) return res.status(404).json({ message: "Staff not found" });
+
+        await assistant.populate([
+            { path: "userId", select: "fullName email phoneNumber profilepicture" },
+            { path: "clinicId", select: "name" }
+        ]);
+
         res.status(200).json({ message: "Staff updated successfully", data: assistant });
     } catch (error) {
         res.status(500).json({ message: "Server error", error: error.message });
