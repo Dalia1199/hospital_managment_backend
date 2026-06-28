@@ -553,27 +553,13 @@ export const createSession = async (req, res, next) => {
                     validUntil: new Date(Date.now() + 10 * 60 * 1000)
                 }
             });
-
-            //commented to avoid sending real emails during testing
-            /*
-            await sendemail({
-                to: patient.email,
-                subject: "Carehub - Doctor Access OTP",
-                html: `<h3>Hello ${patient.fullName},</h3>
-                       <p>Your doctor is requesting access to your medical history.</p>
-                       <p>Please provide the following OTP to grant access for 24 hours:</p>
-                       <h2 style="color: blue; letter-spacing: 5px;">${otp}</h2>
-                       <p>This OTP expires in 10 minutes.</p>`
-            });
-            */
-
-            // Notify patient
-            await notify.accessRequested(patientId, req.user.fullName);
+            // Notify patient with the OTP
+            await notify.accessRequested(patientId, req.user.fullName, otp);
 
             return successresponse({
                 res,
-                message: "OTP generated successfully",
-                data: { session, temp_otp: otp } // Sending OTP to frontend for testing <Temporary>
+                message: "OTP generated successfully and sent via notification",
+                data: { session } // Removed temp_otp from response
             });
         }
     } catch (error) {
