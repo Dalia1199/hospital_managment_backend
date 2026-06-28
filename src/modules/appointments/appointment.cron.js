@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import appointmentModel from "../../DB/models/appointmentmodel.js";
+import appointmentModel from "../../DB/models/appointments_model.js";
 import { notify } from "../notifications/notification.service.js";
 
 // Run every hour

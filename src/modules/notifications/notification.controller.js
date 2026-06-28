@@ -10,7 +10,7 @@ const notificationrouter = Router();
 notificationrouter.get(
     "/",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor]),
     NS.getNotifications
 );
 
@@ -26,7 +26,7 @@ notificationrouter.post(
 notificationrouter.patch(
     "/read-all",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor]),
     NS.markAllAsRead
 );
 
@@ -34,7 +34,7 @@ notificationrouter.patch(
 notificationrouter.patch(
     "/:id/read",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor]),
     NS.markAsRead
 );
 
