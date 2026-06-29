@@ -95,6 +95,7 @@ export const endSessionSchema = {
     }).required(),
     body: Joi.object({
         fees: Joi.number().min(0).optional(),
+        isFeesFinalized: Joi.boolean().optional(),
         diagnosis: Joi.string().allow("").optional(),
         notes: Joi.string().allow("").optional(),
         prescriptionText: Joi.string().allow("").optional(),

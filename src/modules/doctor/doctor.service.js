@@ -463,6 +463,7 @@ export const createSession = async (req, res, next) => {
                     guestName,
                     guestPhone,
                     guestAge,
+                    fees: doctor.consultationFee || 0,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                 }
@@ -490,7 +491,7 @@ export const createSession = async (req, res, next) => {
             // Check for existing session
             const existingSession = await db_service.findOne({
                 model: sessionmodel,
-                filter: { doctorId, patientId }
+                filter: { doctorId, patientId, status: { $in: ["pending_otp", "in_progress"] } }
             });
 
             if (existingSession) {
@@ -526,6 +527,7 @@ export const createSession = async (req, res, next) => {
                         doctorId,
                         patientId,
                         otp: "AUTO",
+                        fees: doctor.consultationFee || 0,
                         status: "in_progress",
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                     }
@@ -549,6 +551,7 @@ export const createSession = async (req, res, next) => {
                     doctorId,
                     patientId,
                     otp,
+                    fees: doctor.consultationFee || 0,
                     status: "pending_otp",
                     validUntil: new Date(Date.now() + 10 * 60 * 1000)
                 }
@@ -653,11 +656,25 @@ export const updatePatientAlerts = async (req, res, next) => {
 export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, isFeesFinalized, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (fees !== undefined && existingSession.isFeesFinalized) {
+            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        }
 
         const updateObj = { status: "completed" };
         if (fees !== undefined) updateObj.fees = fees;
+        if (isFeesFinalized !== undefined) updateObj.isFeesFinalized = isFeesFinalized;
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
@@ -876,7 +893,14 @@ export const getActiveSessions = async (req, res, next) => {
             statuses = ["pending_otp", "in_progress", "completed"];
         }
 
-        const filterQuery = { doctorId, status: { $in: statuses } };
+        const filterQuery = { 
+            doctorId, 
+            status: { $in: statuses }
+        };
+
+        if (req.query.status === "completed" || req.query.status === "all") {
+            filterQuery.isFeesFinalized = { $ne: true };
+        }
         
         // If fetching completed or all, only fetch for today to limit scope
         if (req.query.status === "completed" || req.query.status === "all") {
