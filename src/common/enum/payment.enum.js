@@ -1,0 +1,31 @@
+export const paymentPurposeEnum = {
+
+    appointment:
+        "appointment",
+
+    subscription:
+        "subscription",
+
+    lab:
+        "lab",
+
+    medicine:
+        "medicine"
+
+};
+
+export const paymentStatusEnum = {
+
+    pending:
+        "pending",
+
+    paid:
+        "paid",
+
+    failed:
+        "failed",
+
+    refunded:
+        "refunded"
+
+};

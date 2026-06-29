@@ -74,3 +74,63 @@ export const findById = async ({ model, id, options = {}, select, populate, lean
 
     return  query.exec();
 };
+export const paginate = async ({
+    model,
+    filter = {},
+    populate,
+    select,
+    sort,
+    page = 1,
+    limit = 10,
+    lean = true
+} = {}) => {
+
+    const skip = (page - 1) * limit;
+
+    const data = await find({
+
+        model,
+
+        filter,
+
+        populate,
+
+        select,
+
+        sort,
+
+        skip,
+
+        limit,
+
+        lean
+
+    });
+
+    const totalItems = await count({
+
+        model,
+
+        filter
+
+    });
+
+    return {
+
+        data,
+
+        pagination: {
+
+            currentPage: page,
+
+            totalPages: Math.ceil(totalItems / limit),
+
+            totalItems,
+
+            limit
+
+        }
+
+    };
+
+};
