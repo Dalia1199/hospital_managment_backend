@@ -887,3 +887,65 @@ export const getAnalyticsStats = async (req, res, next) => {
         next(error);
     }
 };
+
+
+
+// ─── PATCH /admin/profile-image ──────────────────────────────────────────────
+export const uploadAdminProfileImage = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            throw new Error("image required", { cause: 400 });
+        }
+ 
+        // احذف الصورة القديمة لو موجودة
+        if (req.user.profilepicture?.public_id) {
+            await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+        }
+ 
+        const { secure_url, public_id } = await cloudinary.uploader.upload(
+            req.file.path,
+            { folder: "carehub/admins" }
+        );
+ 
+        const user = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: { secure_url, public_id } },
+            options: { new: true }
+        });
+ 
+        return successresponse({
+            res,
+            message: "Profile image uploaded successfully",
+            data: { profilepicture: user.profilepicture }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+ 
+// ─── DELETE /admin/profile-image ─────────────────────────────────────────────
+export const deleteAdminProfileImage = async (req, res, next) => {
+    try {
+        if (!req.user.profilepicture?.public_id) {
+            throw new Error("image not found", { cause: 404 });
+        }
+ 
+        await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+ 
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: null },
+            options: { new: true }
+        });
+ 
+        return successresponse({
+            res,
+            message: "Profile picture deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
+};
