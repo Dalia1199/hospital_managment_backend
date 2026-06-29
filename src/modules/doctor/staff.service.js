@@ -79,15 +79,29 @@ export const getStaff = async (req, res, next) => {
 export const updateStaff = async (req, res, next) => {
     try {
         const { id } = req.params; // assistant document ID
-        const { jobTitle, clinicId, permissions } = req.body;
+        const { jobTitle, clinicId, permissions, isActive, password, fullName, phoneNumber } = req.body;
 
-        const assistant = await AssistantModel.findOneAndUpdate(
-            { _id: id, doctorId: req.user._id },
-            { jobTitle, clinicId, permissions },
-            { new: true }
-        );
-
+        const assistant = await AssistantModel.findOne({ _id: id, doctorId: req.user._id });
         if (!assistant) return res.status(404).json({ message: "Staff not found" });
+
+        // Update Assistant specific fields
+        if (jobTitle !== undefined) assistant.jobTitle = jobTitle;
+        if (clinicId !== undefined) assistant.clinicId = clinicId;
+        if (permissions !== undefined) assistant.permissions = permissions;
+        if (isActive !== undefined) assistant.isActive = isActive;
+        await assistant.save();
+
+        // Update User specific fields
+        const userUpdate = {};
+        if (fullName) userUpdate.fullName = fullName;
+        if (phoneNumber) userUpdate.phoneNumber = phoneNumber;
+        if (password) {
+            userUpdate.password = await bcrypt.hash(password, 10);
+        }
+        
+        if (Object.keys(userUpdate).length > 0) {
+            await usermodel.findByIdAndUpdate(assistant.userId, userUpdate);
+        }
 
         await assistant.populate([
             { path: "userId", select: "fullName email phoneNumber profilepicture" },

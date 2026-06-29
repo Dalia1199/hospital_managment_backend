@@ -40,7 +40,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/reports/analytics",
     authentication,
-    spoofAssistantToDoctor,
+    requirePermission("canManageReports"),
     authorization([roleenum.doctor]),
     DS.getReportsAnalytics
 );
@@ -83,6 +83,7 @@ doctorrouter.patch(
 doctorrouter.get(
     "/search-patient",
     authentication,
+    requirePermission(["canManageAppointments", "canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.searchPatientSchema),
     DS.searchPatient
@@ -95,6 +96,7 @@ doctorrouter.post(
     requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
     validation(DV.createSessionSchema),
+    auditLogger("CREATE_SESSION"),
     DS.createSession
 );
 // verify session 
@@ -104,6 +106,7 @@ doctorrouter.post(
     requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
     validation(DV.verifySessionSchema),
+    auditLogger("VERIFY_SESSION"),
     DS.verifySession
 );
 
@@ -111,7 +114,7 @@ doctorrouter.post(
 doctorrouter.get(
     "/session",
     authentication,
-    requirePermission("canManageAppointments"),
+    requirePermission(["canManageAppointments", "canManageBilling", "canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     DS.getActiveSessions
 );
@@ -120,9 +123,10 @@ doctorrouter.get(
 doctorrouter.patch(
     "/session/reorder",
     authentication,
-    requirePermission("canManageAppointments"),
+    requirePermission(["canManageAppointments", "canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.reorderSessionSchema),
+    auditLogger("REORDER_SESSION_QUEUE"),
     DS.reorderSessions
 );
 
@@ -130,9 +134,10 @@ doctorrouter.patch(
 doctorrouter.patch(
     "/session/:sessionId/vitals",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.updateSessionVitalsSchema),
+    auditLogger("UPDATE_SESSION_VITALS"),
     DS.updateSessionVitals
 );
 
@@ -140,9 +145,10 @@ doctorrouter.patch(
 doctorrouter.patch(
     "/session/:sessionId/fees",
     authentication,
-    requirePermission("canManageAppointments"),
+    requirePermission(["canManageAppointments", "canManageBilling"]),
     authorization([roleenum.doctor]),
     validation(DV.updateSessionFeesSchema),
+    auditLogger("UPDATE_SESSION_FEES"),
     DS.updateSessionFees
 );
 
@@ -150,7 +156,7 @@ doctorrouter.patch(
 doctorrouter.get(
     "/medications/history",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     DS.getMedicationHistory
 );
@@ -159,7 +165,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/patient/history",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     DS.getPatientMedicalHistory
 );
@@ -168,7 +174,7 @@ doctorrouter.get(
 doctorrouter.patch(
     "/patient/:patientId/alerts",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.updatePatientAlertsSchema),
     auditLogger("UPDATE_PATIENT_ALERTS"),
@@ -179,7 +185,7 @@ doctorrouter.patch(
 doctorrouter.get(
     "/patient/:patientId/compliance",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     DS.getPatientCompliance
 );
@@ -188,12 +194,14 @@ doctorrouter.get(
 doctorrouter.patch(
     "/session/:sessionId/end",
     authentication,
+    requirePermission(["canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     multer_host([...multerenum.image, ...multerenum.pdf]).fields([
         { name: "prescriptionImage", maxCount: 1 },
         { name: "attachments", maxCount: 10 }
     ]),
     validation(DV.endSessionSchema),
+    auditLogger("END_SESSION_AND_ASSESS"),
     DS.endSession
 );
 
@@ -201,8 +209,10 @@ doctorrouter.patch(
 doctorrouter.delete(
     "/session/:sessionId/cancel",
     authentication,
+    requirePermission(["canManageAppointments", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.cancelSessionSchema),
+    auditLogger("CANCEL_SESSION"),
     DS.cancelSession
 );
 
@@ -210,7 +220,7 @@ doctorrouter.delete(
 doctorrouter.get(
     "/my-patients",
     authentication,
-    requirePermission("canManagePatients"),
+    requirePermission(["canManagePatientsVitals", "canManagePatientsFull", "canManagePatients"]),
     authorization([roleenum.doctor]),
     validation(DV.getMyPatientsSchema),
     DS.getMyPatients
@@ -261,6 +271,7 @@ doctorrouter.get(
 doctorrouter.get(
     "/notifications",
     authentication,
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     DS.getAllNotifications
 );

@@ -43,6 +43,10 @@ const sessionSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    isFeesFinalized: {
+        type: Boolean,
+        default: false
+    },
     order: {
         type: Number,
         default: 0

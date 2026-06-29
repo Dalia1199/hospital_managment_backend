@@ -211,6 +211,7 @@ export const updateSessionFeesSchema = {
         sessionId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
     }).required(),
     body: Joi.object({
-        fees: Joi.number().min(0).required()
+        fees: Joi.number().min(0).required(),
+        isFeesFinalized: Joi.boolean().optional()
     }).required()
 };

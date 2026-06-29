@@ -8,7 +8,7 @@ const assistantSchema = new mongoose.Schema({
     },
     doctorId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Doctor",
+        ref: "doctor",
         required: true
     },
     clinicId: {
@@ -20,9 +20,14 @@ const assistantSchema = new mongoose.Schema({
         type: String,
         default: "Secretary"
     },
+    isActive: {
+        type: Boolean,
+        default: true
+    },
     permissions: {
         canManageAppointments: { type: Boolean, default: false },
-        canManagePatients: { type: Boolean, default: false },
+        canManagePatientsVitals: { type: Boolean, default: false },
+        canManagePatientsFull: { type: Boolean, default: false },
         canManageBilling: { type: Boolean, default: false },
         canManageClinics: { type: Boolean, default: false },
         canManageReports: { type: Boolean, default: false }

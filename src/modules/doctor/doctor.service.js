@@ -656,10 +656,13 @@ export const endSession = async (req, res, next) => {
         const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
 
+        const updateObj = { status: "completed" };
+        if (fees !== undefined) updateObj.fees = fees;
+
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId },
-            update: { status: "completed", fees: fees || 0 },
+            update: updateObj,
             options: { new: true }
         });
 
@@ -869,12 +872,14 @@ export const getActiveSessions = async (req, res, next) => {
         let statuses = ["pending_otp", "in_progress"];
         if (req.query.status === "completed") {
             statuses = ["completed"];
+        } else if (req.query.status === "all") {
+            statuses = ["pending_otp", "in_progress", "completed"];
         }
 
         const filterQuery = { doctorId, status: { $in: statuses } };
         
-        // If fetching completed, only fetch for today
-        if (req.query.status === "completed") {
+        // If fetching completed or all, only fetch for today to limit scope
+        if (req.query.status === "completed" || req.query.status === "all") {
             const startOfDay = new Date();
             startOfDay.setHours(0, 0, 0, 0);
             filterQuery.createdAt = { $gte: startOfDay };
@@ -1681,12 +1686,30 @@ export const updateSessionVitals = async (req, res, next) => {
 export const updateSessionFees = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { fees } = req.body;
+        const { fees, isFeesFinalized } = req.body;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (existingSession.isFeesFinalized) {
+            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        }
+
+        const updateObj = { fees };
+        if (isFeesFinalized) {
+            updateObj.isFeesFinalized = true;
+        }
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId: req.user._id },
-            update: { fees },
+            update: updateObj,
             options: { new: true }
         });
 

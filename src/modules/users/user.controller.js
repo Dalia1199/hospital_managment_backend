@@ -22,7 +22,7 @@ userrouter.post(
 userrouter.post("/logout", authentication, US.logout)
 userrouter.post("/signin", validation(UV.signinschema), US.signin)
 userrouter.patch("/update-password", authentication, validation(UV.updatepassworsschema), US.UpdatePassword)
-// userrouter.get("/profile", authentication, US.getprofile)
+userrouter.get("/profile", authentication, US.getprofile)
 
 userrouter.patch("/forget-password", validation(UV.resendotpschema),US.forgetPassword)
 userrouter.patch("/reset-password", validation(UV.resetpasswordschema), US.resetPassword)

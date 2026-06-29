@@ -3,7 +3,7 @@ import * as AS from "./appointments.service.js";
 import * as AV from "./appointmens.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
-import { requirePermission, auditLogger } from "../../common/middleware/assistant.middleware.js";
+import { requirePermission, auditLogger, spoofAssistantToDoctor } from "../../common/middleware/assistant.middleware.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
 const appointmensrouter = Router();
@@ -76,7 +76,7 @@ appointmensrouter.get(
     "/available-slots/:doctorId",
 
     authentication,
-
+    spoofAssistantToDoctor,
     authorization([
         roleenum.patient, roleenum.doctor
     ]),
