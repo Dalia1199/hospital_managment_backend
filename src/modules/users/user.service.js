@@ -1,4 +1,5 @@
 import usermodel from "../../DB/models/usermodel.js";
+import { AssistantModel } from "../../DB/models/assistant_model.js";
 import { hash, compare } from "../../common/utilits/security/hash.js";
 import * as db_service from "../../DB/db.service.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
@@ -338,15 +339,31 @@ export const signin = async (req, res, next) => {
   });
   console.log("REFRESH:", refreshtoken);
 
+  let assistantData = null;
+  if (user.role === roleenum.assistant) {
+    assistantData = await AssistantModel.findOne({ userId: user._id })
+      .populate('doctorId', 'fullName')
+      .populate('clinicId', 'name');
+  }
+
   successresponse({
     res,
     message: "success signin",
     data: {
       access_token,
       refreshtoken,
+      email: user.email,
       role: user.role,
       id: user._id,
       fullName: user.fullName,
+      ...(assistantData && { 
+          permissions: assistantData.permissions,
+          doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+          jobTitle: assistantData.jobTitle,
+          doctorName: assistantData.doctorId?.fullName,
+          clinicId: assistantData.clinicId?._id || assistantData.clinicId,
+          clinicName: assistantData.clinicId?.name
+      })
     },
   });
 };
@@ -500,6 +517,42 @@ export const signup = async (req, res, next) => {
     }
     throw error;
   }
+};
+export const getprofile = async (req, res, next) => {
+  const user = req.user;
+  if (!user) {
+    return next(new Error("User not found", { cause: 404 }));
+  }
+
+  let assistantData = null;
+  if (user.role === roleenum.assistant) {
+    assistantData = await AssistantModel.findOne({ userId: user._id })
+      .populate('doctorId', 'fullName')
+      .populate('clinicId', 'name');
+      
+    if (assistantData && assistantData.isActive === false) {
+      return next(new Error("Account suspended. Please contact your doctor.", { cause: 403 }));
+    }
+  }
+
+  successresponse({
+    res,
+    message: "Profile fetched successfully",
+    data: {
+      email: user.email,
+      role: user.role,
+      id: user._id,
+      fullName: user.fullName,
+      ...(assistantData && { 
+          permissions: assistantData.permissions,
+          doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+          jobTitle: assistantData.jobTitle,
+          doctorName: assistantData.doctorId?.fullName,
+          clinicId: assistantData.clinicId?._id || assistantData.clinicId,
+          clinicName: assistantData.clinicId?.name
+      })
+    }
+  });
 };
 
 
