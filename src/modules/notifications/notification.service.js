@@ -215,7 +215,6 @@ export const notify = {
             type: "certificate_added",
             message: `Certificate "${certificateName}" has been added successfully.`,
             link: "/doctor/profile/certificates"
->>>>>>> main
         }),
 
     certificateUpdated: (doctorId, certificateName) =>
