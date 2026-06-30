@@ -10,6 +10,7 @@ import cloudinary from "../../common/utilits/cloudinary.js";
 import healthtrackingmodel from "../../DB/models/healthtrackingmodel.js";
 import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
 import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
+import medicationschedulemodel from "../../DB/models/medicationschedulemodel.js";
 
 export const getMyPrescriptions = async (req, res, next) => {
   const prescriptions = await db_service.find({
@@ -764,6 +765,44 @@ export const getMedicationSummary = async (req, res, next) => {
             totalMissed,
             currentStreak
         }});
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const setMedicationSchedule = async (req, res, next) => {
+    try {
+        const { prescriptionId, medicationId, medicineName, scheduleType, times, intervalData } = req.body;
+        
+        // Find existing schedule or create new one
+        const schedule = await db_service.findOneAndUpdate({
+            model: medicationschedulemodel,
+            filter: { patientId: req.user._id, medicationId },
+            update: {
+                prescriptionId,
+                medicineName,
+                scheduleType,
+                times: times || [],
+                intervalData: intervalData || { hours: 0, startTime: "" },
+                isActive: true
+            },
+            options: { upsert: true, new: true }
+        });
+
+        return successresponse({ res, message: "Medication schedule updated successfully", data: schedule });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getMedicationSchedules = async (req, res, next) => {
+    try {
+        const schedules = await db_service.find({
+            model: medicationschedulemodel,
+            filter: { patientId: req.user._id, isActive: true }
+        });
+
+        return successresponse({ res, data: schedules });
     } catch (error) {
         next(error);
     }

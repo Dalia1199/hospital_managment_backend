@@ -10,7 +10,7 @@ initSocket(server);
 
 // Initialize scheduled cron jobs
 import "./modules/appointments/appointment.cron.js";
-
+import "./modules/patient/medication.cron.js";
 // Await DB connection before accepting requests
 checkConnectionDB().then(() => {
     server.listen(process.env.PORT || 3000, () => {
