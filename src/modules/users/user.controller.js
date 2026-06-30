@@ -29,4 +29,5 @@ userrouter.patch("/reset-password", validation(UV.resetpasswordschema), US.reset
 userrouter.patch("/confirm-email", validation(UV.confirmemailschema), US.confirmemail)
 userrouter.post("/resend-otp", validation(UV.resendotpschema), US.resendotp)
 userrouter.get("/refresh-token", US.refreshtoken)
+userrouter.delete("/profile", authentication, US.deleteProfile);
 export default userrouter

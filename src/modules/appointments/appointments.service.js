@@ -618,19 +618,27 @@ export const bookAppointment = async (req, res, next) => {
       });
     }
 
-    const appointment = await appointmentsmodel.create({
-      patientId: req.user._id,
-      doctorId: slot.doctorId,
-      slotId,
-      clinicId: slot.clinicId || null,
-      reason,
-      status: "booked",
-      appointmentDate: slot.startDateTime,
-      startDateTime: slot.startDateTime,
-      endDateTime: slot.endDateTime,
+    const appointment = await db_service.create({
+      model: appointmentmodel,
+      data: {
+        doctorId: slot.doctorId,
+        patientId: req.user._id,
+        clinicId: slot.clinicId,
+        appointmentDate: slot.startDateTime,
+        startDateTime: slot.startDateTime,
+        endDateTime: slot.endDateTime,
+      },
+    });
+
+    const patient = await db_service.findOne({
+      model: usermodel,
+      filter: { _id: appointment.patientId }
     });
 
     await notify.appointmentBooked(appointment.patientId);
+    if (patient) {
+        await notify.patientAppointment(slot.doctorId, patient.fullName, slot.startDateTime);
+    }
 
     return successresponse({
       res,

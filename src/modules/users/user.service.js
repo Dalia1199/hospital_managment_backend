@@ -39,6 +39,12 @@ import { eventemitter } from "../../common/utilits/email/email.events.js";
 import { emailenum } from "../../common/enum/emailenum.js";
 import { emailtemplete } from "../../common/utilits/email/emai.templete.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
+import notificationmodel from "../../DB/models/notificationmodel.js";
+import reviewmodel from "../../DB/models/reviewmodel.js";
+import slotmodel from "../../DB/models/slot_model.js";
+import availabilitymodel from "../../DB/models/avalibility_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
 import { notify } from "../notifications/notification.service.js";
 
 const sendemailotp = async ({ email, subject } = {}) => {
@@ -436,6 +442,8 @@ export const signup = async (req, res, next) => {
         }
       });
 
+      await notify.newDoctorUnderReview(user._id);
+
       const admins = await usermodel.find({ role: roleenum.admin }).select("_id");
       await Promise.all(
         admins.map((admin) => notify.newDoctorRegistration(admin._id, user.fullName))
@@ -492,4 +500,62 @@ export const signup = async (req, res, next) => {
     }
     throw error;
   }
+};
+
+
+
+export const deleteProfile = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+        const role = req.user.role;
+
+        if (role === roleenum.doctor) {
+            // 1. get doctor record
+            const doctor = await db_service.findOne({
+                model: doctormodel,
+                filter: { userId }
+            });
+
+            if (doctor) {
+                // 2. delete cloudinary images
+                if (doctor.licenseimage?.public_id) {
+                    await cloudinary.uploader.destroy(doctor.licenseimage.public_id);
+                }
+                if (doctor.nationalId?.public_id) {
+                    await cloudinary.uploader.destroy(doctor.nationalId.public_id);
+                }
+
+                // 3. delete doctor-related data
+                await Promise.all([
+                    db_service.deleteMany({ model: availabilitymodel, filter: { doctorId: userId } }),
+                    db_service.deleteMany({ model: slotmodel, filter: { doctorId: userId } }),
+                    db_service.deleteMany({ model: appointmentsmodel, filter: { doctorId: userId } }),
+                    db_service.deleteMany({ model: clinicmodel, filter: { doctorId: userId } }),
+                    db_service.deleteMany({ model: reviewmodel, filter: { doctorId: userId } }),
+                    db_service.deleteOne({ model: doctormodel, filter: { userId } })
+                ]);
+            }
+
+        } else if (role === roleenum.patient) {
+            // 1. delete patient-related data
+            await Promise.all([
+                db_service.deleteMany({ model: appointmentsmodel, filter: { patientId: userId } }),
+                db_service.deleteMany({ model: notificationmodel, filter: { userId } }),
+                db_service.deleteMany({ model: reviewmodel, filter: { patientId: userId } }),
+                db_service.deleteOne({ model: patientmodel, filter: { userId } })
+            ]);
+        }
+
+        // 4. delete profile picture from cloudinary
+        if (req.user.profilepicture?.public_id) {
+            await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+        }
+
+        // 5. delete user
+        await db_service.deleteOne({ model: usermodel, filter: { _id: userId } });
+
+        return successresponse({ res, status: 200, message: "profile deleted successfully" });
+    } catch (error) {
+        next(error);
+    }
 };
