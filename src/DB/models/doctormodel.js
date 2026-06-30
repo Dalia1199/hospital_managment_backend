@@ -85,7 +85,6 @@ const doctorSchema = new mongoose.Schema({
         uploadedAt: { type: Date, default: Date.now }
     }],
 }, { timestamps: true });
-
 //CLINIC APPOINTMENT AND ADRESS
 //PROFILE PIC
 

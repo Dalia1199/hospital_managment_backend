@@ -157,7 +157,8 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
-        const oldPublicId = doctor.licenseimage?.public_id;
+        // Save old public_id before uploading new one
+        const oldPublicId = doctor?.licenseimage?.public_id ?? null;
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -171,13 +172,15 @@ export const uploadLicense = async (req, res, next) => {
                 options: { new: true }
             });
 
+            // NOTE: we intentionally do NOT touch the user's status here.
+            // This doctor is already approved and can keep working normally
+            // while the new license is under review — only
+            // pendingLicenseImage marks it as needing admin attention (see
+            // GET /admin/doctors/pending-licenses). Flipping status to
+            // "pending" used to lock the doctor out of login entirely until
+            // the admin acted, and it also leaked into the general
+            // first-time-signup approvals queue.
             await notify.newLicenseUnderReview(updatedDoctor.userId);
-
-            // await db_service.findOneAndUpdate({
-            //     model: usermodel,
-            //     filter: { _id: req.user._id },
-            //     update: { status: "pending" }
-            // });
 
             const admins = await db_service.find({
                 model: usermodel,
@@ -1485,6 +1488,51 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
     }
 
     return { hasAccess: false, sharingSetting };
+};
+
+// DELETE /doctor/license/pending — cancel pending license before admin reviews it
+export const cancelPendingLicense = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            throw new Error("Doctor profile not found", { cause: 404 });
+        }
+
+        if (!doctor.pendingLicenseImage?.public_id) {
+            throw new Error("No pending license to cancel", { cause: 400 });
+        }
+
+        const publicId = doctor.pendingLicenseImage.public_id;
+
+        // Remove from DB
+        doctor.pendingLicenseImage = null;
+        await doctor.save();
+
+        // the doctor still has their previously-approved licenseimage —
+        // cancelling the pending update must not leave them stuck on
+        // status "pending" (set by uploadLicense), since login requires
+        // status === "approved"
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { status: "approved" }
+        });
+
+        // Remove from Cloudinary
+        await cloudinary.uploader.destroy(publicId);
+
+        return successresponse({
+            res,
+            message: "Pending license cancelled successfully",
+        });
+
+    } catch (error) {
+        next(error);
+    }
 };
 
 export const addCertificate = async (req, res, next) => {

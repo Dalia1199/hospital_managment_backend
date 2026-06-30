@@ -135,7 +135,7 @@ export const notify = {
                 ? `You approved Dr. ${doctorName}'s license update`
                 : `You rejected Dr. ${doctorName}'s license update`,
             link: "/admin/doctors/licenses"
-    }),
+        }),
     newLicenseUnderReview: (doctorId) =>
         createNotification({
             userId: doctorId,
@@ -215,6 +215,7 @@ export const notify = {
             type: "certificate_added",
             message: `Certificate "${certificateName}" has been added successfully.`,
             link: "/doctor/profile/certificates"
+>>>>>>> main
         }),
 
     certificateUpdated: (doctorId, certificateName) =>
@@ -314,35 +315,37 @@ export const markAllAsRead = async (req, res, next) => {
     }
 };
 
-// ─── POST /notifications/push-permission ───────────────────────────────────────
+// 📌 POST /notifications/push-permission 
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------
 export const savePushPermission = async (req, res, next) => {
     try {
         const { subscription } = req.body;
         if (!subscription || !subscription.endpoint || !subscription.keys) {
             return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
         }
-
-        // Check if subscription already exists for this user/endpoint
-        const existing = await pushPermissionModel.findOne({
-            userId: req.user._id,
-            "subscription.endpoint": subscription.endpoint
+        
+        // Find user 
+        const user = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.user._id }
         });
 
-        if (!existing) {
-            await pushPermissionModel.create({
-                userId: req.user._id,
-                subscription
-            });
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
         }
 
+        // Add or update the push subscription
+        user.pushSubscription = subscription;
+        await user.save();
+        
+        // Return a response using successresponse structure if applicable
         return successresponse({
             res,
-            status: 201,
-            message: "Push permission registered successfully",
+            status: 200,
+            message: "Push permission saved successfully.",
+            data: { subscription: user.pushSubscription }
         });
     } catch (error) {
         next(error);
     }
 };
-
-

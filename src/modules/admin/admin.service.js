@@ -442,11 +442,7 @@ export const approveDoctorLicense = async (req, res, next) => {
         // confirming the decision (instead of the request just vanishing
         // from the pending list with no trace)
         await notify.licenseReviewed(req.user._id, updatedUser?.fullName, "approved");
-        await notify.licenseApproved(doctor.userId);
-        
-        if (oldPublicId) {
-            await cloudinary.uploader.destroy(oldPublicId);
-        }
+
 
         return successresponse({
             res,
