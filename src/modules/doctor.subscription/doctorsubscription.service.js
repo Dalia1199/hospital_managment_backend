@@ -1,16 +1,20 @@
 import { paymentPurposeEnum, paymentStatusEnum } from "../../common/enum/payment.enum.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
+import { roleenum } from "../../common/enum/user.enum.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import * as db_service from "../../DB/db.service.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
+import doctormodel from "../../DB/models/doctormodel.js";
 import paymentmodel from "../../DB/models/paymentmodel.js";
+import usermodel from "../../DB/models/usermodel.js";
+import { notify } from "../notifications/notification.service.js";
 import { generateCheckoutUrl } from "../payment/payment.helper.js";
 //tested
 // =========================
 // GET MY SUBSCRIPTION
 // =========================
 // done
-export const getMySubscription = async ( req,res, next) => {
+export const getMySubscription = async (req, res, next) => {
 
     try {
 
@@ -120,38 +124,40 @@ export const getMySubscription = async ( req,res, next) => {
 
 };
 //done
-export const getAllDoctorSubscriptions = async ( req, res, next) => {
+export const getAllDoctorSubscriptions = async (req, res, next) => {
     try {
-        const subscriptions =await db_service.find({
+        const subscriptions = await db_service.find({
 
-                model:doctorSubscriptionModel,
+            model: doctorSubscriptionModel,
 
-                populate: [
+            populate: [
 
-                    { path: "doctorId",
+                {
+                    path: "doctorId",
 
-                        select:  " email"
-                    },{  path: "subscriptionId"
+                    select: " email"
+                }, {
+                    path: "subscriptionId"
 
-                    },
+                },
 
-                    {
+                {
 
-                        path: "paymentId"
-
-                    }
-
-                ],
-
-                sort: {
-
-                    createdAt: -1
+                    path: "paymentId"
 
                 }
 
-            });
+            ],
 
-        return successresponse({ res, message: "Doctor subscriptions fetched successfully",data:    subscriptions });
+            sort: {
+
+                createdAt: -1
+
+            }
+
+        });
+
+        return successresponse({ res, message: "Doctor subscriptions fetched successfully", data: subscriptions });
 
     }
 
@@ -369,26 +375,26 @@ export const getDoctorSubscriptionByDoctor = async (
 
 };
 //done
-export const cancelSubscription = async (req,res,next) => {
+export const cancelSubscription = async (req, res, next) => {
 
     try {
 
-        const {subscriptionId } = req.params;
+        const { subscriptionId } = req.params;
 
-        const {cancelReason} = req.body;
+        const { cancelReason } = req.body;
         // console.log("subscriptionId:", subscriptionId);
 
         const subscription = await db_service.findById({
 
-                model:
+            model:
 
-                    doctorSubscriptionModel,
+                doctorSubscriptionModel,
 
-                id:
+            id:
 
-                    subscriptionId
+                subscriptionId
 
-            });
+        });
         // console.log(subscription);
         if (
 
@@ -507,184 +513,73 @@ export const cancelSubscription = async (req,res,next) => {
 
 };
 //done
-export const renewSubscription = async (req,res,next) => {
+export const renewSubscription = async (req, res, next) => {
 
     try {
-
-        const {subscriptionId } = req.params;
-
-        const subscription =
-
-            await db_service.findById({
-
-                model:
-
-                    doctorSubscriptionModel,
-
-                id:
-
-                    subscriptionId,
-
-                populate: [
-
-                    {
-
-                        path: "subscriptionId"
-
-                    }
-
-                ]
-
-            });
-
-        if (
-
-            !subscription
-
-        ) {
-
-            throw new Error(
-
-                "Subscription not found",
-
+        const { subscriptionId } = req.params;
+        const subscription = await db_service.findById({
+            model: doctorSubscriptionModel,
+            id: subscriptionId,
+            populate: [
                 {
-
-                    cause: 404
-
+                    path: "subscriptionId"
                 }
-
-            );
-
-        }
-
-        if (
-
-            subscription.doctorId.toString()
-
-            !==
-
-            req.user._id.toString()
-
-        ) {
-
-            throw new Error(
-
-                "Unauthorized",
-
-                {
-
-                    cause: 403
-
-                }
-
-            );
-
-        }
-
-        const plan =
-
-            subscription.subscriptionId;
-
-        const formattedAmount =
-
-            Number(
-
-                plan.price
-
-            ).toFixed(2);
-
-        const orderId =
-
-            Date.now().toString();
-
-        const payment =
-
-            await db_service.create({
-
-                model:
-
-                    paymentmodel,
-
-                data: {
-
-                    userId:
-
-                        req.user._id,
-
-                    amount:
-
-                        formattedAmount,
-
-                    purpose:
-
-                        paymentPurposeEnum.subscription,
-
-                    referenceId:
-
-                        plan._id,
-
-                    orderId,
-
-                    paymentStatus:
-
-                        paymentStatusEnum.pending
-
-                }
-
-            });
-
-        const paymentUrl =
-
-            generateCheckoutUrl({
-
-                orderId,
-
-                amount:
-
-                    formattedAmount,
-
-                metaData: {
-
-                    userId:
-
-                        req.user._id,
-
-                    purpose:
-
-                        paymentPurposeEnum.subscription,
-
-                    referenceId:
-
-                        plan._id
-
-                }
-
-            });
-
-        return successresponse({
-
-            res,
-
-            message:
-
-                "Renew payment created successfully",
-
-            data: {
-
-                payment,
-
-                paymentUrl
-
-            }
-
+            ]
         });
 
-    }
+        if (!subscription) throw new Error("Subscription not found", { cause: 404 });
+        if (subscription.doctorId.toString() !== req.user._id.toString()) throw new Error("Unauthorized", { cause: 403 });
 
+        const plan = subscription.subscriptionId;
+        const formattedAmount = Number(plan.price).toFixed(2);
+        const orderId = Date.now().toString();
+
+        const payment = await db_service.create({
+            model:
+                paymentmodel,
+            data: {
+                userId: req.user._id,
+                amount: formattedAmount,
+                purpose: paymentPurposeEnum.subscription,
+                referenceId: plan._id,
+                orderId,
+                paymentStatus: paymentStatusEnum.pending
+            }
+        });
+
+        const paymentUrl = generateCheckoutUrl({
+            orderId,
+            amount: formattedAmount,
+            metaData: {
+                userId: req.user._id,
+                purpose: paymentPurposeEnum.subscription,
+                referenceId: plan._id
+            }
+        });
+
+        const admins = await db_service.find({
+            model: usermodel,
+            filter: { role: roleenum.admin }
+        });
+
+        await Promise.all(
+            admins.map(admin =>
+                notify.subscriptionPlanRenewed(admin._id, req.user.fullName)
+            )
+        );
+
+        notify.doctorPlanRenewed(req.user.fullName);
+
+        return successresponse({
+            res,
+            message: "Renew payment created successfully",
+            data: {
+                payment,
+                paymentUrl
+            }
+        });
+    }
     catch (error) {
-
         next(error);
-
     }
-
 };
