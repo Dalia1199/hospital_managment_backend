@@ -213,37 +213,6 @@ export const uploadLicense = async (req, res, next) => {
     }
 };
 
-export const cancelPendingLicense = async (req, res, next) => {
-    try {
-        const doctor = await db_service.findOne({
-            model: doctormodel,
-            filter: { userId: req.user._id }
-        });
-
-        if (!doctor?.pendingLicenseImage?.public_id) {
-            return next(new Error("No pending license to cancel", { cause: 400 }));
-        }
-
-        // Delete from cloudinary
-        await cloudinary.uploader.destroy(doctor.pendingLicenseImage.public_id);
-
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: doctormodel,
-            filter: { userId: req.user._id },
-            update: { $unset: { pendingLicenseImage: 1 } },
-            options: { new: true }
-        });
-
-        return successresponse({
-            res,
-            message: "Pending license cancelled successfully",
-            data: updatedDoctor
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
 export const searchPatient = async (req, res, next) => {
     try {
         const { searchTerm } = req.query;
@@ -1795,6 +1764,7 @@ export const updateSessionFees = async (req, res, next) => {
             data: session
         });
     } catch (error) { next(error) }
+};
 
 // ═══════════════════════════════════════════════════════════════
 // أضيفي الـ functions دي في doctor.service.js
