@@ -14,6 +14,9 @@ import {
 import { generateCheckoutUrl, normalizeStatus } from "./payment.helper.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
+import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
+import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
 
 // =========================
 // CREATE PAYMENT (GENERIC)
@@ -152,12 +155,81 @@ export const createCheckout = async (
         // Subscription Payment
         // =========================
 
-        // if (
-        //     purpose === "subscription"
-        // ) {
-// subscribtionmodel:to be 
+        if (
 
-        // }
+            purpose === "subscription"
+
+        ) {
+
+            const plan =
+
+                await subscriptionmodel.findById(
+
+                    referenceId
+
+                );
+
+            if (
+
+                !plan
+
+            ) {
+
+                throw new Error(
+
+                    "subscription plan not found"
+
+                );
+
+            }
+
+            if (
+
+                !plan.isActive
+
+            ) {
+
+                throw new Error(
+
+                    "subscription plan is not available"
+
+                );
+
+            }
+
+            const activeSubscription =
+
+                await doctorSubscriptionModel.findOne({
+
+                    doctorId:
+
+                        req.user._id,
+
+                    status:
+
+                        subscriptionStatusEnum.active
+
+                });
+
+            if (
+
+                activeSubscription
+
+            ) {
+
+                throw new Error(
+
+                    "you already have an active subscription"
+
+                );
+
+            }
+
+            amount =
+
+                plan.price;
+
+        }
 
         const formattedAmount =
             Number(amount).toFixed(2);
@@ -321,6 +393,135 @@ export const paymentWebhook = async (req, res, next) => {
                     paymentStatus: "paid"
                 }
             );
+
+        }
+        // =========================
+        // Subscription
+        // =========================
+
+        if (
+
+            payment.purpose === "subscription" &&
+
+            payment.paymentStatus === "paid"
+
+        ) {
+
+            const plan =
+
+                await subscriptionmodel.findById(
+
+                    payment.referenceId
+
+                );
+
+            if (
+
+                !plan
+
+            ) {
+
+                throw new Error(
+
+                    "subscription plan not found"
+
+                );
+
+            }
+
+            const startDate =
+
+                new Date();
+
+            const endDate =
+
+                new Date();
+
+            endDate.setDate(
+
+                endDate.getDate() +
+
+                plan.durationInDays
+
+            );
+
+            const doctorSubscription =
+                await db_service.findOne({
+
+                    model:
+
+                        doctorSubscriptionModel,
+
+                    filter: {
+
+                        doctorId:
+
+                            payment.userId
+
+                    }
+
+                });
+
+            if (
+
+                doctorSubscription
+
+            ) {
+
+                doctorSubscription.subscriptionId =
+
+                    plan._id;
+
+                doctorSubscription.paymentId =
+
+                    payment._id;
+
+                doctorSubscription.startDate =
+
+                    startDate;
+
+                doctorSubscription.endDate =
+
+                    endDate;
+
+                doctorSubscription.status =
+
+                    subscriptionStatusEnum.active;
+
+                await doctorSubscription.save();
+
+            }
+
+            else {
+
+                await db_service.create({
+
+                    model:
+                        doctorSubscriptionModel,
+
+                    data: {
+
+                        doctorId:
+                            payment.userId,
+
+                        subscriptionId:
+                            plan._id,
+
+                        paymentId:
+                            payment._id,
+
+                        startDate,
+
+                        endDate,
+
+                        status:
+                            subscriptionStatusEnum.active
+
+                    }
+
+                });
+
+            }
 
         }
 

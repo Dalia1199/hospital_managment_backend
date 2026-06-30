@@ -22,6 +22,10 @@ import { startMedicationCron } from "./common/cron/medicationCron.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
 import reviewrouter from "./modules/reviews/review.controller.js";
 import webauthnrouter from "./modules/webauthn/webauthn.controller.js";
+import subscriptionRouter from "./modules/subscription/subscription.controller.js";
+import { subscriptionCron } from "./common/cron/subscriptioncron.js";
+import doctorSubscriptionRouter from "./modules/doctor.subscription/doctorsubscription.controller.js";
+import adminDashboardRouter from "./modules/admindashboard/adminDashboard.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -73,6 +77,7 @@ const bootstrap = () => {
     // DB connection is now awaited in index.js before starting the server
     connectionredis();
     startMedicationCron();
+    subscriptionCron();
 
     app.get("/", (req, res, next) => {
         res.status(200).json({ message: `welcome to carehub app😊` })
@@ -94,6 +99,10 @@ const bootstrap = () => {
     app.use("/payments", paymentRouter);
     app.use("/clinics", clinicrouter);
     app.use("/webauthn", webauthnrouter);
+    app.use( "/subscriptions", subscriptionRouter );
+    app.use("/doctorsubscriptions", doctorSubscriptionRouter);
+    app.use("/admindashboard",adminDashboardRouter);
+
 
 
     app.use("{/*demo}", (req, res, next) => {

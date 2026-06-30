@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { paymentPurposeEnum, paymentStatusEnum } from "../../common/enum/payment.enum.js";
 
 const paymentSchema = new mongoose.Schema({
 
@@ -11,28 +12,40 @@ const paymentSchema = new mongoose.Schema({
 
     paymentStatus: {
         type: String,
-        enum: [
-            "pending",
-            "paid",
-            "failed"
-        ],
-        default: "pending"
+
+        enum: Object.values(
+
+            paymentStatusEnum
+
+        ),
+
+        default:
+
+            paymentStatusEnum.pending
+
     },
 
     purpose: {
         type: String,
-        enum: [
-            "appointment",
-            "subscription",
-            "other"
-        ]
+
+        enum: Object.values(
+
+            paymentPurposeEnum
+
+        ),
+
+        required: true
     },
 
     referenceId: mongoose.Types.ObjectId,
 
     orderId: String,
 
-    transactionId: String
+    transactionId: String,
+    paymentMethod: {
+        type: String,
+        default: "unknown"
+    }
 
 }, {
     timestamps: true

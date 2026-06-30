@@ -276,4 +276,20 @@ doctorrouter.get(
     DS.getAllNotifications
 );
 
+// ─── Profile Image Routes ─────────────────────────────────────
+doctorrouter.patch(
+    "/profile-image",
+    authentication,
+    authorization([roleenum.doctor]),
+    multer_host(multerenum.image).single("profilepicture"),
+    DS.uploadDoctorProfileImage
+);
+ 
+doctorrouter.delete(
+    "/profile-image",
+    authentication,
+    authorization([roleenum.doctor]),
+    DS.deleteDoctorProfileImage
+);
+
 export default doctorrouter;
