@@ -621,11 +621,13 @@ export const bookAppointment = async (req, res, next) => {
     }
 
     const appointment = await db_service.create({
-      model: appointmentmodel,
+      model: appointmentsmodel,
       data: {
         doctorId: slot.doctorId,
         patientId: req.user._id,
         clinicId: slot.clinicId,
+        slotId: slot._id,
+        reason: reason,
         appointmentDate: slot.startDateTime,
         startDateTime: slot.startDateTime,
         endDateTime: slot.endDateTime,
