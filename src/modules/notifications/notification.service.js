@@ -6,6 +6,7 @@ import { authentication } from "../../common/middleware/authenticataiaon.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import { sendWebPush } from "./push.service.js";
 import pushPermissionModel from "../../DB/models/pushPermissionModel.js";
+import usermodel from "../../DB/models/usermodel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
