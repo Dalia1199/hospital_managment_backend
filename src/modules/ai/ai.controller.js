@@ -493,11 +493,12 @@ export const patientChatbot = async (req, res, next) => {
 
         // --- 2. Step 1: Extract filters using AI ---
         const extractionPrompt = `
-            Analyze the following user message.
-            Extract the requested doctor "specialty", location "address", and a broad "medicalCategory" (e.g., Orthopedics, Cardiology, General, Dermatology).
+            Analyze the following user message and the chat history to determine the patient's current medical need.
+            Extract the requested doctor "specialty" (in Arabic, e.g., "باطنة", "مخ وأعصاب", "قلب", "عظام", "أطفال", etc.), location "address", and a broad "medicalCategory".
             Return ONLY a valid JSON object with keys "specialty", "address", and "medicalCategory". 
-            If a field is not mentioned or cannot be inferred, leave it empty string "". Do not include markdown code blocks.
-            Message: "${message}"
+            If a field is not mentioned or cannot be inferred from the context, leave it empty string "". Do not include markdown code blocks.
+            Chat History: ${JSON.stringify(chatHistory.slice(-3))}
+            Current Message: "${message}"
         `;
         
         const extractedText = await generateResponse(extractionPrompt, "You are a JSON parser. Output only JSON.");
@@ -582,7 +583,7 @@ export const patientChatbot = async (req, res, next) => {
             ${historyText}
             -----------------------
             
-            We searched our database and found these doctors that might help:
+            We searched our database and found these doctors based on the query:
             ${doctorsContext || "No doctors found matching the criteria."}
             
             A patient asked: "${message}"
@@ -591,7 +592,7 @@ export const patientChatbot = async (req, res, next) => {
             1. Respond in a friendly, empathetic tone in Arabic. Address the patient directly by their name.
             2. Answer their question or address their symptoms using their Vitals, Medical History, and Chat History context.
             3. Provide general health advice relevant to their situation.
-            4. Suggest the doctors from the list above if they need an in-person visit.
+            4. CRITICAL RULE: If doctors are listed above, evaluate if their specialty matches the patient's symptoms (e.g. Headache needs Neurology or Internal Medicine). If the specialty is WRONG (e.g., Cardiologist for a headache, Orthopedics for a headache), DO NOT recommend them. Instead, state clearly that you don't have doctors in the required specialty right now, and advise them to visit the nearest hospital or emergency room (الطوارئ).
             5. CRITICAL RULE: You MUST conclude your response by explicitly advising the patient to consult a specialized doctor for a final diagnosis. (يجب استشارة طبيب متخصص).
         `;
 
