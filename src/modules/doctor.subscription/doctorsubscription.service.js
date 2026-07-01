@@ -1,5 +1,6 @@
 import { paymentPurposeEnum, paymentStatusEnum } from "../../common/enum/payment.enum.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
+import { roleenum } from "../../common/enum/user.enum.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import * as db_service from "../../DB/db.service.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
@@ -377,16 +378,19 @@ export const cancelSubscription = async (req,res,next) => {
 
         const {cancelReason} = req.body;
         // console.log("subscriptionId:", subscriptionId);
-
-        const subscription = await db_service.findById({
+let filter={
+    _id:subscriptionId
+};
+if(req.user.role===roleenum.doctor){
+    filter.doctorId=req.user._id;
+}
+        const subscription = await db_service.findOne({
 
                 model:
 
                     doctorSubscriptionModel,
 
-                id:
-
-                    subscriptionId
+                filter
 
             });
         // console.log(subscription);
@@ -459,13 +463,8 @@ export const cancelSubscription = async (req,res,next) => {
 
                 doctorSubscriptionModel,
 
-            filter: {
+            filter,
 
-                _id:
-
-                    subscriptionId
-
-            },
 
             update: {
 

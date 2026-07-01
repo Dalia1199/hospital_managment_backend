@@ -25,6 +25,7 @@ import subscriptionRouter from "./modules/subscription/subscription.controller.j
 import { subscriptionCron } from "./common/cron/subscriptioncron.js";
 import doctorSubscriptionRouter from "./modules/doctor.subscription/doctorsubscription.controller.js";
 import adminDashboardRouter from "./modules/admindashboard/adminDashboard.controller.js";
+import doctorDashboardRouter from "./modules/doctordashboard/doctordashboard.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -68,6 +69,8 @@ const bootstrap = () => {
     app.use( "/subscriptions", subscriptionRouter );
     app.use("/doctorsubscriptions", doctorSubscriptionRouter);
     app.use("/admindashboard",adminDashboardRouter);
+    app.use("/doctordashboard",doctorDashboardRouter);
+
 
 
 

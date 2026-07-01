@@ -61,7 +61,7 @@ doctorSubscriptionRouter.patch(
 
     authorization([
 
-        roleenum.admin
+        roleenum.admin,roleenum.doctor
 
     ]),
 

@@ -434,33 +434,76 @@ export const paymentWebhook = async (req, res, next) => {
 
                 });
 
-            if (
+            // if (
 
-                doctorSubscription
+            //     doctorSubscription
 
-            ) {
+            // ) {
 
-                doctorSubscription.subscriptionId =
+            //     doctorSubscription.subscriptionId =
 
-                    plan._id;
+            //         plan._id;
 
-                doctorSubscription.paymentId =
+            //     doctorSubscription.paymentId =
 
-                    payment._id;
+            //         payment._id;
 
-                doctorSubscription.startDate =
+            //     doctorSubscription.startDate =
 
-                    startDate;
+            //         startDate;
 
-                doctorSubscription.endDate =
+            //     doctorSubscription.endDate =
 
-                    endDate;
+            //         endDate;
 
-                doctorSubscription.status =
+            //     doctorSubscription.status =
 
-                    subscriptionStatusEnum.active;
+            //         subscriptionStatusEnum.active;
 
-                await doctorSubscription.save();
+            //     await doctorSubscription.save();
+
+            // }
+            if (doctorSubscription) {
+
+                await db_service.findOneAndUpdate({
+
+                    model: doctorSubscriptionModel,
+
+                    filter: {
+
+                        _id: doctorSubscription._id
+
+                    },
+
+                    update: {
+
+                        $set: {
+
+                            subscriptionId: plan._id,
+
+                            paymentId: payment._id,
+
+                            startDate,
+
+                            endDate,
+
+                            status: subscriptionStatusEnum.active
+
+                        },
+
+                        $unset: {
+
+                            cancelReason: 1,
+
+                            cancelledAt: 1,
+
+                            cancelledBy: 1
+
+                        }
+
+                    }
+
+                });
 
             }
 
