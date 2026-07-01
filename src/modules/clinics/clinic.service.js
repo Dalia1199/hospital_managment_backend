@@ -21,9 +21,16 @@ export const addClinic = async (req, res, next) => {
 // GET /clinics — doctor gets their own clinics
 export const getMyClinics = async (req, res, next) => {
     try {
+        const filter = { doctorId: req.user._id, isActive: true };
+
+        // If accessed by an assistant, restrict to their assigned clinic only
+        if (req.assistant && req.assistant.clinicId) {
+            filter._id = req.assistant.clinicId;
+        }
+
         const clinics = await db_service.find({
             model: clinicmodel,
-            filter: { doctorId: req.user._id, isActive: true },
+            filter,
             sort: { createdAt: -1 }
         });
 
