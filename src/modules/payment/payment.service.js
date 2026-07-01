@@ -207,6 +207,21 @@ export const createCheckout = async (
 
                     status:
 
+
+                );
+
+            }
+
+            const activeSubscription =
+
+                await doctorSubscriptionModel.findOne({
+
+                    doctorId:
+
+                        req.user._id,
+
+                    status:
+
                         subscriptionStatusEnum.active
 
                 });
@@ -316,6 +331,14 @@ export const paymentCallback = async (req, res, next) => {
         if (!payment) return res.status(404).send("not found");
 
         if (payment.paymentStatus === "paid") {
+            if (payment.purpose === "appointment") {
+                await appointmentsmodel.findByIdAndUpdate(
+                    payment.referenceId,
+                    {
+                        paymentStatus: "paid"
+                    }
+                );
+            }
             return res.send("already processed");
         }
 
@@ -324,6 +347,18 @@ export const paymentCallback = async (req, res, next) => {
         payment.paymentStatus = normalizeStatus(data.paymentStatus);
 
         await payment.save();
+
+        if (
+            payment.purpose === "appointment" &&
+            payment.paymentStatus === "paid"
+        ) {
+            await appointmentsmodel.findByIdAndUpdate(
+                payment.referenceId,
+                {
+                    paymentStatus: "paid"
+                }
+            );
+        }
 
 successresponse({
         res,
@@ -346,6 +381,14 @@ export const paymentWebhook = async (req, res, next) => {
         if (!payment) return res.status(404).send("not found");
 
         if (payment.paymentStatus === "paid") {
+            if (payment.purpose === "appointment") {
+                await appointmentsmodel.findByIdAndUpdate(
+                    payment.referenceId,
+                    {
+                        paymentStatus: "paid"
+                    }
+                );
+            }
             return res.json({ ok: true });
         }
 
@@ -504,6 +547,33 @@ export const paymentWebhook = async (req, res, next) => {
                     }
 
                 });
+            if (
+
+                doctorSubscription
+
+            ) {
+
+                doctorSubscription.subscriptionId =
+
+                    plan._id;
+
+                doctorSubscription.paymentId =
+
+                    payment._id;
+
+                doctorSubscription.startDate =
+
+                    startDate;
+
+                doctorSubscription.endDate =
+
+                    endDate;
+
+                doctorSubscription.status =
+
+                    subscriptionStatusEnum.active;
+
+                await doctorSubscription.save();
 
             }
 

@@ -6,7 +6,7 @@ import { generalrules } from "../../common/utilits/generalrules.js";
 export const signupschema = {
     body: Joi.object({
 
-        fullName: Joi.string().min(7).required(),
+        fullName: Joi.string().min(3).required(),
 
         email: generalrules.email.required(),
 

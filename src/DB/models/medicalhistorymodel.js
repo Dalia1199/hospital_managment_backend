@@ -27,6 +27,12 @@ const medicalHistorySchema = new mongoose.Schema(
             required: true
         },
 
+        sessionId: {
+            type: mongoose.Types.ObjectId,
+            ref: "session",
+            required: false // Optional, populated if vitals are recorded before/during session
+        },
+
         diagnosis: {
             type: String,
             trim: true

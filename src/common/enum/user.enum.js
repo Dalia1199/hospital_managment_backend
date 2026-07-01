@@ -10,6 +10,6 @@ export const providerenum={
 export const roleenum={
     patient:"patient",
     admin:"admin",
-    doctor:"doctor"
-
+    doctor:"doctor",
+    assistant:"assistant"
 }

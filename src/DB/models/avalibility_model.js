@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+
 const availabilitySchema = new mongoose.Schema(
   {
     doctorId: {
@@ -48,8 +49,14 @@ const availabilitySchema = new mongoose.Schema(
   },
 );
 
+
+availabilitySchema.index(
+  { doctorId: 1, clinicId: 1, day: 1 },
+  { unique: true }
+);
+
 const availabilitymodel =
-  mongoose.models.availability ||
+  mongoose.models.availability || 
   mongoose.model("availability", availabilitySchema);
 
 export default availabilitymodel;

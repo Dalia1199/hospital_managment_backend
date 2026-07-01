@@ -157,7 +157,8 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
-        const oldPublicId = doctor.licenseimage?.public_id;
+        // Save old public_id before uploading new one
+        const oldPublicId = doctor?.licenseimage?.public_id ?? null;
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -171,13 +172,15 @@ export const uploadLicense = async (req, res, next) => {
                 options: { new: true }
             });
 
+            // NOTE: we intentionally do NOT touch the user's status here.
+            // This doctor is already approved and can keep working normally
+            // while the new license is under review — only
+            // pendingLicenseImage marks it as needing admin attention (see
+            // GET /admin/doctors/pending-licenses). Flipping status to
+            // "pending" used to lock the doctor out of login entirely until
+            // the admin acted, and it also leaked into the general
+            // first-time-signup approvals queue.
             await notify.newLicenseUnderReview(updatedDoctor.userId);
-
-            // await db_service.findOneAndUpdate({
-            //     model: usermodel,
-            //     filter: { _id: req.user._id },
-            //     update: { status: "pending" }
-            // });
 
             const admins = await db_service.find({
                 model: usermodel,
@@ -207,37 +210,6 @@ export const uploadLicense = async (req, res, next) => {
 
     } catch (error) {
         return next(error);
-    }
-};
-
-export const cancelPendingLicense = async (req, res, next) => {
-    try {
-        const doctor = await db_service.findOne({
-            model: doctormodel,
-            filter: { userId: req.user._id }
-        });
-
-        if (!doctor?.pendingLicenseImage?.public_id) {
-            return next(new Error("No pending license to cancel", { cause: 400 }));
-        }
-
-        // Delete from cloudinary
-        await cloudinary.uploader.destroy(doctor.pendingLicenseImage.public_id);
-
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: doctormodel,
-            filter: { userId: req.user._id },
-            update: { $unset: { pendingLicenseImage: 1 } },
-            options: { new: true }
-        });
-
-        return successresponse({
-            res,
-            message: "Pending license cancelled successfully",
-            data: updatedDoctor
-        });
-    } catch (error) {
-        next(error);
     }
 };
 
@@ -463,6 +435,7 @@ export const createSession = async (req, res, next) => {
                     guestName,
                     guestPhone,
                     guestAge,
+                    fees: doctor.consultationFee || 0,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                 }
@@ -490,7 +463,7 @@ export const createSession = async (req, res, next) => {
             // Check for existing session
             const existingSession = await db_service.findOne({
                 model: sessionmodel,
-                filter: { doctorId, patientId }
+                filter: { doctorId, patientId, status: { $in: ["pending_otp", "in_progress"] } }
             });
 
             if (existingSession) {
@@ -526,6 +499,7 @@ export const createSession = async (req, res, next) => {
                         doctorId,
                         patientId,
                         otp: "AUTO",
+                        fees: doctor.consultationFee || 0,
                         status: "in_progress",
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
                     }
@@ -549,31 +523,18 @@ export const createSession = async (req, res, next) => {
                     doctorId,
                     patientId,
                     otp,
+                    fees: doctor.consultationFee || 0,
                     status: "pending_otp",
                     validUntil: new Date(Date.now() + 10 * 60 * 1000)
                 }
             });
-
-            //commented to avoid sending real emails during testing
-            /*
-            await sendemail({
-                to: patient.email,
-                subject: "Carehub - Doctor Access OTP",
-                html: `<h3>Hello ${patient.fullName},</h3>
-                       <p>Your doctor is requesting access to your medical history.</p>
-                       <p>Please provide the following OTP to grant access for 24 hours:</p>
-                       <h2 style="color: blue; letter-spacing: 5px;">${otp}</h2>
-                       <p>This OTP expires in 10 minutes.</p>`
-            });
-            */
-
-            // Notify patient
-            await notify.accessRequested(patientId, req.user.fullName);
+            // Notify patient with the OTP
+            await notify.accessRequested(patientId, req.user.fullName, otp);
 
             return successresponse({
                 res,
-                message: "OTP generated successfully",
-                data: { session, temp_otp: otp } // Sending OTP to frontend for testing <Temporary>
+                message: "OTP generated successfully and sent via notification",
+                data: { session } // Removed temp_otp from response
             });
         }
     } catch (error) {
@@ -667,13 +628,30 @@ export const updatePatientAlerts = async (req, res, next) => {
 export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, isFeesFinalized, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
         const doctorId = req.user._id;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (fees !== undefined && existingSession.isFeesFinalized) {
+            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        }
+
+        const updateObj = { status: "completed" };
+        if (fees !== undefined) updateObj.fees = fees;
+        if (isFeesFinalized !== undefined) updateObj.isFeesFinalized = isFeesFinalized;
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId },
-            update: { status: "completed", fees: fees || 0 },
+            update: updateObj,
             options: { new: true }
         });
 
@@ -786,10 +764,17 @@ export const endSession = async (req, res, next) => {
             }
         }
 
-        const medicalHistory = await db_service.create({
-            model: medicalhistorymodel,
-            data: medicalHistoryData
-        });
+        let medicalHistory = await medicalhistorymodel.findOne({ sessionId });
+        if (medicalHistory) {
+            Object.assign(medicalHistory, medicalHistoryData);
+            await medicalHistory.save();
+        } else {
+            medicalHistoryData.sessionId = sessionId;
+            medicalHistory = await db_service.create({
+                model: medicalhistorymodel,
+                data: medicalHistoryData
+            });
+        }
 
         if (!session.isOfflinePatient) {
             await notify.medicalHistoryAdded(session.patientId);
@@ -873,12 +858,35 @@ export const cancelSession = async (req, res, next) => {
 export const getActiveSessions = async (req, res, next) => {
     try {
         const doctorId = req.user._id;
+        let statuses = ["pending_otp", "in_progress"];
+        if (req.query.status === "completed") {
+            statuses = ["completed"];
+        } else if (req.query.status === "all") {
+            statuses = ["pending_otp", "in_progress", "completed"];
+        }
+
+        const filterQuery = { 
+            doctorId, 
+            status: { $in: statuses }
+        };
+
+        if (req.query.status === "completed" || req.query.status === "all") {
+            filterQuery.isFeesFinalized = { $ne: true };
+        }
+        
+        // If fetching completed or all, only fetch for today to limit scope
+        if (req.query.status === "completed" || req.query.status === "all") {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            filterQuery.createdAt = { $gte: startOfDay };
+        }
+
         const sessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: { $in: ["pending_otp", "in_progress"] } },
+            filter: filterQuery,
             options: {
                 populate: { path: "patientId", select: "fullName phoneNumber profileImage bloodType height weight allergies chronic surgeries" },
-                sort: { createdAt: -1 }
+                sort: { order: 1, createdAt: 1 }
             }
         });
 
@@ -1014,7 +1022,7 @@ export const getMedicationHistory = async (req, res, next) => {
 
 export const getPatientMedicalHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate, sortOrder } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -1034,10 +1042,31 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         }
 
         if (search) {
+            // Scope prescription search
+            let rxFilter = { 'medications.medicineName': { $regex: search, $options: 'i' } };
+            if (isOfflinePatient === 'true') {
+                rxFilter.isOfflinePatient = true;
+                if (guestName) rxFilter.guestName = guestName;
+                if (guestPhone) rxFilter.guestPhone = guestPhone;
+                rxFilter.doctorId = req.user._id;
+            } else {
+                rxFilter.patientId = patientId;
+            }
+
+            const matchingPrescriptions = await prescrptionmodel.find(rxFilter).select('medicalHistoryId');
+            const medicalHistoryIdsFromPrescriptions = matchingPrescriptions
+                .map(p => p.medicalHistoryId)
+                .filter(id => id);
+
             filter.$or = [
                 { diagnosis: { $regex: search, $options: 'i' } },
-                { notes: { $regex: search, $options: 'i' } }
+                { notes: { $regex: search, $options: 'i' } },
+                { prescriptionText: { $regex: search, $options: 'i' } }
             ];
+
+            if (medicalHistoryIdsFromPrescriptions.length > 0) {
+                filter.$or.push({ _id: { $in: medicalHistoryIdsFromPrescriptions } });
+            }
         }
 
         if (startDate || endDate) {
@@ -1051,12 +1080,13 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
         const history = await db_service.find({
             model: medicalhistorymodel,
             filter,
             options: {
-                sort: { createdAt: -1 },
+                sort: { createdAt: sortDirection },
                 skip,
                 limit: parseInt(limit),
                 populate: [
@@ -1088,7 +1118,7 @@ export const getPatientMedicalHistory = async (req, res, next) => {
 
 export const getMyPatients = async (req, res, next) => {
     try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, page = 1, limit = 10, search = "", typeFilter = "All" } = req.query;
         const dateFilter = {};
         if (startDate || endDate) {
             dateFilter.createdAt = {};
@@ -1102,8 +1132,10 @@ export const getMyPatients = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const parsedLimit = parseInt(limit);
 
-        const pipeline = [
+        // Build the pipeline up to the group stage to get unique patients
+        const basePipeline = [
             { $match: baseFilter },
             {
                 $group: {
@@ -1120,9 +1152,6 @@ export const getMyPatients = async (req, res, next) => {
                     lastType: { $last: { $cond: { if: "$isOfflinePatient", then: "Walk-in", else: "Online" } } }
                 }
             },
-            { $sort: { lastVisit: -1 } },
-            { $skip: skip },
-            { $limit: parseInt(limit) },
             {
                 $lookup: {
                     from: "users",
@@ -1145,7 +1174,7 @@ export const getMyPatients = async (req, res, next) => {
                     firstVisit: 1,
                     lastVisit: 1,
                     lastType: 1,
-                    fullName: "$userData.fullName",
+                    fullName: { $cond: { if: "$isOfflinePatient", then: "$guestName", else: "$userData.fullName" } },
                     email: "$userData.email",
                     phoneNumber: "$userData.phoneNumber",
                     status: { $ifNull: ["$userData.status", "active"] }
@@ -1153,47 +1182,106 @@ export const getMyPatients = async (req, res, next) => {
             }
         ];
 
-        const patients = await medicalhistorymodel.aggregate(pipeline);
+        // Apply typeFilter
+        if (typeFilter === "Online") {
+            basePipeline.push({ $match: { isOfflinePatient: false } });
+        } else if (typeFilter === "Walk-in") {
+            basePipeline.push({ $match: { isOfflinePatient: true } });
+        }
 
-        const decryptedPatients = patients.map(p => {
-            if (p.phoneNumber && !p.isOfflinePatient) {
-                try {
-                    p.phoneNumber = decrypt(p.phoneNumber);
-                } catch (e) {
-                    console.error("Failed to decrypt phone");
-                }
-            }
-            return p;
-        });
+        const isPhoneSearch = search && /^\d+$/.test(search.trim());
 
-        const countPipeline = [
-            { $match: baseFilter },
-            {
-                $group: {
-                    _id: {
-                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+        if (isPhoneSearch) {
+            // We must fetch all, decrypt, filter in memory, then paginate
+            basePipeline.push({ $sort: { lastVisit: -1 } });
+            const allPatients = await medicalhistorymodel.aggregate(basePipeline);
+            
+            let filtered = allPatients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
                     }
                 }
-            },
-            { $count: "total" }
-        ];
-        const countResult = await medicalhistorymodel.aggregate(countPipeline);
-        const total = countResult.length > 0 ? countResult[0].total : 0;
+                return p;
+            });
 
-        return successresponse({
-            res,
-            status: 200,
-            message: "Patients fetched successfully",
-            data: {
-                patients: decryptedPatients,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
+            const s = search.trim();
+            filtered = filtered.filter(p => 
+                (p.phoneNumber && p.phoneNumber.includes(s)) || 
+                (p.guestPhone && p.guestPhone.includes(s))
+            );
+
+            const total = filtered.length;
+            const paginated = filtered.slice(skip, skip + parsedLimit);
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: paginated,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
                 }
+            });
+        } else {
+            // Name search or no search - we can use $facet for DB pagination!
+            if (search) {
+                basePipeline.push({
+                    $match: {
+                        fullName: { $regex: search.trim(), $options: "i" }
+                    }
+                });
             }
-        });
+
+            basePipeline.push({
+                $facet: {
+                    metadata: [{ $count: "total" }],
+                    data: [
+                        { $sort: { lastVisit: -1 } },
+                        { $skip: skip },
+                        { $limit: parsedLimit }
+                    ]
+                }
+            });
+
+            const result = await medicalhistorymodel.aggregate(basePipeline);
+            const facetResult = result[0];
+            const total = facetResult.metadata.length > 0 ? facetResult.metadata[0].total : 0;
+            const patients = facetResult.data;
+
+            const decryptedPatients = patients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
+                    }
+                }
+                return p;
+            });
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: decryptedPatients,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
+                }
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -1255,8 +1343,8 @@ export const getAllDoctors = async (req, res, next) => {
             .limit(parseInt(limit))
             .populate({
                 path: "userId",
-                select: "fullName email confirmed",
-                match: { confirmed: true }
+                select: "fullName email confirmed status profilepicture",
+                match: { status: "approved" }
             })
             .lean(); // Massive performance boost by returning plain JS objects
 
@@ -1451,6 +1539,51 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
     return { hasAccess: false, sharingSetting };
 };
 
+// DELETE /doctor/license/pending — cancel pending license before admin reviews it
+export const cancelPendingLicense = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            throw new Error("Doctor profile not found", { cause: 404 });
+        }
+
+        if (!doctor.pendingLicenseImage?.public_id) {
+            throw new Error("No pending license to cancel", { cause: 400 });
+        }
+
+        const publicId = doctor.pendingLicenseImage.public_id;
+
+        // Remove from DB
+        doctor.pendingLicenseImage = null;
+        await doctor.save();
+
+        // the doctor still has their previously-approved licenseimage —
+        // cancelling the pending update must not leave them stuck on
+        // status "pending" (set by uploadLicense), since login requires
+        // status === "approved"
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { status: "approved" }
+        });
+
+        // Remove from Cloudinary
+        await cloudinary.uploader.destroy(publicId);
+
+        return successresponse({
+            res,
+            message: "Pending license cancelled successfully",
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const addCertificate = async (req, res, next) => {
     try {
         if (!req.file) throw new Error("certificate file is required", { cause: 400 });
@@ -1609,4 +1742,170 @@ export const getAllNotifications = async (req, res, next) => {
             notifications,
         });
     } catch (error) { next(error) }
+};
+
+export const reorderSessions = async (req, res, next) => {
+    try {
+        const { sessions } = req.body;
+        // sessions is an array of { id, order }
+        
+        const bulkOps = sessions.map(s => ({
+            updateOne: {
+                filter: { _id: s.id, doctorId: req.user._id },
+                update: { $set: { order: s.order } }
+            }
+        }));
+
+        await sessionmodel.bulkWrite(bulkOps);
+
+        return successresponse({
+            res,
+            message: "Queue reordered successfully"
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionVitals = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { bloodPressure, heartRate, sugarLevel, temperature, weight, height } = req.body;
+
+        const session = await sessionmodel.findOne({ _id: sessionId, doctorId: req.user._id });
+        if (!session) throw new Error("session not found", { cause: 404 });
+
+        let history = await medicalhistorymodel.findOne({ sessionId });
+        if (!history) {
+            history = await medicalhistorymodel.create({
+                doctorId: req.user._id,
+                patientId: session.patientId, // Null if guest
+                sessionId: session._id,
+                bloodPressure,
+                pulse: heartRate,
+                sugarLevel,
+                temperature,
+                weight,
+                height
+            });
+        } else {
+            history.bloodPressure = bloodPressure || history.bloodPressure;
+            history.pulse = heartRate || history.pulse;
+            history.sugarLevel = sugarLevel || history.sugarLevel;
+            history.temperature = temperature || history.temperature;
+            history.weight = weight || history.weight;
+            history.height = height || history.height;
+            await history.save();
+        }
+
+        return successresponse({
+            res,
+            message: "Vitals updated successfully",
+            data: history
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionFees = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { fees, isFeesFinalized } = req.body;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (existingSession.isFeesFinalized) {
+            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        }
+
+        const updateObj = { fees };
+        if (isFeesFinalized) {
+            updateObj.isFeesFinalized = true;
+        }
+
+        const session = await db_service.findOneAndUpdate({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id },
+            update: updateObj,
+            options: { new: true }
+        });
+
+        if (!session) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        return successresponse({
+            res,
+            message: "Fees updated successfully",
+            data: session
+        });
+    } catch (error) { next(error) }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// أضيفي الـ functions دي في doctor.service.js
+// ═══════════════════════════════════════════════════════════════
+
+// ─── PATCH /doctor/profile-image ─────────────────────────────────────────────
+export const uploadDoctorProfileImage = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            throw new Error("image required", { cause: 400 });
+        }
+
+        // احذف الصورة القديمة لو موجودة
+        if (req.user.profilepicture?.public_id) {
+            await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+        }
+
+        const { secure_url, public_id } = await cloudinary.uploader.upload(
+            req.file.path,
+            { folder: "carehub/doctors/profiles" }
+        );
+
+        const user = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: { secure_url, public_id } },
+            options: { new: true }
+        });
+
+        return successresponse({
+            res,
+            message: "Profile image uploaded successfully",
+            data: { profilepicture: user.profilepicture }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── DELETE /doctor/profile-image ────────────────────────────────────────────
+export const deleteDoctorProfileImage = async (req, res, next) => {
+    try {
+        if (!req.user.profilepicture?.public_id) {
+            throw new Error("image not found", { cause: 404 });
+        }
+
+        await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: null },
+            options: { new: true }
+        });
+
+        return successresponse({
+            res,
+            message: "Profile picture deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
 };

@@ -6,6 +6,7 @@ import { authentication } from "../../common/middleware/authenticataiaon.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import { sendWebPush } from "./push.service.js";
 import pushPermissionModel from "../../DB/models/pushPermissionModel.js";
+import usermodel from "../../DB/models/usermodel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -71,17 +72,24 @@ export const notify = {
             message: "A new medical record has been added to your history",
             link: "/patient/history",
         }),
-    accessRequested: (userId, doctorName) =>
+    accessRequested: (userId, doctorName, otp) =>
         createNotification({
             userId,
             type: "session",
-            message: `Doctor ${doctorName} has requested access to your medical profile.`,
+            message: `Doctor ${doctorName} has requested access to your medical profile. Your OTP is: ${otp}`,
         }),
     profileViewed: (userId, doctorName) =>
         createNotification({
             userId,
             type: "session",
             message: `Doctor ${doctorName} has viewed your medical profile.`,
+        }),
+    appointmentReminder: (userId, message, link) =>
+        createNotification({
+            userId,
+            type: "appointment_reminder",
+            message: message,
+            link: link
         }),
     medicationReminder: (userId, medName, msg) =>
         createNotification({
@@ -128,7 +136,7 @@ export const notify = {
                 ? `You approved Dr. ${doctorName}'s license update`
                 : `You rejected Dr. ${doctorName}'s license update`,
             link: "/admin/doctors/licenses"
-    }),
+        }),
     newLicenseUnderReview: (doctorId) =>
         createNotification({
             userId: doctorId,
@@ -140,13 +148,13 @@ export const notify = {
         createNotification({
             userId: doctorId,
             type: "doctor_under_review",
-            message:"Your registration was submitted successfully. Please wait for admin approval",
+            message: "Your registration was submitted successfully. Please wait for admin approval",
         }),
     doctorApproved: (doctorId) =>
         createNotification({
             userId: doctorId,
             type: "doctor_approved",
-            message:"Your account has been approved by an administrator",
+            message: "Your account has been approved by an administrator",
             link: "/doctor"
         }),
     doctorRejected: (doctorId, reason) =>
@@ -159,7 +167,7 @@ export const notify = {
         createNotification({
             userId: doctorId,
             type: "license_under_review",
-            message:"Your License was uploaded successfully. Please wait for admin approval",
+            message: "Your License was uploaded successfully. Please wait for admin approval",
         }),
     licenseApproved: (doctorId) =>
         createNotification({
@@ -225,6 +233,20 @@ export const notify = {
             message: `Certificate "${certificateName}" has been deleted successfully.`,
             link: "/doctor/profile/certificates"
         }),
+    subscriptionPlanRenewed: (adminId, doctorName) =>
+        createNotification({
+            userId: adminId,
+            type: "doctor_renew_plan",
+            message: `${doctorName} has been renewed their subscription plan.`,
+            link: "/admin/notifications"
+        }),
+    doctorPlanRenewed: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_renew_plan",
+            message: `You have been renewed your subscription plan.`,
+            link: "/doctor/notifications"
+        }),
 };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────
@@ -234,10 +256,10 @@ export const getNotifications = async (req, res, next) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const filterQuery = { userId: req.user._id };
-        
+
         if (tab === "read") filterQuery.isRead = true;
         if (tab === "unread") filterQuery.isRead = false;
-        
+
         if (search) {
             filterQuery.message = { $regex: search, $options: "i" };
         }
@@ -307,7 +329,8 @@ export const markAllAsRead = async (req, res, next) => {
     }
 };
 
-// ─── POST /notifications/push-permission ───────────────────────────────────────
+// 📌 POST /notifications/push-permission 
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------
 export const savePushPermission = async (req, res, next) => {
     try {
         const { subscription } = req.body;
@@ -315,27 +338,28 @@ export const savePushPermission = async (req, res, next) => {
             return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
         }
 
-        // Check if subscription already exists for this user/endpoint
-        const existing = await pushPermissionModel.findOne({
-            userId: req.user._id,
-            "subscription.endpoint": subscription.endpoint
+        // Find user 
+        const user = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.user._id }
         });
 
-        if (!existing) {
-            await pushPermissionModel.create({
-                userId: req.user._id,
-                subscription
-            });
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
         }
 
+        // Add or update the push subscription
+        user.pushSubscription = subscription;
+        await user.save();
+
+        // Return a response using successresponse structure if applicable
         return successresponse({
             res,
-            status: 201,
-            message: "Push permission registered successfully",
+            status: 200,
+            message: "Push permission saved successfully.",
+            data: { subscription: user.pushSubscription }
         });
     } catch (error) {
         next(error);
     }
 };
-
-
