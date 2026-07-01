@@ -12,11 +12,20 @@ import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js"
 import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
 
 export const getMyPrescriptions = async (req, res, next) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    patientId: req.user._id,
+  };
+
+  const totalCount = await db_service.count({ model: prescriptionmodel, filter });
+  const totalPages = Math.ceil(totalCount / limit);
+
   const prescriptions = await db_service.find({
     model: prescriptionmodel,
-    filter: {
-      patientId: req.user._id,
-    },
+    filter,
     options: {
       populate: [
         {
@@ -27,6 +36,9 @@ export const getMyPrescriptions = async (req, res, next) => {
           path: "medicalHistoryId",
         },
       ],
+      skip,
+      limit,
+      sort: { createdAt: -1 },
       lean: true
     }
   });
@@ -34,6 +46,7 @@ export const getMyPrescriptions = async (req, res, next) => {
   successresponse({
     res,
     data: prescriptions,
+    pagination: { totalPages, currentPage: page, totalRecords: totalCount }
   });
 };
 export const getSinglePrescription = async (req, res, next) => {

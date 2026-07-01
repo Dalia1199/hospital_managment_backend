@@ -658,11 +658,20 @@ export const bookAppointment = async (req, res, next) => {
 //gets appointment for patient
 export const getMyAppointments = async (req, res, next) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      patientId: req.user._id,
+    };
+
+    const totalCount = await db_service.count({ model: appointmentsmodel, filter });
+    const totalPages = Math.ceil(totalCount / limit);
+
     const appointments = await db_service.find({
       model: appointmentsmodel,
-      filter: {
-        patientId: req.user._id,
-      },
+      filter,
       options: {
         populate: [
           {
@@ -676,6 +685,8 @@ export const getMyAppointments = async (req, res, next) => {
         sort: {
           createdAt: -1,
         },
+        skip,
+        limit,
         lean: true,
       },
     });
@@ -696,6 +707,7 @@ export const getMyAppointments = async (req, res, next) => {
       status: 200,
       message: "appointments gets successfully",
       data: decryptedAppointments,
+      pagination: { totalPages, currentPage: page, totalRecords: totalCount },
     });
   } catch (error) {
     next(error);
@@ -705,12 +717,20 @@ export const getMyAppointments = async (req, res, next) => {
 //done
 export const getDoctorAppointments = async (req, res, next) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      doctorId: req.user._id,
+    };
+
+    const totalCount = await db_service.count({ model: appointmentsmodel, filter });
+    const totalPages = Math.ceil(totalCount / limit);
+
     const appointments = await db_service.find({
       model: appointmentsmodel,
-
-      filter: {
-        doctorId: req.user._id,
-      },
+      filter,
 
       populate: [
         {
@@ -729,6 +749,8 @@ export const getDoctorAppointments = async (req, res, next) => {
       sort: {
         createdAt: -1,
       },
+      skip,
+      limit,
     });
 
     // FIX: phoneNumber is stored encrypted (see getMyAppointments doing the
@@ -750,6 +772,7 @@ export const getDoctorAppointments = async (req, res, next) => {
       status: 200,
       message: "doctor appointments gets successfully",
       data: decryptedAppointments,
+      pagination: { totalPages, currentPage: page, totalRecords: totalCount },
     });
   } catch (error) {
     next(error);
