@@ -6,6 +6,8 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import usermodel from "../../DB/models/usermodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import patientmodel from "../../DB/models/patientmodel.js";
+import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import availabilitymodel from "../../DB/models/avalibility_model.js";
 
 // Upload Knowledge Base Document
 export const uploadKnowledgeDocument = async (req, res, next) => {
@@ -278,11 +280,29 @@ export const getPatientInsights = async (req, res, next) => {
 
 export const checkDrugInteractions = async (req, res, next) => {
     try {
-        const { currentDrugs, newDrugs, newComplaint } = req.body;
+        const { currentDrugs, newDrugs, newComplaint, patientId } = req.body;
 
         if (!currentDrugs && !newDrugs && !newComplaint) {
             throw new Error("Please provide current drugs, new drugs, or a new complaint to check.", { cause: 400 });
         }
+
+        // Fetch patient's existing active medications from DB
+        let activeMedications = [];
+        if (patientId) {
+            const activePrescriptions = await prescrptionmodel.find({ 
+                patientId, 
+                status: "active" 
+            }).lean();
+            
+            activePrescriptions.forEach(rx => {
+                if (rx.medications && Array.isArray(rx.medications)) {
+                    rx.medications.forEach(med => {
+                        if (med.medicineName) activeMedications.push(med.medicineName);
+                    });
+                }
+            });
+        }
+        const allCurrentDrugs = [...new Set([...(currentDrugs || []), ...activeMedications])];
 
         const systemInstruction = `
             You are a Clinical Pharmacist AI. Your job is to check for:
@@ -304,7 +324,7 @@ export const checkDrugInteractions = async (req, res, next) => {
         `;
 
         const prompt = `
-            Current Medications: ${currentDrugs ? currentDrugs.join(", ") : "None"}
+            Current Medications (including Active DB Meds): ${allCurrentDrugs.length > 0 ? allCurrentDrugs.join(", ") : "None"}
             New Medications being considered: ${newDrugs ? newDrugs.join(", ") : "None"}
             Patient's New Complaint (to check against side effects): ${newComplaint || "None"}
         `;
@@ -539,10 +559,16 @@ export const patientChatbot = async (req, res, next) => {
             return true;
         }).slice(0, 5); // Limit to top 5 matches
 
+        // Fetch their schedules
+        const doctorIds = availableDoctors.map(doc => doc.userId._id);
+        const availabilities = await availabilitymodel.find({ doctorId: { $in: doctorIds } }).lean();
+
         // --- 5. Formulate final response ---
-        const doctorsContext = availableDoctors.map(doc => 
-            `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}`
-        ).join("\n");
+        const doctorsContext = availableDoctors.map(doc => {
+            const schedule = availabilities.filter(a => a.doctorId.toString() === doc.userId._id.toString());
+            const days = schedule.length > 0 ? [...new Set(schedule.map(s => s.day))].join(", ") : "Not specified";
+            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Schedule Days: ${days}`;
+        }).join("\n");
 
         const finalSystemPrompt = `
             You are a polite, highly skilled Medical AI Assistant for CareHub assisting a patient.
