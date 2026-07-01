@@ -1263,8 +1263,8 @@ export const getAllDoctors = async (req, res, next) => {
             .limit(parseInt(limit))
             .populate({
                 path: "userId",
-                select: "fullName email confirmed",
-                match: { confirmed: true }
+                select: "fullName email confirmed status profilepicture",
+                match: { status: "approved" }
             })
             .lean(); // Massive performance boost by returning plain JS objects
 
