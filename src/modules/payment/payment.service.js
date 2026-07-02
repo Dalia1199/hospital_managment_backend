@@ -212,6 +212,21 @@ export const createCheckout = async (
 
                     status:
 
+
+                );
+
+            }
+
+            const activeSubscription =
+
+                await doctorSubscriptionModel.findOne({
+
+                    doctorId:
+
+                        req.user._id,
+
+                    status:
+
                         subscriptionStatusEnum.active
 
                 });
@@ -478,6 +493,76 @@ export const paymentWebhook = async (req, res, next) => {
 
                 });
 
+            // if (
+
+            //     doctorSubscription
+
+            // ) {
+
+            //     doctorSubscription.subscriptionId =
+
+            //         plan._id;
+
+            //     doctorSubscription.paymentId =
+
+            //         payment._id;
+
+            //     doctorSubscription.startDate =
+
+            //         startDate;
+
+            //     doctorSubscription.endDate =
+
+            //         endDate;
+
+            //     doctorSubscription.status =
+
+            //         subscriptionStatusEnum.active;
+
+            //     await doctorSubscription.save();
+
+            // }
+            if (doctorSubscription) {
+
+                await db_service.findOneAndUpdate({
+
+                    model: doctorSubscriptionModel,
+
+                    filter: {
+
+                        _id: doctorSubscription._id
+
+                    },
+
+                    update: {
+
+                        $set: {
+
+                            subscriptionId: plan._id,
+
+                            paymentId: payment._id,
+
+                            startDate,
+
+                            endDate,
+
+                            status: subscriptionStatusEnum.active
+
+                        },
+
+                        $unset: {
+
+                            cancelReason: 1,
+
+                            cancelledAt: 1,
+
+                            cancelledBy: 1
+
+                        }
+
+                    }
+
+                });
             if (
 
                 doctorSubscription

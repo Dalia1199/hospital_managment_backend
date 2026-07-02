@@ -6,6 +6,7 @@ import { authentication } from "../../common/middleware/authenticataiaon.js";
 import doctormodel from "../../DB/models/doctormodel.js";
 import { sendWebPush } from "./push.service.js";
 import pushPermissionModel from "../../DB/models/pushPermissionModel.js";
+import usermodel from "../../DB/models/usermodel.js";
 
 // ─── Reusable function ─────────────────────────────────────────────────────────
 export const createNotification = async ({ userId, message, type, link }) => {
@@ -261,6 +262,14 @@ export const notify = {
             link: "/doctor/notifications"
         }),
     };
+    doctorPlanRenewed: (doctorId) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_renew_plan",
+            message: `You have been renewed your subscription plan.`,
+            link: "/doctor/notifications"
+        }),
+};
 
 // ─── GET /notifications ────────────────────────────────────────────────────────
 export const getNotifications = async (req, res, next) => {
@@ -366,11 +375,21 @@ export const savePushPermission = async (req, res, next) => {
         await user.save();
 
         // Return a response using successresponse structure if applicable
+        
+        // Remove this specific browser endpoint from any user to avoid getting notifications for a previous user who logged out
+        await pushPermissionModel.deleteMany({ "subscription.endpoint": subscription.endpoint });
+
+        // Save the push subscription for the current logged-in user
+        const newSub = await pushPermissionModel.create({
+            userId: req.user._id,
+            subscription
+        });
+        
         return successresponse({
             res,
             status: 200,
             message: "Push permission saved successfully.",
-            data: { subscription: user.pushSubscription }
+            data: { subscription: newSub.subscription }
         });
     } catch (error) {
         next(error);

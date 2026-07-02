@@ -104,5 +104,19 @@ patientrouter.get(
     PS.getMedicationSummary
 )
 
+// Medication Schedule endpoints
+patientrouter.post(
+    "/medication-schedule",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.setMedicationSchedule
+)
+
+patientrouter.get(
+    "/medication-schedule",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.getMedicationSchedules
+)
+
 export default patientrouter
- 

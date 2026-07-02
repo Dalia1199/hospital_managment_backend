@@ -356,6 +356,7 @@ export const signin = async (req, res, next) => {
       role: user.role,
       id: user._id,
       fullName: user.fullName,
+      profilepicture: user.profilepicture,
       ...(assistantData && { 
           permissions: assistantData.permissions,
           doctorId: assistantData.doctorId?._id || assistantData.doctorId,
@@ -386,13 +387,30 @@ export const signup = async (req, res, next) => {
     experience,
   } = req.body;
 
-  if (
-    await db_service.findOne({
-      model: usermodel,
-      filter: { email },
-    })
-  ) {
-    throw new Error("email already exists", { cause: 409 });
+  const existingUser = await db_service.findOne({
+    model: usermodel,
+    filter: { email },
+  });
+
+  if (existingUser) {
+    if (existingUser.role === "doctor" && existingUser.status === "rejected") {
+      const oldDoctor = await db_service.findOne({
+        model: doctormodel,
+        filter: { userId: existingUser._id },
+      });
+      if (oldDoctor) {
+        if (oldDoctor.licenseimage?.public_id) {
+          await cloudinary.uploader.destroy(oldDoctor.licenseimage.public_id).catch(() => null);
+        }
+        if (oldDoctor.nationalId?.public_id) {
+          await cloudinary.uploader.destroy(oldDoctor.nationalId.public_id).catch(() => null);
+        }
+        await doctormodel.deleteOne({ _id: oldDoctor._id });
+      }
+      await usermodel.deleteOne({ _id: existingUser._id });
+    } else {
+      throw new Error("email already exists", { cause: 409 });
+    }
   }
 
   if (password !== confirmPassword) {
@@ -543,6 +561,7 @@ export const getprofile = async (req, res, next) => {
       role: user.role,
       id: user._id,
       fullName: user.fullName,
+      profilepicture: user.profilepicture,
       ...(assistantData && { 
           permissions: assistantData.permissions,
           doctorId: assistantData.doctorId?._id || assistantData.doctorId,

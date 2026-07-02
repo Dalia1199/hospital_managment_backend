@@ -1022,7 +1022,7 @@ export const getMedicationHistory = async (req, res, next) => {
 
 export const getPatientMedicalHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate, sortOrder } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -1042,10 +1042,31 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         }
 
         if (search) {
+            // Scope prescription search
+            let rxFilter = { 'medications.medicineName': { $regex: search, $options: 'i' } };
+            if (isOfflinePatient === 'true') {
+                rxFilter.isOfflinePatient = true;
+                if (guestName) rxFilter.guestName = guestName;
+                if (guestPhone) rxFilter.guestPhone = guestPhone;
+                rxFilter.doctorId = req.user._id;
+            } else {
+                rxFilter.patientId = patientId;
+            }
+
+            const matchingPrescriptions = await prescrptionmodel.find(rxFilter).select('medicalHistoryId');
+            const medicalHistoryIdsFromPrescriptions = matchingPrescriptions
+                .map(p => p.medicalHistoryId)
+                .filter(id => id);
+
             filter.$or = [
                 { diagnosis: { $regex: search, $options: 'i' } },
-                { notes: { $regex: search, $options: 'i' } }
+                { notes: { $regex: search, $options: 'i' } },
+                { prescriptionText: { $regex: search, $options: 'i' } }
             ];
+
+            if (medicalHistoryIdsFromPrescriptions.length > 0) {
+                filter.$or.push({ _id: { $in: medicalHistoryIdsFromPrescriptions } });
+            }
         }
 
         if (startDate || endDate) {
@@ -1059,12 +1080,13 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
         const history = await db_service.find({
             model: medicalhistorymodel,
             filter,
             options: {
-                sort: { createdAt: -1 },
+                sort: { createdAt: sortDirection },
                 skip,
                 limit: parseInt(limit),
                 populate: [
@@ -1096,7 +1118,7 @@ export const getPatientMedicalHistory = async (req, res, next) => {
 
 export const getMyPatients = async (req, res, next) => {
     try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, page = 1, limit = 10, search = "", typeFilter = "All" } = req.query;
         const dateFilter = {};
         if (startDate || endDate) {
             dateFilter.createdAt = {};
@@ -1110,8 +1132,10 @@ export const getMyPatients = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const parsedLimit = parseInt(limit);
 
-        const pipeline = [
+        // Build the pipeline up to the group stage to get unique patients
+        const basePipeline = [
             { $match: baseFilter },
             {
                 $group: {
@@ -1128,9 +1152,6 @@ export const getMyPatients = async (req, res, next) => {
                     lastType: { $last: { $cond: { if: "$isOfflinePatient", then: "Walk-in", else: "Online" } } }
                 }
             },
-            { $sort: { lastVisit: -1 } },
-            { $skip: skip },
-            { $limit: parseInt(limit) },
             {
                 $lookup: {
                     from: "users",
@@ -1153,7 +1174,7 @@ export const getMyPatients = async (req, res, next) => {
                     firstVisit: 1,
                     lastVisit: 1,
                     lastType: 1,
-                    fullName: "$userData.fullName",
+                    fullName: { $cond: { if: "$isOfflinePatient", then: "$guestName", else: "$userData.fullName" } },
                     email: "$userData.email",
                     phoneNumber: "$userData.phoneNumber",
                     status: { $ifNull: ["$userData.status", "active"] }
@@ -1161,47 +1182,106 @@ export const getMyPatients = async (req, res, next) => {
             }
         ];
 
-        const patients = await medicalhistorymodel.aggregate(pipeline);
+        // Apply typeFilter
+        if (typeFilter === "Online") {
+            basePipeline.push({ $match: { isOfflinePatient: false } });
+        } else if (typeFilter === "Walk-in") {
+            basePipeline.push({ $match: { isOfflinePatient: true } });
+        }
 
-        const decryptedPatients = patients.map(p => {
-            if (p.phoneNumber && !p.isOfflinePatient) {
-                try {
-                    p.phoneNumber = decrypt(p.phoneNumber);
-                } catch (e) {
-                    console.error("Failed to decrypt phone");
-                }
-            }
-            return p;
-        });
+        const isPhoneSearch = search && /^\d+$/.test(search.trim());
 
-        const countPipeline = [
-            { $match: baseFilter },
-            {
-                $group: {
-                    _id: {
-                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+        if (isPhoneSearch) {
+            // We must fetch all, decrypt, filter in memory, then paginate
+            basePipeline.push({ $sort: { lastVisit: -1 } });
+            const allPatients = await medicalhistorymodel.aggregate(basePipeline);
+            
+            let filtered = allPatients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
                     }
                 }
-            },
-            { $count: "total" }
-        ];
-        const countResult = await medicalhistorymodel.aggregate(countPipeline);
-        const total = countResult.length > 0 ? countResult[0].total : 0;
+                return p;
+            });
 
-        return successresponse({
-            res,
-            status: 200,
-            message: "Patients fetched successfully",
-            data: {
-                patients: decryptedPatients,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
+            const s = search.trim();
+            filtered = filtered.filter(p => 
+                (p.phoneNumber && p.phoneNumber.includes(s)) || 
+                (p.guestPhone && p.guestPhone.includes(s))
+            );
+
+            const total = filtered.length;
+            const paginated = filtered.slice(skip, skip + parsedLimit);
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: paginated,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
                 }
+            });
+        } else {
+            // Name search or no search - we can use $facet for DB pagination!
+            if (search) {
+                basePipeline.push({
+                    $match: {
+                        fullName: { $regex: search.trim(), $options: "i" }
+                    }
+                });
             }
-        });
+
+            basePipeline.push({
+                $facet: {
+                    metadata: [{ $count: "total" }],
+                    data: [
+                        { $sort: { lastVisit: -1 } },
+                        { $skip: skip },
+                        { $limit: parsedLimit }
+                    ]
+                }
+            });
+
+            const result = await medicalhistorymodel.aggregate(basePipeline);
+            const facetResult = result[0];
+            const total = facetResult.metadata.length > 0 ? facetResult.metadata[0].total : 0;
+            const patients = facetResult.data;
+
+            const decryptedPatients = patients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
+                    }
+                }
+                return p;
+            });
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: decryptedPatients,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
+                }
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -1263,8 +1343,8 @@ export const getAllDoctors = async (req, res, next) => {
             .limit(parseInt(limit))
             .populate({
                 path: "userId",
-                select: "fullName email confirmed",
-                match: { confirmed: true }
+                select: "fullName email confirmed status profilepicture",
+                match: { status: "approved" }
             })
             .lean(); // Massive performance boost by returning plain JS objects
 

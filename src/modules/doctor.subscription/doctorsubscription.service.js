@@ -383,8 +383,13 @@ export const cancelSubscription = async (req, res, next) => {
 
         const { cancelReason } = req.body;
         // console.log("subscriptionId:", subscriptionId);
-
-        const subscription = await db_service.findById({
+let filter={
+    _id:subscriptionId
+};
+if(req.user.role===roleenum.doctor){
+    filter.doctorId=req.user._id;
+}
+        const subscription = await db_service.findOne({
 
             model:
 
@@ -393,6 +398,7 @@ export const cancelSubscription = async (req, res, next) => {
             id:
 
                 subscriptionId
+                filter
 
         });
         // console.log(subscription);
@@ -465,13 +471,9 @@ export const cancelSubscription = async (req, res, next) => {
 
                 doctorSubscriptionModel,
 
-            filter: {
+            filter,
 
-                _id:
-
-                    subscriptionId
-
-            },
+         
 
             update: {
 
@@ -569,6 +571,7 @@ export const renewSubscription = async (req, res, next) => {
         );
 
         notify.doctorPlanRenewed(req.user._id, formattedAmount);
+        notify.doctorPlanRenewed(req.user.fullName);
 
         return successresponse({
             res,

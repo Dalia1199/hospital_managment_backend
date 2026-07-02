@@ -6,6 +6,8 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import usermodel from "../../DB/models/usermodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import patientmodel from "../../DB/models/patientmodel.js";
+import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import availabilitymodel from "../../DB/models/avalibility_model.js";
 
 // Upload Knowledge Base Document
 export const uploadKnowledgeDocument = async (req, res, next) => {
@@ -278,11 +280,29 @@ export const getPatientInsights = async (req, res, next) => {
 
 export const checkDrugInteractions = async (req, res, next) => {
     try {
-        const { currentDrugs, newDrugs, newComplaint } = req.body;
+        const { currentDrugs, newDrugs, newComplaint, patientId } = req.body;
 
         if (!currentDrugs && !newDrugs && !newComplaint) {
             throw new Error("Please provide current drugs, new drugs, or a new complaint to check.", { cause: 400 });
         }
+
+        // Fetch patient's existing active medications from DB
+        let activeMedications = [];
+        if (patientId) {
+            const activePrescriptions = await prescrptionmodel.find({ 
+                patientId, 
+                status: "active" 
+            }).lean();
+            
+            activePrescriptions.forEach(rx => {
+                if (rx.medications && Array.isArray(rx.medications)) {
+                    rx.medications.forEach(med => {
+                        if (med.medicineName) activeMedications.push(med.medicineName);
+                    });
+                }
+            });
+        }
+        const allCurrentDrugs = [...new Set([...(currentDrugs || []), ...activeMedications])];
 
         const systemInstruction = `
             You are a Clinical Pharmacist AI. Your job is to check for:
@@ -304,7 +324,7 @@ export const checkDrugInteractions = async (req, res, next) => {
         `;
 
         const prompt = `
-            Current Medications: ${currentDrugs ? currentDrugs.join(", ") : "None"}
+            Current Medications (including Active DB Meds): ${allCurrentDrugs.length > 0 ? allCurrentDrugs.join(", ") : "None"}
             New Medications being considered: ${newDrugs ? newDrugs.join(", ") : "None"}
             Patient's New Complaint (to check against side effects): ${newComplaint || "None"}
         `;
@@ -473,11 +493,12 @@ export const patientChatbot = async (req, res, next) => {
 
         // --- 2. Step 1: Extract filters using AI ---
         const extractionPrompt = `
-            Analyze the following user message.
-            Extract the requested doctor "specialty", location "address", and a broad "medicalCategory" (e.g., Orthopedics, Cardiology, General, Dermatology).
+            Analyze the following user message and the chat history to determine the patient's current medical need.
+            Extract the requested doctor "specialty" (in Arabic, e.g., "باطنة", "مخ وأعصاب", "قلب", "عظام", "أطفال", etc.), location "address", and a broad "medicalCategory".
             Return ONLY a valid JSON object with keys "specialty", "address", and "medicalCategory". 
-            If a field is not mentioned or cannot be inferred, leave it empty string "". Do not include markdown code blocks.
-            Message: "${message}"
+            If a field is not mentioned or cannot be inferred from the context, leave it empty string "". Do not include markdown code blocks.
+            Chat History: ${JSON.stringify(chatHistory.slice(-3))}
+            Current Message: "${message}"
         `;
         
         const extractedText = await generateResponse(extractionPrompt, "You are a JSON parser. Output only JSON.");
@@ -539,10 +560,16 @@ export const patientChatbot = async (req, res, next) => {
             return true;
         }).slice(0, 5); // Limit to top 5 matches
 
+        // Fetch their schedules
+        const doctorIds = availableDoctors.map(doc => doc.userId._id);
+        const availabilities = await availabilitymodel.find({ doctorId: { $in: doctorIds } }).lean();
+
         // --- 5. Formulate final response ---
-        const doctorsContext = availableDoctors.map(doc => 
-            `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}`
-        ).join("\n");
+        const doctorsContext = availableDoctors.map(doc => {
+            const schedule = availabilities.filter(a => a.doctorId.toString() === doc.userId._id.toString());
+            const days = schedule.length > 0 ? [...new Set(schedule.map(s => s.day))].join(", ") : "Not specified";
+            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Schedule Days: ${days}`;
+        }).join("\n");
 
         const finalSystemPrompt = `
             You are a polite, highly skilled Medical AI Assistant for CareHub assisting a patient.
@@ -556,7 +583,7 @@ export const patientChatbot = async (req, res, next) => {
             ${historyText}
             -----------------------
             
-            We searched our database and found these doctors that might help:
+            We searched our database and found these doctors based on the query:
             ${doctorsContext || "No doctors found matching the criteria."}
             
             A patient asked: "${message}"
@@ -565,7 +592,7 @@ export const patientChatbot = async (req, res, next) => {
             1. Respond in a friendly, empathetic tone in Arabic. Address the patient directly by their name.
             2. Answer their question or address their symptoms using their Vitals, Medical History, and Chat History context.
             3. Provide general health advice relevant to their situation.
-            4. Suggest the doctors from the list above if they need an in-person visit.
+            4. CRITICAL RULE: If doctors are listed above, evaluate if their specialty matches the patient's symptoms (e.g. Headache needs Neurology or Internal Medicine). If the specialty is WRONG (e.g., Cardiologist for a headache, Orthopedics for a headache), DO NOT recommend them. Instead, state clearly that you don't have doctors in the required specialty right now, and advise them to visit the nearest hospital or emergency room (الطوارئ).
             5. CRITICAL RULE: You MUST conclude your response by explicitly advising the patient to consult a specialized doctor for a final diagnosis. (يجب استشارة طبيب متخصص).
         `;
 
