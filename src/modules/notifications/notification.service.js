@@ -239,14 +239,28 @@ export const notify = {
             message: `${doctorName} has been renewed their subscription plan.`,
             link: "/admin/notifications"
         }),
-    doctorPlanRenewed: (doctorId) =>
+    doctorPlanRenewed: (doctorId, amount) =>
         createNotification({
             userId: doctorId,
             type: "doctor_renew_plan",
-            message: `You have been renewed your subscription plan.`,
+            message: `You have been renewed your subscription plan by ${amount}.`,
             link: "/doctor/notifications"
         }),
-};
+    subscriptionPlanPaid: (adminId, doctorName) =>
+        createNotification({
+            userId: adminId,
+            type: "doctor_pay_plan",
+            message: `${doctorName} has been paid for a subscription plan.`,
+            link: "/admin/notifications"
+        }),
+    doctorPlanPaid: (doctorId, amount) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_pay_plan",
+            message: `You have been paid ${amount} for a subscription plan.`,
+            link: "/doctor/notifications"
+        }),
+    };
 
 // ─── GET /notifications ────────────────────────────────────────────────────────
 export const getNotifications = async (req, res, next) => {

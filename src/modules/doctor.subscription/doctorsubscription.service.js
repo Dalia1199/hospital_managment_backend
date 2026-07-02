@@ -568,7 +568,7 @@ export const renewSubscription = async (req, res, next) => {
             )
         );
 
-        notify.doctorPlanRenewed(req.user.fullName);
+        notify.doctorPlanRenewed(req.user._id, formattedAmount);
 
         return successresponse({
             res,
