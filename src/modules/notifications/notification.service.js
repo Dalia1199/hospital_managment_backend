@@ -337,27 +337,21 @@ export const savePushPermission = async (req, res, next) => {
         if (!subscription || !subscription.endpoint || !subscription.keys) {
             return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
         }
+        
+        // Remove this specific browser endpoint from any user to avoid getting notifications for a previous user who logged out
+        await pushPermissionModel.deleteMany({ "subscription.endpoint": subscription.endpoint });
 
-        // Find user 
-        const user = await db_service.findOne({
-            model: usermodel,
-            filter: { _id: req.user._id }
+        // Save the push subscription for the current logged-in user
+        const newSub = await pushPermissionModel.create({
+            userId: req.user._id,
+            subscription
         });
-
-        if (!user) {
-            return res.status(404).json({ message: "User not found." });
-        }
-
-        // Add or update the push subscription
-        user.pushSubscription = subscription;
-        await user.save();
-
-        // Return a response using successresponse structure if applicable
+        
         return successresponse({
             res,
             status: 200,
             message: "Push permission saved successfully.",
-            data: { subscription: user.pushSubscription }
+            data: { subscription: newSub.subscription }
         });
     } catch (error) {
         next(error);
