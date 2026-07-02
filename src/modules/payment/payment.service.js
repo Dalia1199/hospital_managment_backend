@@ -2,7 +2,7 @@
 
 import paymentmodel from "../../DB/models/paymentmodel.js";
 import * as db_service from "../../DB/db.service.js";
-import {  successresponse} from "../../common/utilits/responce.success.js";
+import { successresponse } from "../../common/utilits/responce.success.js";
 
 import {
     KASHIER_API_KEY
@@ -17,6 +17,9 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
 import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
+import usermodel from "../../DB/models/usermodel.js";
+import { roleenum } from "../../common/enum/user.enum.js";
+import { notify } from "../notifications/notification.service.js";
 
 // =========================
 // CREATE PAYMENT (GENERIC)
@@ -88,10 +91,12 @@ export const createCheckout = async (
             paymentMethod = "card"
         } = req.body;
 
-  
+
 
         const paidPayment =
             await paymentmodel.findOne({
+
+                userId: req.user._id,
 
                 purpose,
 
@@ -295,6 +300,17 @@ export const createCheckout = async (
 
             });
 
+        const admins = await db_service.find({
+            model: usermodel,
+            filter: { role: roleenum.admin }
+        });
+
+        await Promise.all(
+            admins.map(admin => notify.subscriptionPlanPaid(admin._id, req.user.fullName))
+        );
+
+        notify.doctorPlanPaid(req.user._id, formattedAmount);
+
         return successresponse({
 
             res,
@@ -360,10 +376,10 @@ export const paymentCallback = async (req, res, next) => {
             );
         }
 
-successresponse({
-        res,
-        message: "Payment proceeded"
-    });
+        successresponse({
+            res,
+            message: "Payment proceeded"
+        });
     } catch (err) {
         next(err);
     }
@@ -610,10 +626,10 @@ export const paymentWebhook = async (req, res, next) => {
 
         }
 
-successresponse({
-        res,
-        message: "done already"
-    });
+        successresponse({
+            res,
+            message: "done already"
+        });
     } catch (err) {
         next(err);
     }

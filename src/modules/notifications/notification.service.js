@@ -240,6 +240,28 @@ export const notify = {
             message: `${doctorName} has been renewed their subscription plan.`,
             link: "/admin/notifications"
         }),
+    doctorPlanRenewed: (doctorId, amount) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_renew_plan",
+            message: `You have been renewed your subscription plan by ${amount}.`,
+            link: "/doctor/notifications"
+        }),
+    subscriptionPlanPaid: (adminId, doctorName) =>
+        createNotification({
+            userId: adminId,
+            type: "doctor_pay_plan",
+            message: `${doctorName} has been paid for a subscription plan.`,
+            link: "/admin/notifications"
+        }),
+    doctorPlanPaid: (doctorId, amount) =>
+        createNotification({
+            userId: doctorId,
+            type: "doctor_pay_plan",
+            message: `You have been paid ${amount} for a subscription plan.`,
+            link: "/doctor/notifications"
+        }),
+    };
     doctorPlanRenewed: (doctorId) =>
         createNotification({
             userId: doctorId,
@@ -337,6 +359,22 @@ export const savePushPermission = async (req, res, next) => {
         if (!subscription || !subscription.endpoint || !subscription.keys) {
             return res.status(400).json({ message: "Subscription object is required with endpoint and keys." });
         }
+
+        // Find user 
+        const user = await db_service.findOne({
+            model: usermodel,
+            filter: { _id: req.user._id }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        // Add or update the push subscription
+        user.pushSubscription = subscription;
+        await user.save();
+
+        // Return a response using successresponse structure if applicable
         
         // Remove this specific browser endpoint from any user to avoid getting notifications for a previous user who logged out
         await pushPermissionModel.deleteMany({ "subscription.endpoint": subscription.endpoint });

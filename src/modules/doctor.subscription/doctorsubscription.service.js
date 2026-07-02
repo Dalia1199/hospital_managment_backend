@@ -4,8 +4,8 @@ import { roleenum } from "../../common/enum/user.enum.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import * as db_service from "../../DB/db.service.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
-import paymentmodel from "../../DB/models/paymentmodel.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import paymentmodel from "../../DB/models/paymentmodel.js";
 import usermodel from "../../DB/models/usermodel.js";
 import { notify } from "../notifications/notification.service.js";
 import { generateCheckoutUrl } from "../payment/payment.helper.js";
@@ -375,13 +375,13 @@ export const getDoctorSubscriptionByDoctor = async (
 
 };
 //done
-export const cancelSubscription = async (req,res,next) => {
+export const cancelSubscription = async (req, res, next) => {
 
     try {
 
-        const {subscriptionId } = req.params;
+        const { subscriptionId } = req.params;
 
-        const {cancelReason} = req.body;
+        const { cancelReason } = req.body;
         // console.log("subscriptionId:", subscriptionId);
 let filter={
     _id:subscriptionId
@@ -391,13 +391,16 @@ if(req.user.role===roleenum.doctor){
 }
         const subscription = await db_service.findOne({
 
-                model:
+            model:
 
-                    doctorSubscriptionModel,
+                doctorSubscriptionModel,
 
+            id:
+
+                subscriptionId
                 filter
 
-            });
+        });
         // console.log(subscription);
         if (
 
@@ -567,6 +570,7 @@ export const renewSubscription = async (req, res, next) => {
             )
         );
 
+        notify.doctorPlanRenewed(req.user._id, formattedAmount);
         notify.doctorPlanRenewed(req.user.fullName);
 
         return successresponse({
