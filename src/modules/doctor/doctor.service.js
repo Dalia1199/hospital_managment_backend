@@ -4,6 +4,7 @@ import patientmodel from "../../DB/models/patientmodel.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
 import { sendemail, generateotp } from "../../common/utilits/email/send email.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
@@ -435,9 +436,11 @@ export const createSession = async (req, res, next) => {
                     guestName,
                     guestPhone,
                     guestAge,
+                    clinicId: req.body.clinicId || undefined,
                     fees: doctor.consultationFee || 0,
                     status: "in_progress",
-                    validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                    validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                    order: Date.now()
                 }
             });
             return successresponse({
@@ -492,16 +495,28 @@ export const createSession = async (req, res, next) => {
                 await sessionmodel.findByIdAndDelete(existingSession._id);
             }
 
+            let order = Date.now();
+            const lastAppointment = await appointmentsmodel.findOne({
+                patientId,
+                doctorId,
+                status: "booked"
+            }).sort({ startDateTime: 1 });
+            if (lastAppointment) {
+                order = lastAppointment.startDateTime.getTime();
+            }
+
             if (sharingSetting === "all" || sharingSetting === "own_only") {
                 const session = await db_service.create({
                     model: sessionmodel,
                     data: {
                         doctorId,
                         patientId,
+                        clinicId: req.body.clinicId || undefined,
                         otp: "AUTO",
                         fees: doctor.consultationFee || 0,
                         status: "in_progress",
-                        validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                        validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                        order
                     }
                 });
                 
@@ -522,10 +537,12 @@ export const createSession = async (req, res, next) => {
                 data: {
                     doctorId,
                     patientId,
+                    clinicId: req.body.clinicId || undefined,
                     otp,
                     fees: doctor.consultationFee || 0,
                     status: "pending_otp",
-                    validUntil: new Date(Date.now() + 10 * 60 * 1000)
+                    validUntil: new Date(Date.now() + 10 * 60 * 1000),
+                    order
                 }
             });
             // Notify patient with the OTP
@@ -628,7 +645,7 @@ export const updatePatientAlerts = async (req, res, next) => {
 export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { fees, isFeesFinalized, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, isFeesFinalized, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries, followUpDays } = req.body;
         const doctorId = req.user._id;
 
         const existingSession = await db_service.findOne({
@@ -737,7 +754,8 @@ export const endSession = async (req, res, next) => {
             allergies: parsedAllergies,
             chronic: parsedChronic,
             surgeries: parsedSurgeries,
-            documents
+            documents,
+            clinicId: session.clinicId
         };
 
         if (session.isOfflinePatient) {
@@ -814,6 +832,39 @@ export const endSession = async (req, res, next) => {
                 await notify.prescriptionIssued(session.patientId);
             }
         }
+        if (!session.isOfflinePatient) {
+            const lastAppointment = await appointmentsmodel.findOne({
+                patientId: session.patientId,
+                doctorId: doctorId,
+                status: "booked"
+            }).sort({ startDateTime: 1 }); // Ascending to find the closest upcoming/today appointment
+
+            if (lastAppointment) {
+                lastAppointment.status = "completed"; 
+                
+                if (followUpDays) {
+                    lastAppointment.followUpDeadline = new Date(Date.now() + parseInt(followUpDays) * 24 * 60 * 60 * 1000);
+                    lastAppointment.followUpStatus = "scheduled";
+                    lastAppointment.followUpSetBy = doctorId;
+                }
+                
+                await lastAppointment.save();
+
+                // If paid online, release the doctor's share from pending to available
+                if (lastAppointment.paymentStatus === "paid") {
+                    const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+                    const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
+                    
+                    const config = await getAppConfig();
+                    let platformFee = config.platformFeePercentage > 0 
+                        ? (session.fees * config.platformFeePercentage) / 100 
+                        : config.platformFeeFixed;
+                        
+                    const doctorShare = Math.max(0, session.fees - platformFee);
+                    await releasePendingToAvailable(doctorId, doctorShare);
+                }
+            }
+        }
 
         return successresponse({
             res,
@@ -869,6 +920,10 @@ export const getActiveSessions = async (req, res, next) => {
             doctorId, 
             status: { $in: statuses }
         };
+        
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            filterQuery.clinicId = req.query.clinicId;
+        }
 
         if (req.query.status === "completed" || req.query.status === "all") {
             filterQuery.isFeesFinalized = { $ne: true };
@@ -907,6 +962,23 @@ export const getActiveSessions = async (req, res, next) => {
                 });
                 if (profile) {
                     sObj.patientProfile = profile;
+                }
+
+                // Check if this session is associated with a follow-up appointment today
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date();
+                endOfDay.setHours(23, 59, 59, 999);
+                
+                const todaysAppointment = await appointmentsmodel.findOne({
+                    patientId: sObj.patientId._id,
+                    doctorId: doctorId,
+                    appointmentDate: { $gte: startOfDay, $lte: endOfDay }
+                });
+                
+                if (todaysAppointment) {
+                    sObj.appointmentId = todaysAppointment._id;
+                    sObj.isFollowUp = todaysAppointment.isFollowUp;
                 }
             }
             return sObj;
@@ -1131,6 +1203,9 @@ export const getMyPatients = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = req.query.clinicId;
+        }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);
 
@@ -1303,6 +1378,9 @@ export const getMyPrescriptions = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = req.query.clinicId;
+        }
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const prescriptions = await prescrptionmodel.find(baseFilter)
@@ -1382,17 +1460,25 @@ export const getReportsAnalytics = async (req, res, next) => {
         const prevStart = new Date(start);
         prevStart.setDate(prevStart.getDate() - periodLength);
 
+        const filter = { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } };
+        const prevFilter = { doctorId, status: "completed", createdAt: { $gte: prevStart, $lte: prevEnd } };
+
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            filter.clinicId = req.query.clinicId;
+            prevFilter.clinicId = req.query.clinicId;
+        }
+
         // Fetch current period sessions
         const currentSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } },
+            filter,
             options: { lean: true }
         });
 
         // Fetch prev period sessions
         const prevSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } },
+            filter: prevFilter,
             options: { lean: true }
         });
 
@@ -1784,7 +1870,8 @@ export const updateSessionVitals = async (req, res, next) => {
                 sugarLevel,
                 temperature,
                 weight,
-                height
+                height,
+                clinicId: session.clinicId
             });
         } else {
             history.bloodPressure = bloodPressure || history.bloodPressure;

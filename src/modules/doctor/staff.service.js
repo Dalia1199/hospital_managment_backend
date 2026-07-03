@@ -67,7 +67,12 @@ export const createStaff = async (req, res, next) => {
 
 export const getStaff = async (req, res, next) => {
     try {
-        const assistants = await AssistantModel.find({ doctorId: req.user._id })
+        const filter = { doctorId: req.user._id };
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            filter.clinicId = req.query.clinicId;
+        }
+
+        const assistants = await AssistantModel.find(filter)
             .populate("userId", "fullName email phoneNumber profilepicture")
             .populate("clinicId", "name");
         res.status(200).json({ data: assistants });

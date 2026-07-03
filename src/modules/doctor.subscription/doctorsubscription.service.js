@@ -395,9 +395,7 @@ export const cancelSubscription = async (req, res, next) => {
 
                 doctorSubscriptionModel,
 
-            
-                filter
-
+            filter
         });
         // console.log(subscription);
         if (
@@ -464,43 +462,27 @@ export const cancelSubscription = async (req, res, next) => {
         }
 
         await db_service.findOneAndUpdate({
-
             model:
-
                 doctorSubscriptionModel,
-
             filter,
-
-
-
             update: {
-
                 status:
-
                     subscriptionStatusEnum.cancelled,
-
                 cancelledAt:
-
                     new Date(),
-
                 cancelledBy:
-
                     req.user._id,
-
                 cancelReason
-
             }
-
         });
 
+        // --- Defer enforcement to frontend ---
+        // The frontend GlobalClinicLimitGuard will detect excess clinics and force the user to choose.
+
         return successresponse({
-
             res,
-
             message:
-
                 "Subscription cancelled successfully"
-
         });
 
     }

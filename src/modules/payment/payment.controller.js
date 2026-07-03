@@ -16,6 +16,13 @@ paymentRouter.post(
     PS.createCheckout
 );
 
+paymentRouter.post(
+    "/checkout-wallet",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.payWithWallet
+);
+
 paymentRouter.get(
     "/callback",
 

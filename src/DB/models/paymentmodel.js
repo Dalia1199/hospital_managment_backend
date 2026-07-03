@@ -45,6 +45,10 @@ const paymentSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         default: "unknown"
+    },
+    walletDeduction: {
+        type: Number,
+        default: 0
     }
 
 }, {

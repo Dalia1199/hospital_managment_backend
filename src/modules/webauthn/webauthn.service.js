@@ -49,7 +49,7 @@ function getClientOrigin(req) {
       console.error("Error parsing referer in getClientOrigin:", e.message);
     }
   }
-  return "http://localhost:3001";
+  return "https://carehub-two.vercel.app";
 }
 
 export const registerOptions = async (req, res, next) => {

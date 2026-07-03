@@ -8,8 +8,6 @@ const server = http.createServer(app);
 
 initSocket(server);
 
-// Initialize scheduled cron jobs
-import "./modules/appointments/appointment.cron.js";
 import "./modules/patient/medication.cron.js";
 // Await DB connection before accepting requests
 checkConnectionDB().then(() => {
@@ -19,3 +17,5 @@ checkConnectionDB().then(() => {
 }).catch((error) => {
     console.error("Failed to start server due to DB connection error:", error);
 });
+
+

@@ -11,6 +11,11 @@ const sessionSchema = new mongoose.Schema({
         ref: "user",
         required: function() { return !this.isOfflinePatient; }
     },
+    clinicId: {
+        type: mongoose.Types.ObjectId,
+        ref: "clinic",
+        required: false
+    },
     isOfflinePatient: {
         type: Boolean,
         default: false

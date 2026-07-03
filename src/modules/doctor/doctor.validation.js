@@ -73,7 +73,8 @@ export const createSessionSchema = {
             otherwise: Joi.optional()
         }),
         guestPhone: Joi.string().trim().min(10).max(15).optional(),
-        guestAge: Joi.number().min(0).max(120).optional()
+        guestAge: Joi.number().min(0).max(120).optional(),
+        clinicId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional()
     })
 };
 
