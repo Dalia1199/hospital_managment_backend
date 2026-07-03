@@ -1,3 +1,4 @@
+import fs from 'fs';
 export const validation = (schema) => {
     return async (req, res, next) => {
         let errorresult = []
@@ -16,6 +17,7 @@ export const validation = (schema) => {
         }
         if (errorresult.length) {
             console.error("VALIDATION ERROR CAUGHT:", JSON.stringify(errorresult, null, 2));
+            try { fs.writeFileSync('validation_error.log', JSON.stringify({ url: req.originalUrl, body: req.body, query: req.query, params: req.params, errorresult }, null, 2)); } catch(e){}
             return res.status(400).json({ message: "validation error", error: errorresult })
         }
         next()
