@@ -234,6 +234,42 @@ export const getPatientAppointmentsSchema = {
 
         page: Joi.number().min(1).default(1),
 
-        limit: Joi.number().min(1).max(50).default(10)
+    limit: Joi.number().min(1).max(50).default(10)
     })
+};
+
+export const confirmAppointmentSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+    reason: Joi.string().optional(),
+    paymentId: generalrules.id.required().messages({
+      "string.hex": "invalid payment id",
+      "string.length": "payment id must be 24 characters",
+      "any.required": "payment id is required",
+    }),
+  }).required(),
+};
+
+export const releaseReservationSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+  }).required(),
+};
+
+export const holdSlotSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+  }).required(),
 };

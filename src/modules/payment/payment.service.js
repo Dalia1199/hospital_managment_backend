@@ -14,6 +14,7 @@ import {
 import { generateCheckoutUrl, normalizeStatus, verifyKashierSignature } from "./payment.helper.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import slotmodel from "../../DB/models/slot_model.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
 import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
@@ -88,7 +89,8 @@ export const createCheckout = async (
             amount,
             purpose,
             referenceId,
-            paymentMethod = "card"
+            paymentMethod = "card",
+            useWallet
         } = req.body;
 
 
@@ -122,15 +124,15 @@ export const createCheckout = async (
             purpose === "appointment"
         ) {
 
-            const appointment =
-                await appointmentsmodel.findById(
+            const slot =
+                await slotmodel.findById(
                     referenceId
                 );
 
-            if (!appointment) {
+            if (!slot) {
 
                 throw new Error(
-                    "appointment not found"
+                    "slot not found"
                 );
 
             }
@@ -139,7 +141,7 @@ export const createCheckout = async (
                 await doctormodel.findOne({
 
                     userId:
-                        appointment.doctorId
+                        slot.doctorId
 
                 });
 
@@ -250,54 +252,48 @@ export const createCheckout = async (
 
     }
 
+        let walletDeduction = 0;
+        if (useWallet) {
+            const { getWallet } = await import('../wallet/wallet.service.js');
+            const wallet = await getWallet(req.user._id);
+            if (wallet.availableBalance >= amount) {
+                throw new Error("Wallet balance is sufficient to cover the full amount, please use pay-with-wallet instead.");
+            }
+            if (wallet.availableBalance > 0) {
+                walletDeduction = wallet.availableBalance;
+                amount = amount - walletDeduction;
+            }
+        }
+
         const formattedAmount =
-        Number(amount).toFixed(2);
+            Number(amount).toFixed(2);
 
-    const orderId =
-        Date.now().toString();
+        const orderId =
+            Date.now().toString();
 
-    const payment =
-        await paymentmodel.create({
-
-            userId:
-                req.user._id,
-
-            amount:
-                formattedAmount,
-
-            purpose,
-
-            referenceId,
-
-            orderId,
-
-            paymentMethod,
-
-            paymentStatus:
-                "pending"
-
-        });
+        const payment =
+            await paymentmodel.create({
+                userId: req.user._id,
+                amount: formattedAmount,
+                purpose,
+                referenceId,
+                orderId,
+                paymentMethod,
+                walletDeduction,
+                paymentStatus: "pending"
+            });
 
     const paymentUrl =
         generateCheckoutUrl({
-
             orderId,
-
-            amount:
-                formattedAmount,
-
+            amount: formattedAmount,
             metaData: {
-
-                userId:
-                    req.user._id,
-
+                userId: req.user._id,
                 purpose,
-
                 referenceId
-
             }
-
         });
+
 
 
 
@@ -330,9 +326,6 @@ export const paymentCallback = async (req, res, next) => {
     try {
         const data = req.query;
 
-        // DEBUG: Log exact data from Kashier to a file
-        import('fs').then(fs => fs.appendFileSync('kashier-debug.log', JSON.stringify({ time: new Date(), query: data }) + '\n'));
-
         if (!verifyKashierSignature(data)) {
             const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3001";
             return res.redirect(`${FRONTEND_URL}/subscription-success?status=failed&error=invalid_signature`);
@@ -354,7 +347,12 @@ export const paymentCallback = async (req, res, next) => {
                     }
                 );
             }
-            return res.send("already processed");
+            const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+            if (payment.purpose === "subscription") {
+                return res.redirect(`${FRONTEND_URL}/subscription-success?status=paid`);
+            } else {
+                return res.redirect(`${FRONTEND_URL}/payments/callback?paymentStatus=paid&merchantOrderId=${orderId}`);
+            }
         }
 
         payment.transactionId = data.transactionId;
@@ -366,26 +364,64 @@ export const paymentCallback = async (req, res, next) => {
         await payment.save();
 
         if (
-            (payment.purpose === "appointment" || payment.purpose === "followup") &&
+            payment.purpose === "appointment" &&
             payment.paymentStatus === "paid"
         ) {
-            const appointment = await appointmentsmodel.findByIdAndUpdate(
-                payment.referenceId,
-                {
-                    paymentStatus: "paid"
-                },
-                { new: true }
-            );
+            const slotId = payment.referenceId;
+            const slot = await slotmodel.findById(slotId);
+            if (!slot || slot.isBooked) {
+                console.error("Slot already booked or not found after payment");
+            } else {
+                if (payment.walletDeduction > 0) {
+                    const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
+                    await deductAvailableBalance(payment.userId, payment.walletDeduction, 'split_payment_deduction', payment._id);
+                }
+                const appointment = await appointmentsmodel.create({
+                    doctorId: slot.doctorId,
+                    patientId: payment.userId,
+                    clinicId: slot.clinicId,
+                    slotId: slot._id,
+                    appointmentDate: slot.startDateTime,
+                    startDateTime: slot.startDateTime,
+                    endDateTime: slot.endDateTime,
+                    paymentStatus: 'paid',
+                    status: 'booked'
+                });
+                slot.isBooked = true;
+                slot.isReserved = false;
+                await slot.save();
 
-            if (appointment) {
+                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(payment.amount);
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
                 await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid: payment.amount 
+                    totalPaid
+                });
+            }
+        } else if (
+            payment.purpose === "followup" &&
+            payment.paymentStatus === "paid"
+        ) {
+            const appointment = await appointmentsmodel.findByIdAndUpdate(
+                payment.referenceId,
+                { paymentStatus: "paid" },
+                { new: true }
+            );
+
+            if (appointment) {
+                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
+                const { calculateCommission } = await import('../appconfig/appconfig.service.js');
+                const { addPendingBalance } = await import('../wallet/wallet.service.js');
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                
+                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                    platformFee, 
+                    doctorShare, 
+                    totalPaid
                 });
             }
         }
@@ -466,32 +502,62 @@ export const payWithWallet = async (req, res, next) => {
         let amount = req.body.amount;
         const userId = req.user._id;
 
-        if (purpose === "appointment" || purpose === "followup") {
+        if (purpose === "appointment") {
+            const slot = await slotmodel.findById(referenceId);
+            if (!slot || slot.isBooked) throw new Error("Slot not found or already booked");
+            const doctor = await doctormodel.findOne({ userId: slot.doctorId });
+            if (!doctor) throw new Error("doctor not found");
+            
+            amount = doctor.consultationFee;
+            
+            const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
+            await deductAvailableBalance(userId, amount, 'online_booking_payment', referenceId);
+
+            const appointment = await appointmentsmodel.create({
+                doctorId: slot.doctorId,
+                patientId: userId,
+                clinicId: slot.clinicId,
+                slotId: slot._id,
+                appointmentDate: slot.startDateTime,
+                startDateTime: slot.startDateTime,
+                endDateTime: slot.endDateTime,
+                paymentStatus: 'paid',
+                status: 'booked'
+            });
+            slot.isBooked = true;
+            slot.isReserved = false;
+            await slot.save();
+
+            const { calculateCommission } = await import('../appconfig/appconfig.service.js');
+            const { addPendingBalance } = await import('../wallet/wallet.service.js');
+            const { doctorShare, platformFee } = await calculateCommission(amount);
+            
+            await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
+                platformFee, 
+                doctorShare, 
+                totalPaid: amount,
+                paymentMethod: 'wallet'
+            });
+        } else if (purpose === "followup") {
             const appointment = await appointmentsmodel.findById(referenceId);
             if (!appointment) throw new Error("appointment not found");
             const doctor = await doctormodel.findOne({ userId: appointment.doctorId });
             if (!doctor) throw new Error("doctor not found");
             
-            amount = purpose === "appointment" ? doctor.fees : doctor.followUpFees;
+            amount = doctor.followUpFee ?? (doctor.consultationFee * 0.5);
             
             if (appointment.paymentStatus === "paid") {
                 throw new Error("appointment already paid");
             }
-        } else {
-            throw new Error("Invalid purpose for wallet payment");
-        }
 
-        const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
-        await deductAvailableBalance(userId, amount, 'online_booking_payment', referenceId);
+            const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
+            await deductAvailableBalance(userId, amount, 'online_booking_payment', referenceId);
 
-        // Update appointment status to paid
-        const appointment = await appointmentsmodel.findByIdAndUpdate(
-            referenceId,
-            { paymentStatus: "paid" },
-            { new: true }
-        );
+            await appointmentsmodel.findByIdAndUpdate(
+                referenceId,
+                { paymentStatus: "paid" }
+            );
 
-        if (appointment) {
             const { calculateCommission } = await import('../appconfig/appconfig.service.js');
             const { addPendingBalance } = await import('../wallet/wallet.service.js');
             const { doctorShare, platformFee } = await calculateCommission(amount);
@@ -502,6 +568,8 @@ export const payWithWallet = async (req, res, next) => {
                 totalPaid: amount,
                 paymentMethod: 'wallet'
             });
+        } else {
+            throw new Error("Invalid purpose for wallet payment");
         }
 
         return successresponse({
@@ -549,26 +617,64 @@ export const paymentWebhook = async (req, res, next) => {
 
         await payment.save();
         if (
-            (payment.purpose === "appointment" || payment.purpose === "followup") &&
+            payment.purpose === "appointment" &&
             payment.paymentStatus === "paid"
         ) {
-            const appointment = await appointmentsmodel.findByIdAndUpdate(
-                payment.referenceId,
-                {
-                    paymentStatus: "paid"
-                },
-                { new: true }
-            );
+            const slotId = payment.referenceId;
+            const slot = await slotmodel.findById(slotId);
+            if (!slot || slot.isBooked) {
+                console.error("Slot already booked or not found after payment");
+            } else {
+                if (payment.walletDeduction > 0) {
+                    const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
+                    await deductAvailableBalance(payment.userId, payment.walletDeduction, 'split_payment_deduction', payment._id);
+                }
+                const appointment = await appointmentsmodel.create({
+                    doctorId: slot.doctorId,
+                    patientId: payment.userId,
+                    clinicId: slot.clinicId,
+                    slotId: slot._id,
+                    appointmentDate: slot.startDateTime,
+                    startDateTime: slot.startDateTime,
+                    endDateTime: slot.endDateTime,
+                    paymentStatus: 'paid',
+                    status: 'booked'
+                });
+                slot.isBooked = true;
+                slot.isReserved = false;
+                await slot.save();
 
-            if (appointment) {
+                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(payment.amount);
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
                 await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid: payment.amount 
+                    totalPaid
+                });
+            }
+        } else if (
+            payment.purpose === "followup" &&
+            payment.paymentStatus === "paid"
+        ) {
+            const appointment = await appointmentsmodel.findByIdAndUpdate(
+                payment.referenceId,
+                { paymentStatus: "paid" },
+                { new: true }
+            );
+
+            if (appointment) {
+                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
+                const { calculateCommission } = await import('../appconfig/appconfig.service.js');
+                const { addPendingBalance } = await import('../wallet/wallet.service.js');
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                
+                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                    platformFee, 
+                    doctorShare, 
+                    totalPaid
                 });
             }
         }

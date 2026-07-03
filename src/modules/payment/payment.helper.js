@@ -46,8 +46,7 @@ export const generateCheckoutUrl = ({
         `&hash=${hash}` +
         `&mode=${process.env.KASHIER_MODE || "test"}` +
         `&merchantRedirect=${encodeURIComponent(KASHIER_CALLBACK_URL)}` +
-        `&redirectMethod=get` +
-        `&metaData=${encodeURIComponent(JSON.stringify(metaData))}`
+        `&redirectMethod=GET`
     );
 };
 

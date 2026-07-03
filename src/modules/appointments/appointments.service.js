@@ -537,6 +537,26 @@ export const bookAppointment = async (req, res, next) => {
   try {
     const { slotId, reason } = req.body;
 
+    const slotData = await slotmodel.findById(slotId);
+    if (!slotData || slotData.isBooked || new Date(slotData.startDateTime) < new Date()) {
+      throw new Error("slot not available or already booked", {
+        cause: 409,
+      });
+    }
+
+    // Ensure the patient doesn't already have an active appointment with this doctor
+    const existingAppointment = await appointmentsmodel.findOne({
+      patientId: req.user._id,
+      doctorId: slotData.doctorId,
+      status: "booked"
+    });
+
+    if (existingAppointment) {
+      throw new Error("You already have an active appointment with this doctor. Please wait until it is completed or cancelled.", {
+        cause: 409,
+      });
+    }
+
     const slot = await slotmodel.findOneAndUpdate(
       {
         _id: slotId,
@@ -592,6 +612,8 @@ export const bookAppointment = async (req, res, next) => {
         appointmentDate: slot.startDateTime,
         startDateTime: slot.startDateTime,
         endDateTime: slot.endDateTime,
+        paymentStatus: "pending",
+        status: "booked",
         isFollowUp,
         parentAppointmentId
       },
@@ -623,7 +645,93 @@ export const bookAppointment = async (req, res, next) => {
   }
 };
 
-//done
+import { createReservation, releaseReservation } from "./reservation.service.js";
+
+export const holdSlot = async (req, res, next) => {
+  try {
+    const { slotId } = req.body;
+
+    const slotData = await slotmodel.findById(slotId);
+    if (!slotData || slotData.isBooked || slotData.isReserved || new Date(slotData.startDateTime) < new Date()) {
+      throw new Error("slot not available", {
+        cause: 409,
+      });
+    }
+
+    // Ensure the patient doesn't already have an active appointment with this doctor
+    const existingAppointment = await appointmentsmodel.findOne({
+      patientId: req.user._id,
+      doctorId: slotData.doctorId,
+      status: "booked"
+    });
+
+    if (existingAppointment) {
+      throw new Error("You already have an active appointment with this doctor. Please wait until it is completed or cancelled.", {
+        cause: 409,
+      });
+    }
+
+    const slot = await createReservation(slotId);
+
+    return successresponse({
+      res,
+      message: "slot held successfully for 5 minutes",
+      data: slot,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// New: confirmAndCreate - creates appointment after successful payment
+export const confirmAndCreate = async (req, res, next) => {
+  try {
+    const { slotId, reason, paymentId } = req.body;
+    // Reserve the slot (5‑minute hold)
+    await createReservation(slotId);
+    // Verify slot still free
+    const slot = await slotmodel.findOne({ _id: slotId, isBooked: false, isReserved: true });
+    if (!slot) {
+      throw new Error('slot not available after reservation', { cause: 409 });
+    }
+    // Verify payment audit
+    const PaymentAudit = (await import('../../DB/models/payment_audit.model.js')).default;
+    const payment = await PaymentAudit.findOne({ _id: paymentId, status: 'success' });
+    if (!payment) {
+      throw new Error('valid payment not found', { cause: 400 });
+    }
+    // Create appointment with paid status
+    const appointment = await db_service.create({
+      model: appointmentsmodel,
+      data: {
+        doctorId: slot.doctorId,
+        patientId: req.user._id,
+        clinicId: slot.clinicId,
+        slotId: slot._id,
+        reason,
+        appointmentDate: slot.startDateTime,
+        startDateTime: slot.startDateTime,
+        endDateTime: slot.endDateTime,
+        paymentStatus: 'paid',
+        status: 'booked',
+      },
+    });
+    // Mark slot as booked and clear reservation
+    await slotmodel.findByIdAndUpdate(slotId, { isBooked: true, isReserved: false, reservedAt: null });
+    // Notify patient and doctor
+    await notify.appointmentBooked(appointment.patientId);
+    const patient = await db_service.findOne({ model: usermodel, filter: { _id: appointment.patientId } });
+    if (patient) {
+      await notify.patientAppointment(slot.doctorId, patient.fullName, slot.startDateTime);
+    }
+    return successresponse({ res, message: 'appointment confirmed and created', data: appointment });
+  } catch (error) {
+    // Release reservation on error
+    await releaseReservation(req.body.slotId).catch(() => {});
+    next(error);
+  }
+};
+
 //gets appointment for patient
 export const getMyAppointments = async (req, res, next) => {
   try {
@@ -1336,10 +1444,26 @@ export const getPatientAppointments = async (req, res, next) => {
       limit,
     });
 
+    const appointmentsWithAmount = await Promise.all(appointments.map(async (appt) => {
+      const doc = await doctormodel.findOne({ userId: appt.doctorId }).lean();
+      const amount = appt.isFollowUp ? (doc?.followUpFee ?? ((doc?.consultationFee ?? 0) * 0.5)) : (doc?.consultationFee ?? 0);
+      return { ...appt.toObject(), amount };
+    }));
+
+    const total = await db_service.count({
+      model: appointmentsmodel,
+      filter,
+    });
+
     successresponse({
       res,
       message: "appointments retrieved successfully",
-      data: appointments,
+      data: appointmentsWithAmount,
+      pagination: {
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        totalRecords: total,
+      },
     });
   } catch (error) {
     next(error);

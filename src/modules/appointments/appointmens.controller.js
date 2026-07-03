@@ -6,6 +6,9 @@ import { authorization } from "../../common/middleware/authorization.js";
 import { requirePermission, auditLogger, spoofAssistantToDoctor } from "../../common/middleware/assistant.middleware.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
+import { successresponse } from "../../common/utilits/responce.success.js";
+import { releaseReservation } from "./reservation.service.js";
+
 const appointmensrouter = Router();
 //done
 
@@ -96,6 +99,52 @@ appointmensrouter.post(
 
     AS.bookAppointment
 
+);
+
+// New: Hold slot for 5 minutes before payment
+appointmensrouter.post(
+  "/hold",
+  authentication,
+  authorization([
+    roleenum.patient
+  ]),
+  validation(AV.holdSlotSchema),
+  AS.holdSlot
+);
+
+// New: Confirm appointment after payment
+appointmensrouter.post(
+  "/confirm",
+  authentication,
+  authorization([
+    roleenum.patient
+  ]),
+  validation(AV.confirmAppointmentSchema),
+  AS.confirmAndCreate
+);
+
+// New: Release reservation when user aborts
+appointmensrouter.post(
+  "/release-reservation",
+  authentication,
+  authorization([
+    roleenum.patient
+  ]),
+  validation(AV.releaseReservationSchema),
+  async (req, res, next) => {
+    try {
+      const { slotId } = req.body;
+      await releaseReservation(slotId);
+      return successresponse({
+        res,
+        status: 200,
+        message: "Reservation released",
+        data: null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 //done
 appointmensrouter.get(

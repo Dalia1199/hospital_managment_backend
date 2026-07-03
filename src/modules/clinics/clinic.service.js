@@ -138,7 +138,7 @@ export const getDoctorClinics = async (req, res, next) => {
             sort: { createdAt: 1 }
         });
 
-        const maxClinics = await getDoctorClinicLimit(doctorId);
+        const maxClinics = await getClinicLimit(doctorId);
         if (maxClinics !== -1 && clinics.length > maxClinics) {
             clinics = clinics.slice(0, maxClinics);
         }

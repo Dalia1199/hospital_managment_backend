@@ -27,6 +27,14 @@ const slotSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isReserved: {
+      type: Boolean,
+      default: false,
+    },
+    reservedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
