@@ -1,10 +1,7 @@
 {
-  "url": "/appointmens/available-slots/6a25851156c2f76e8bf32bff?clinicId=6a3ae2e7ced0f6b003aa4bc7&clinicId=6a3b2f2572c1ec9cbf6253a2",
+  "url": "/clinics/doctor/6a25851156c2f76e8bf32bff?clinicId=6a3b2f2572c1ec9cbf6253a2",
   "query": {
-    "clinicId": [
-      "6a3ae2e7ced0f6b003aa4bc7",
-      "6a3b2f2572c1ec9cbf6253a2"
-    ]
+    "clinicId": "6a3b2f2572c1ec9cbf6253a2"
   },
   "params": {
     "doctorId": "6a25851156c2f76e8bf32bff"
@@ -13,7 +10,7 @@
     {
       "key": "query",
       "path": "clinicId",
-      "message": "\"clinicId\" must be a string"
+      "message": "\"clinicId\" is not allowed"
     }
   ]
 }

@@ -327,7 +327,7 @@ export const paymentCallback = async (req, res, next) => {
         const data = req.query;
 
         if (!verifyKashierSignature(data)) {
-            const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3001";
+            const FRONTEND_URL = process.env.FRONTEND_URL || "https://carehub-two.vercel.app";
             return res.redirect(`${FRONTEND_URL}/subscription-success?status=failed&error=invalid_signature`);
         }
 
@@ -347,7 +347,7 @@ export const paymentCallback = async (req, res, next) => {
                     }
                 );
             }
-            const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+            const FRONTEND_URL = process.env.FRONTEND_URL || "https://carehub-two.vercel.app";
             if (payment.purpose === "subscription") {
                 return res.redirect(`${FRONTEND_URL}/subscription-success?status=paid`);
             } else {
@@ -485,7 +485,7 @@ export const paymentCallback = async (req, res, next) => {
             notify.doctorPlanPaid(payment.userId, payment.amount);
         }
 
-        const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+        const FRONTEND_URL = process.env.FRONTEND_URL || "https://carehub-two.vercel.app";
         if (payment.purpose === "subscription") {
             return res.redirect(`${FRONTEND_URL}/subscription-success?status=${payment.paymentStatus}`);
         } else {
