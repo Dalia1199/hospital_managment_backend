@@ -395,9 +395,7 @@ if(req.user.role===roleenum.doctor){
 
                 doctorSubscriptionModel,
 
-            id:
-
-                subscriptionId
+            
                 filter
 
         });
