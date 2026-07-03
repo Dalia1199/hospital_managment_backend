@@ -212,21 +212,6 @@ export const createCheckout = async (
 
                     status:
 
-
-                );
-
-            }
-
-            const activeSubscription =
-
-                await doctorSubscriptionModel.findOne({
-
-                    doctorId:
-
-                        req.user._id,
-
-                    status:
-
                         subscriptionStatusEnum.active
 
                 });
@@ -630,7 +615,7 @@ export const paymentWebhook = async (req, res, next) => {
             res,
             message: "done already"
         });
-    } catch (err) {
+    }} catch (err) {
         next(err);
     }
 };

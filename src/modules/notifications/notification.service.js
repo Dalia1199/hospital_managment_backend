@@ -261,7 +261,6 @@ export const notify = {
             message: `You have been paid ${amount} for a subscription plan.`,
             link: "/doctor/notifications"
         }),
-    };
     doctorPlanRenewed: (doctorId) =>
         createNotification({
             userId: doctorId,

@@ -383,22 +383,21 @@ export const cancelSubscription = async (req, res, next) => {
 
         const { cancelReason } = req.body;
         // console.log("subscriptionId:", subscriptionId);
-let filter={
-    _id:subscriptionId
-};
-if(req.user.role===roleenum.doctor){
-    filter.doctorId=req.user._id;
-}
+        let filter = {
+            _id: subscriptionId
+        };
+        if (req.user.role === roleenum.doctor) {
+            filter.doctorId = req.user._id;
+        }
         const subscription = await db_service.findOne({
 
             model:
 
                 doctorSubscriptionModel,
 
-            id:
-
-                subscriptionId
-                filter
+            filter: {
+                _id: subscriptionId
+            }
 
         });
         // console.log(subscription);
@@ -473,7 +472,7 @@ if(req.user.role===roleenum.doctor){
 
             filter,
 
-         
+
 
             update: {
 
