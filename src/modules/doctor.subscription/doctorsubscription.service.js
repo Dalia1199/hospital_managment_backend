@@ -395,9 +395,8 @@ export const cancelSubscription = async (req, res, next) => {
 
                 doctorSubscriptionModel,
 
-            filter: {
-                _id: subscriptionId
-            }
+            
+                filter
 
         });
         // console.log(subscription);
