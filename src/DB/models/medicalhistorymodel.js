@@ -26,6 +26,11 @@ const medicalHistorySchema = new mongoose.Schema(
             ref: "user",
             required: true
         },
+        clinicId: {
+            type: mongoose.Types.ObjectId,
+            ref: "clinic",
+            required: false
+        },
 
         sessionId: {
             type: mongoose.Types.ObjectId,

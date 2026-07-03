@@ -37,7 +37,7 @@ const dayFilter = (day) => ({ $regex: `^${day}$`, $options: "i" });
 // Scoped to the affected day only (previously this counted ANY booked slot
 // for the whole clinic, so changing/deleting Wednesday's hours could be
 // blocked by a booked appointment on a completely unrelated Monday).
-async function countBookedSlotsOnDay({ doctorId, clinicId, day }) {
+async function getBookedSlotsOnDay({ doctorId, clinicId, day }) {
   const futureBookedSlots = await slotmodel.find({
     doctorId,
     clinicId,
@@ -45,9 +45,19 @@ async function countBookedSlotsOnDay({ doctorId, clinicId, day }) {
     startDateTime: { $gte: new Date() },
   });
 
-  return futureBookedSlots.filter(
-    (s) => dayjs(s.startDateTime).format("dddd").toLowerCase() === day?.toLowerCase(),
-  ).length;
+  // We need the associated appointments to show patient names/details to the doctor
+  const slotIds = futureBookedSlots
+    .filter((s) => dayjs(s.startDateTime).format("dddd").toLowerCase() === day?.toLowerCase())
+    .map((s) => s._id);
+
+  if (slotIds.length === 0) return [];
+
+  const appointments = await appointmentsmodel.find({
+    slotId: { $in: slotIds },
+    status: "booked"
+  }).populate("patientId", "firstName lastName");
+
+  return appointments;
 }
 
 //done
@@ -136,7 +146,9 @@ export const addAvailability = async (req, res, next) => {
       res,
       status: 201,
       message: "availability added successfully",
-      data: availability,
+      data: {
+        availability,
+      },
     });
   } catch (error) {
     next(error);
@@ -177,7 +189,7 @@ export const getAvailability = async (req, res, next) => {
 // whatever availabilities currently exist — returns whether any
 // availability existed at all, plus how many slots came out of it, and lets
 // each caller decide what (if anything) counts as an error for it.
-async function regenerateSlotsForRange({
+export async function regenerateSlotsForRange({
   doctorId,
   clinicId,
   startDate,
@@ -374,22 +386,32 @@ export const updateAvailability = async (req, res, next) => {
     // FIX: scoped to the day actually being changed (the ORIGINAL day,
     // since that's the schedule whose hours are being modified) instead of
     // counting every booked slot in the whole clinic.
-    const bookedSlots = await countBookedSlotsOnDay({
+    const bookedAppointments = await getBookedSlotsOnDay({
       doctorId: req.user._id,
       clinicId: availability.clinicId,
       day: availability.day,
     });
 
-    if (bookedSlots > 0) {
+    const isForce = req.query.force === "true" || req.body.force === true;
+
+    if (bookedAppointments.length > 0 && !isForce) {
       return successresponse({
         res,
         status: 409,
         message: "cannot update availability with booked slots",
         data: {
           canUpdate: false,
-          bookedSlots,
+          bookedSlots: bookedAppointments.length,
+          affectedAppointments: bookedAppointments,
         },
       });
+    }
+
+    if (bookedAppointments.length > 0 && isForce) {
+      // Cancel affected appointments
+      for (const appt of bookedAppointments) {
+        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule changed by doctor");
+      }
     }
 
     const updatedAvailability = await db_service.findOneAndUpdate({
@@ -404,51 +426,11 @@ export const updateAvailability = async (req, res, next) => {
       options: { new: true },
     });
 
-    // rebuild this clinic's future open slots so the new hours take effect
-    // immediately. This is a side effect of the update — if it produces zero
-    // slots (e.g. the new range happens to be empty) that's NOT a failure of
-    // the availability change itself, so we never let it throw past here.
-    let totalSlots = 0;
-    try {
-      const startDate = dayjs(
-        req.body.startDate || dayjs().format("YYYY-MM-DD"),
-      );
-      const endDate = dayjs(
-        req.body.endDate || dayjs().add(1, "year").format("YYYY-MM-DD"),
-      );
-
-      // FIX: scoped to the affected day(s) only — previously this wiped and
-      // rebuilt a full year of slots for EVERY weekday in this clinic, not
-      // just the day actually changed. If the doctor also changed the
-      // `day` field itself (e.g. Monday → Tuesday), we need to regenerate
-      // BOTH the old day (to clear it out) and the new one (to build it).
-      const affectedDays = new Set([
-        availability.day.toLowerCase(),
-        nextDay,
-      ]);
-
-      for (const affectedDay of affectedDays) {
-        const result = await regenerateSlotsForRange({
-          doctorId: req.user._id,
-          clinicId: availability.clinicId,
-          startDate,
-          endDate,
-          day: affectedDay,
-        });
-        totalSlots += result.totalSlots;
-      }
-    } catch (genErr) {
-      console.error(
-        "slot regeneration after availability update failed:",
-        genErr,
-      );
-    }
-
     return successresponse({
       res,
       status: 200,
       message: "availability updated successfully",
-      data: { ...updatedAvailability.toObject(), totalSlots },
+      data: { ...updatedAvailability.toObject() },
     });
   } catch (error) {
     next(error);
@@ -477,22 +459,32 @@ export const deleteAvailability = async (req, res, next) => {
     }
 
     // FIX: scoped to this availability's day only (see updateAvailability)
-    const bookedSlots = await countBookedSlotsOnDay({
+    const bookedAppointments = await getBookedSlotsOnDay({
       doctorId: req.user._id,
       clinicId: availability.clinicId,
       day: availability.day,
     });
 
-    if (bookedSlots > 0) {
+    const isForce = req.query.force === "true" || req.body.force === true;
+
+    if (bookedAppointments.length > 0 && !isForce) {
       return successresponse({
         res,
         status: 409,
         message: "cannot delete availability with booked slots",
         data: {
           canDelete: false,
-          bookedSlots,
+          bookedSlots: bookedAppointments.length,
+          affectedAppointments: bookedAppointments,
         },
       });
+    }
+
+    if (bookedAppointments.length > 0 && isForce) {
+      // Cancel affected appointments
+      for (const appt of bookedAppointments) {
+        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule deleted by doctor");
+      }
     }
 
     await db_service.deleteOne({
@@ -500,88 +492,31 @@ export const deleteAvailability = async (req, res, next) => {
       filter: { _id: availabilityId },
     });
 
-    // rebuild future slots from whatever availabilities remain — if none are
-    // left for this clinic, regenerateSlotsForRange still clears the old
-    // open slots and simply returns hasAvailability: false, which is fine.
-    let totalSlots = 0;
-    try {
-      // FIX: scoped to availability.day only — previously this wiped and
-      // rebuilt a full year of slots for EVERY weekday in this clinic, not
-      // just the day that was actually deleted.
-      const result = await regenerateSlotsForRange({
-        doctorId: req.user._id,
-        clinicId: availability.clinicId,
-        startDate: dayjs(),
-        endDate: dayjs().add(1, "year"), // ← يشيل slots اليوم ده بس لمدة سنة
-        day: availability.day,
-      });
-      totalSlots = result.totalSlots;
-    } catch (genErr) {
-      console.error(
-        "slot regeneration after availability deletion failed:",
-        genErr,
-      );
-    }
-
     return successresponse({
       res,
       status: 200,
       message: "availability deleted successfully",
-      data: { totalSlots },
     });
   } catch (error) {
     next(error);
   }
 };
 
-//done
-export const generateMonthlySlots = async (req, res, next) => {
-  try {
-    const doctorId = req.user._id;
-    const { clinicId } = req.body;
 
-    const startDate = dayjs(req.body.startDate || dayjs().startOf("day"));
-    const endDate = dayjs(req.body.endDate || dayjs().endOf("month"));
-
-    const { totalSlots, hasAvailability } = await regenerateSlotsForRange({
-      doctorId,
-      clinicId,
-      startDate,
-      endDate,
-    });
-
-    if (!hasAvailability) {
-      throw new Error("No availability found", { cause: 404 });
-    }
-
-    if (!totalSlots) {
-      throw new Error("no slots generated", { cause: 400 });
-    }
-
-    return successresponse({
-      res,
-      status: 201,
-      message: "monthly slots generated successfully",
-      data: {
-        totalSlots,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-//done
 export const getAvailableSlots = async (req, res, next) => {
   try {
     const { doctorId } = req.params;
-    const { clinicId } = req.query;
+    const { clinicId, startDate, endDate } = req.query;
 
+    const start = startDate ? new Date(startDate) : new Date();
     const filter = {
       doctorId,
       isBooked: false,
-      startDateTime: { $gte: new Date() },
+      startDateTime: { $gte: start },
     };
+    if (endDate) {
+      filter.startDateTime.$lte = new Date(endDate);
+    }
     if (clinicId) filter.clinicId = clinicId;
 
     const slots = await slotmodel.find(filter).sort({ startDateTime: 1 });
@@ -620,6 +555,32 @@ export const bookAppointment = async (req, res, next) => {
       });
     }
 
+        let isFollowUp = false;
+        let parentAppointmentId = null;
+
+        // Check if there is a scheduled follow-up
+        const validFollowUp = await appointmentsmodel.findOne({
+          patientId: req.user._id,
+          doctorId: slot.doctorId,
+          status: "completed",
+          followUpStatus: { $in: ["scheduled", "overridden"] }
+        }).sort({ createdAt: -1 });
+
+        if (validFollowUp) {
+          const bookingDate = dayjs(slot.startDateTime);
+          const deadline = dayjs(validFollowUp.followUpDeadline);
+          
+          if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+             isFollowUp = true;
+             parentAppointmentId = validFollowUp._id;
+             // We will update the parent appointment status to 'used' after this
+          } else if (validFollowUp.followUpStatus === "scheduled") {
+             // Deadline passed, mark the old follow-up as expired
+             validFollowUp.followUpStatus = "expired";
+             await validFollowUp.save();
+          }
+        }
+
     const appointment = await db_service.create({
       model: appointmentsmodel,
       data: {
@@ -631,8 +592,16 @@ export const bookAppointment = async (req, res, next) => {
         appointmentDate: slot.startDateTime,
         startDateTime: slot.startDateTime,
         endDateTime: slot.endDateTime,
+        isFollowUp,
+        parentAppointmentId
       },
     });
+
+    if (isFollowUp && parentAppointmentId) {
+       await appointmentsmodel.findByIdAndUpdate(parentAppointmentId, {
+           followUpStatus: "used"
+       });
+    }
 
     const patient = await db_service.findOne({
       model: usermodel,
@@ -725,6 +694,10 @@ export const getDoctorAppointments = async (req, res, next) => {
       doctorId: req.user._id,
     };
 
+    if (req.query.clinicId && req.query.clinicId !== 'all') {
+      filter.clinicId = req.query.clinicId;
+    }
+
     const totalCount = await db_service.count({ model: appointmentsmodel, filter });
     const totalPages = Math.ceil(totalCount / limit);
 
@@ -780,21 +753,60 @@ export const getDoctorAppointments = async (req, res, next) => {
 };
 
 //done
+export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reason) => {
+  const appointment = await appointmentsmodel.findById(appointmentId);
+  if (!appointment) return;
+
+  if (appointment.status === "cancelled" || appointment.status === "completed") return;
+
+  appointment.status = "cancelled";
+  // could save reason if schema allows, skipping for now
+  await appointment.save();
+
+  await slotmodel.findByIdAndUpdate(appointment.slotId, {
+    isBooked: false,
+  });
+
+  if (appointment.paymentStatus === "paid") {
+    const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
+    const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
+    const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+    
+    const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
+    if (payment) {
+        // If doctor cancels, doctor compensation is 0, patient gets 100% refund.
+        // Wait, calculateRefundSplit checks who canceled. In our new requirement, if a schedule change causes it, 
+        // the doctor is canceling it. We should force full refund to patient.
+        const patientRefund = payment.amount;
+        
+        // Add to patient wallet
+        await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
+        
+        const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+        const config = await getAppConfig();
+        let platformFeeFixed = config.platformFeePercentage > 0 
+            ? (payment.amount * config.platformFeePercentage) / 100 
+            : config.platformFeeFixed;
+        const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
+        
+        await removePendingBalance(appointment.doctorId, originalDoctorShare);
+    }
+  }
+
+  await notify.appointmentCancelled(appointment.patientId);
+  return appointment;
+};
+
 export const cancelAppointment = async (req, res, next) => {
   try {
     const { appointmentId } = req.params;
 
-    // FIX: was findById with no ownership check at all — any authenticated
-    // patient could cancel ANY patient's appointment by guessing/reusing an
-    // appointmentId. Now scoped to the requesting patient.
     const appointment = await appointmentsmodel.findOne({
       _id: appointmentId,
       patientId: req.user._id,
     });
 
     if (!appointment) {
-      // FIX: missing { cause: 404 } meant this fell through to a generic
-      // 500 instead of a proper 404.
       throw new Error("appointment not found", { cause: 404 });
     }
 
@@ -802,12 +814,43 @@ export const cancelAppointment = async (req, res, next) => {
       throw new Error("appointment already cancelled", { cause: 409 });
     }
 
+    if (appointment.status === "completed") {
+      throw new Error("cannot cancel a completed appointment", { cause: 400 });
+    }
+
+    // Since this is patient-initiated, use the regular logic
     appointment.status = "cancelled";
     await appointment.save();
 
     await slotmodel.findByIdAndUpdate(appointment.slotId, {
       isBooked: false,
     });
+
+    if (appointment.paymentStatus === "paid") {
+      const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
+      const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
+      const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+      
+      const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
+      if (payment) {
+          const { patientRefund, doctorCompensation } = await calculateRefundSplit(payment.amount);
+          
+          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
+          
+          const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+          const config = await getAppConfig();
+          let platformFeeFixed = config.platformFeePercentage > 0 
+              ? (payment.amount * config.platformFeePercentage) / 100 
+              : config.platformFeeFixed;
+          const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
+          
+          await removePendingBalance(appointment.doctorId, originalDoctorShare);
+          
+          if (doctorCompensation > 0) {
+              await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+          }
+      }
+    }
 
     await notify.appointmentCancelled(appointment.patientId);
 
@@ -1093,6 +1136,11 @@ export const rescheduleAppointment = async (req, res, next) => {
 export const doctorDashboard = async (req, res, next) => {
   try {
     const doctorId = req.user._id;
+    const filter = { doctorId };
+
+    if (req.query.clinicId && req.query.clinicId !== 'all') {
+      filter.clinicId = req.query.clinicId;
+    }
 
     const [
       totalAppointments,
@@ -1100,10 +1148,10 @@ export const doctorDashboard = async (req, res, next) => {
       completedAppointments,
       cancelledAppointments,
     ] = await Promise.all([
-      appointmentsmodel.countDocuments({ doctorId }),
-      appointmentsmodel.countDocuments({ doctorId, status: "booked" }),
-      appointmentsmodel.countDocuments({ doctorId, status: "completed" }),
-      appointmentsmodel.countDocuments({ doctorId, status: "cancelled" }),
+      appointmentsmodel.countDocuments(filter),
+      appointmentsmodel.countDocuments({ ...filter, status: "booked" }),
+      appointmentsmodel.countDocuments({ ...filter, status: "completed" }),
+      appointmentsmodel.countDocuments({ ...filter, status: "cancelled" }),
     ]);
 
     successresponse({
@@ -1123,13 +1171,19 @@ export const doctorDashboard = async (req, res, next) => {
 
 export const getUpcomingAppointments = async (req, res, next) => {
   try {
+    const filter = {
+      doctorId: req.user._id,
+      status: "booked",
+      startDateTime: { $gte: new Date() },
+    };
+
+    if (req.query.clinicId && req.query.clinicId !== 'all') {
+      filter.clinicId = req.query.clinicId;
+    }
+
     const appointments = await db_service.find({
       model: appointmentsmodel,
-      filter: {
-        doctorId: req.user._id,
-        status: "booked",
-        startDateTime: { $gte: new Date() },
-      },
+      filter,
       populate: [
         {
           path: "patientId",
@@ -1158,16 +1212,22 @@ export const getTodayAppointments = async (req, res, next) => {
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
+    const filter = {
+      doctorId: req.user._id,
+      status: "booked",
+      startDateTime: {
+        $gte: startOfDay,
+        $lte: endOfDay,
+      },
+    };
+
+    if (req.query.clinicId && req.query.clinicId !== 'all') {
+      filter.clinicId = req.query.clinicId;
+    }
+
     const appointments = await db_service.find({
       model: appointmentsmodel,
-      filter: {
-        doctorId: req.user._id,
-        status: "booked",
-        startDateTime: {
-          $gte: startOfDay,
-          $lte: endOfDay,
-        },
-      },
+      filter,
       populate: [
         {
           path: "patientId",
@@ -1203,12 +1263,18 @@ export const getTodayAppointments = async (req, res, next) => {
 
 export const getCompletedAppointments = async (req, res, next) => {
   try {
+    const filter = {
+      doctorId: req.user._id,
+      status: "completed",
+    };
+
+    if (req.query.clinicId && req.query.clinicId !== 'all') {
+      filter.clinicId = req.query.clinicId;
+    }
+
     const appointments = await db_service.find({
       model: appointmentsmodel,
-      filter: {
-        doctorId: req.user._id,
-        status: "completed",
-      },
+      filter,
       populate: [
         {
           path: "patientId",
@@ -1275,6 +1341,142 @@ export const getPatientAppointments = async (req, res, next) => {
       message: "appointments retrieved successfully",
       data: appointments,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── SCHEDULE FOLLOW-UP ───────────────────────────────────────────────────
+export const scheduleFollowUp = async (req, res, next) => {
+    try {
+        const { appointmentId } = req.params;
+        const { gracePeriodDays = 7 } = req.body;
+
+        const appointment = await appointments_model.findById(appointmentId);
+        if (!appointment) throw new Error("Appointment not found", { cause: 404 });
+
+        const deadline = new Date();
+        deadline.setDate(deadline.getDate() + parseInt(gracePeriodDays));
+
+        appointment.isFollowUp = true;
+        appointment.followUpStatus = "scheduled";
+        appointment.followUpDeadline = deadline;
+        appointment.followUpSetBy = req.user._id;
+
+        await appointment.save();
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Follow-up scheduled successfully",
+            data: appointment
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── OVERRIDE FOLLOW-UP ───────────────────────────────────────────────────
+export const overrideFollowUp = async (req, res, next) => {
+    try {
+        const { appointmentId } = req.params;
+        
+        const appointment = await appointments_model.findById(appointmentId);
+        if (!appointment) throw new Error("Appointment not found", { cause: 404 });
+
+        appointment.followUpStatus = "overridden";
+        appointment.followUpSetBy = req.user._id;
+
+        await appointment.save();
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Follow-up status overridden to active",
+            data: appointment
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const generateCustomSlots = async (req, res, next) => {
+  try {
+    const { clinicId, dates } = req.body;
+    const doctorId = req.user._id;
+
+    if (!Array.isArray(dates) || dates.length === 0) {
+      throw new Error("You must provide an array of dates to generate slots for", { cause: 400 });
+    }
+
+    let totalGenerated = 0;
+
+    for (const dateStr of dates) {
+      const dateObj = dayjs(dateStr, "YYYY-MM-DD");
+      if (!dateObj.isValid()) continue;
+
+      const dayOfWeek = dateObj.format("dddd").toLowerCase();
+
+      // Wipe any UNBOOKED slots on this specific day for this doctor/clinic
+      const deleteFilter = {
+        doctorId,
+        isBooked: false,
+        startDateTime: {
+          $gte: dateObj.startOf("day").toDate(),
+          $lte: dateObj.endOf("day").toDate(),
+        },
+      };
+      if (clinicId) deleteFilter.clinicId = clinicId;
+
+      await slotmodel.deleteMany(deleteFilter);
+
+      // Find the availability rules for this day of week
+      const availFilter = { doctorId, day: dayFilter(dayOfWeek) };
+      if (clinicId) availFilter.clinicId = clinicId;
+
+      const availabilities = await db_service.find({
+        model: availabilitymodel,
+        filter: availFilter,
+      });
+
+      if (!availabilities.length) continue;
+
+      const newSlots = [];
+
+      for (const availability of availabilities) {
+        let currentSlot = dayjs(`${dateStr} ${availability.startTime}`, "YYYY-MM-DD HH:mm");
+        const endSlot = dayjs(`${dateStr} ${availability.endTime}`, "YYYY-MM-DD HH:mm");
+
+        while (currentSlot.isBefore(endSlot)) {
+          const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
+          if (nextSlot.isAfter(endSlot)) break;
+
+          if (currentSlot.isAfter(dayjs())) {
+            newSlots.push({
+              doctorId,
+              clinicId: availability.clinicId,
+              startDateTime: currentSlot.toDate(),
+              endDateTime: nextSlot.toDate(),
+              isBooked: false,
+            });
+          }
+          currentSlot = nextSlot;
+        }
+      }
+
+      if (newSlots.length > 0) {
+        await slotmodel.insertMany(newSlots);
+        totalGenerated += newSlots.length;
+      }
+    }
+
+    return successresponse({
+      res,
+      status: 200,
+      message: `Generated ${totalGenerated} slots successfully`,
+      data: { totalSlots: totalGenerated },
+    });
+
   } catch (error) {
     next(error);
   }

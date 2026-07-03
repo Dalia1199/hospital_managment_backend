@@ -139,6 +139,13 @@ adminrouter.get(
 );
 
 adminrouter.get(
+    "/stats/payments",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getPaymentAnalytics
+);
+
+adminrouter.get(
     "/stats/daily",
     authentication,
     authorization([roleenum.admin]),

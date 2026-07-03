@@ -261,7 +261,6 @@ export const notify = {
             message: `You have been paid ${amount} for a subscription plan.`,
             link: "/doctor/notifications"
         }),
-    };
     doctorPlanRenewed: (doctorId) =>
         createNotification({
             userId: doctorId,
@@ -279,6 +278,15 @@ export const getNotifications = async (req, res, next) => {
 
         const filterQuery = { userId: req.user._id };
 
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            // Notifications without a clinicId are considered "global" and shown everywhere
+            filterQuery.$or = [
+                { clinicId: req.query.clinicId },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+        }
+
         if (tab === "read") filterQuery.isRead = true;
         if (tab === "unread") filterQuery.isRead = false;
 
@@ -293,7 +301,7 @@ export const getNotifications = async (req, res, next) => {
                 .skip(skip)
                 .limit(parseInt(limit)),
             notificationmodel.countDocuments(filterQuery),
-            notificationmodel.countDocuments({ userId: req.user._id, isRead: false })
+            notificationmodel.countDocuments({ ...filterQuery, isRead: false })
         ]);
 
         return successresponse({

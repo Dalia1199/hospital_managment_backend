@@ -68,7 +68,9 @@ export const updateAvailabilitySchema = {
         endTime: Joi.string(),
  
         appointmentDuration: Joi.number()
-            .valid(15, 20, 30, 45, 60)
+            .valid(15, 20, 30, 45, 60),
+
+        force: Joi.boolean()
  
     }).min(1).required()
  
@@ -80,49 +82,23 @@ export const deleteAvailabilitySchema = {
  
         availabilityId: generalrules.id.required()
  
-    }).required()
+    }).required(),
+ 
+    query: Joi.object({
+        force: Joi.boolean()
+    })
  
 };
 
 export const generateSlotsSchema = {
-
     body: Joi.object({
-        clinicId: generalrules.id.required(),
-        startDate: Joi.date().required(),
-
-        endDate: Joi.date()
-            .greater(Joi.ref("startDate"))
-            .required()
-
-    }).custom((value, helpers) => {
-
-        const start = new Date(value.startDate);
-        const end = new Date(value.endDate);
-
-        const diffDays =
-            Math.ceil(
-                (end - start) /
-                (1000 * 60 * 60 * 24)
-            );
-
-        if (diffDays > 90) {
-
-            return helpers.error(
-                "any.invalid"
-            );
-
-        }
-
-        return value;
-
-    }).messages({
-
-        "any.invalid":
-            "maximum generation period is 90 days"
-
-    })
-
+        clinicId: generalrules.id,
+        dates: Joi.array().items(
+            Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/)
+        ).min(1).required()
+    }).required()
 };
+
 export const getAvailableSlotsSchema = {
 
     params: Joi.object({
@@ -140,9 +116,10 @@ export const getAvailableSlotsSchema = {
     }).required(),
 
     query: Joi.object({
-        
-         clinicId: generalrules.id
-    }).required()
+         clinicId: generalrules.id,
+         startDate: Joi.date().iso().optional(),
+         endDate: Joi.date().iso().optional()
+    }).unknown(true).required()
 
 };
 export const bookAppointmentSchema = {

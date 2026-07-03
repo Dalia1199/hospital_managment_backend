@@ -28,7 +28,9 @@ export const limitEnum = {
 
     doctors: "doctors",
 
-    appointmentsPerMonth: "appointmentsPerMonth"
+    appointmentsPerMonth: "appointmentsPerMonth",
+
+    clinics: "clinics"
 
 };
 

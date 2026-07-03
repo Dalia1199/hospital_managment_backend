@@ -4,6 +4,9 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import appointments_model from "../../DB/models/appointments_model.js";
+import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
+import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
+import paymentmodel from "../../DB/models/paymentmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
@@ -98,6 +101,24 @@ export const approveDoctor = async (req, res, next) => {
                 ttl: 60 * 3
             });
         });
+
+        // ─── Auto-create Free Subscription ─────────────────────────────────
+        const freePlan = await db_service.findOne({
+            model: subscriptionmodel,
+            filter: { name: "Free" }
+        });
+
+        if (freePlan) {
+            await db_service.create({
+                model: doctorSubscriptionModel,
+                data: {
+                    doctorId: doctor._id,
+                    subscriptionId: freePlan._id,
+                    status: "active"
+                }
+            });
+        }
+        // ───────────────────────────────────────────────────────────────────
 
         return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
     } catch (error) {
@@ -636,6 +657,77 @@ export const getMonthlyStats = async (req, res, next) => {
             status: 200,
             message: "Monthly stats fetched successfully",
             data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── GET /admin/stats/payments ───────────────────────────────────────────────
+export const getPaymentAnalytics = async (req, res, next) => {
+    try {
+        // Total revenue
+        const totalRevenueAggr = await paymentmodel.aggregate([
+            { $match: { paymentStatus: "completed" } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+        const totalRevenue = totalRevenueAggr[0]?.total || 0;
+
+        // Revenue by purpose
+        const revenueByPurposeAggr = await paymentmodel.aggregate([
+            { $match: { paymentStatus: "completed" } },
+            { $group: { _id: "$purpose", total: { $sum: "$amount" }, count: { $sum: 1 } } }
+        ]);
+
+        const revenueByPurpose = revenueByPurposeAggr.map(item => ({
+            purpose: item._id,
+            total: item.total,
+            count: item.count
+        }));
+
+        // Revenue over the last 6 months
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+        sixMonthsAgo.setDate(1);
+        sixMonthsAgo.setHours(0, 0, 0, 0);
+
+        const monthlyRevenueAggr = await paymentmodel.aggregate([
+            { $match: { paymentStatus: "completed", createdAt: { $gte: sixMonthsAgo } } },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" }
+                    },
+                    total: { $sum: "$amount" }
+                }
+            },
+            { $sort: { "_id.year": 1, "_id.month": 1 } }
+        ]);
+
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthlyRevenue = monthlyRevenueAggr.map(item => ({
+            month: `${months[item._id.month - 1]} ${item._id.year}`,
+            total: item.total
+        }));
+
+        // Recent transactions
+        const recentTransactions = await paymentmodel.find()
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .populate("userId", "fullName email")
+            .lean();
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Payment analytics fetched successfully",
+            data: {
+                totalRevenue,
+                revenueByPurpose,
+                monthlyRevenue,
+                recentTransactions
+            }
         });
     } catch (error) {
         next(error);

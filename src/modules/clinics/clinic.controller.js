@@ -6,6 +6,7 @@ import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { spoofAssistantToDoctor, requirePermission, auditLogger } from "../../common/middleware/assistant.middleware.js";
 import { validation } from "../../common/middleware/validation.js";
+import { requireClinicSlot } from "../../common/middleware/subscriptionGuard.js";
 
 const clinicrouter = Router();
 
@@ -15,6 +16,7 @@ clinicrouter.post(
     authentication,
     requirePermission("canManageClinics"),
     authorization([roleenum.doctor]),
+    requireClinicSlot(),
     validation(CV.addClinicSchema),
     auditLogger("ADD_CLINIC"),
     CS.addClinic

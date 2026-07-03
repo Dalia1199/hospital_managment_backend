@@ -395,11 +395,7 @@ if(req.user.role===roleenum.doctor){
 
                 doctorSubscriptionModel,
 
-            id:
-
-                subscriptionId
-                filter
-
+            filter
         });
         // console.log(subscription);
         if (
@@ -466,43 +462,27 @@ if(req.user.role===roleenum.doctor){
         }
 
         await db_service.findOneAndUpdate({
-
             model:
-
                 doctorSubscriptionModel,
-
             filter,
-
-         
-
             update: {
-
                 status:
-
                     subscriptionStatusEnum.cancelled,
-
                 cancelledAt:
-
                     new Date(),
-
                 cancelledBy:
-
                     req.user._id,
-
                 cancelReason
-
             }
-
         });
 
+        // --- Defer enforcement to frontend ---
+        // The frontend GlobalClinicLimitGuard will detect excess clinics and force the user to choose.
+
         return successresponse({
-
             res,
-
             message:
-
                 "Subscription cancelled successfully"
-
         });
 
     }

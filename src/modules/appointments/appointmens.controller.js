@@ -53,23 +53,17 @@ appointmensrouter.delete(
     AS.deleteAvailability
 );
 
+//done
+
 appointmensrouter.post(
-
     "/generate-slots",
-
     authentication,
-
     requirePermission("canManageAppointments"),
     authorization([roleenum.doctor]),
-
-    validation(
-        AV.generateSlotsSchema
-    ),
+    validation(AV.generateSlotsSchema),
     auditLogger("GENERATE_SLOTS"),
-    AS.generateMonthlySlots
-
+    AS.generateCustomSlots
 );
-//done
 
 appointmensrouter.get(
 
@@ -239,4 +233,27 @@ appointmensrouter.get(
     authorization([roleenum.patient]),
     AS.getPatientAppointments
 );
+
+// ==============================
+// Follow Up Routes
+// ==============================
+
+appointmensrouter.post(
+    "/:appointmentId/schedule-followup",
+    authentication,
+    requirePermission("canManageAppointments"),
+    authorization([roleenum.doctor]),
+    auditLogger("SCHEDULE_FOLLOWUP"),
+    AS.scheduleFollowUp
+);
+
+appointmensrouter.patch(
+    "/:appointmentId/override-followup",
+    authentication,
+    requirePermission("canManageAppointments"),
+    authorization([roleenum.doctor]),
+    auditLogger("OVERRIDE_FOLLOWUP"),
+    AS.overrideFollowUp
+);
+
 export default appointmensrouter;

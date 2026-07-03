@@ -46,6 +46,7 @@ import reviewmodel from "../../DB/models/reviewmodel.js";
 import slotmodel from "../../DB/models/slot_model.js";
 import availabilitymodel from "../../DB/models/avalibility_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
+import DoctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
 import { notify } from "../notifications/notification.service.js";
 
 const sendemailotp = async ({ email, subject } = {}) => {
@@ -340,10 +341,26 @@ export const signin = async (req, res, next) => {
   console.log("REFRESH:", refreshtoken);
 
   let assistantData = null;
+  let subscriptionPlan = null;
+  
   if (user.role === roleenum.assistant) {
     assistantData = await AssistantModel.findOne({ userId: user._id })
       .populate('doctorId', 'fullName')
       .populate('clinicId', 'name');
+  } else if (user.role === roleenum.doctor) {
+    const doctor = await doctormodel.findOne({ userId: user._id }).lean();
+    if (doctor) {
+      const activeSubscription = await DoctorSubscriptionModel.findOne({
+        doctorId: user._id,
+        status: "active"
+      }).populate('subscriptionId', 'name').lean();
+      
+      if (activeSubscription && activeSubscription.subscriptionId) {
+        subscriptionPlan = activeSubscription.subscriptionId.name;
+      } else {
+        subscriptionPlan = "Free"; // Default if missing
+      }
+    }
   }
 
   successresponse({
@@ -357,6 +374,7 @@ export const signin = async (req, res, next) => {
       id: user._id,
       fullName: user.fullName,
       profilepicture: user.profilepicture,
+      ...(subscriptionPlan && { subscriptionPlan }),
       ...(assistantData && { 
           permissions: assistantData.permissions,
           doctorId: assistantData.doctorId?._id || assistantData.doctorId,
@@ -536,6 +554,8 @@ export const signup = async (req, res, next) => {
     throw error;
   }
 };
+import { getPlanName, getActiveFeatures, getClinicLimit } from "../../common/utilits/subscription.guard.js";
+
 export const getprofile = async (req, res, next) => {
   const user = req.user;
   if (!user) {
@@ -543,6 +563,10 @@ export const getprofile = async (req, res, next) => {
   }
 
   let assistantData = null;
+  let subscriptionPlan = "Free";
+  let subscriptionFeatures = [];
+  let clinicLimit = 0;
+  
   if (user.role === roleenum.assistant) {
     assistantData = await AssistantModel.findOne({ userId: user._id })
       .populate('doctorId', 'fullName')
@@ -550,6 +574,13 @@ export const getprofile = async (req, res, next) => {
       
     if (assistantData && assistantData.isActive === false) {
       return next(new Error("Account suspended. Please contact your doctor.", { cause: 403 }));
+    }
+  } else if (user.role === roleenum.doctor) {
+    const doctor = await doctormodel.findOne({ userId: user._id }).lean();
+    if (doctor) {
+        subscriptionPlan = await getPlanName(user._id);
+        subscriptionFeatures = await getActiveFeatures(user._id);
+        clinicLimit = await getClinicLimit(user._id);
     }
   }
 
@@ -562,6 +593,11 @@ export const getprofile = async (req, res, next) => {
       id: user._id,
       fullName: user.fullName,
       profilepicture: user.profilepicture,
+      ...(user.role === roleenum.doctor && { 
+          subscriptionPlan,
+          subscriptionFeatures,
+          clinicLimit
+      }),
       ...(assistantData && { 
           permissions: assistantData.permissions,
           doctorId: assistantData.doctorId?._id || assistantData.doctorId,

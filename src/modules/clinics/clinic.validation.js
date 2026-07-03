@@ -19,7 +19,9 @@ export const addClinicSchema = {
         whatsapp:    Joi.string().pattern(phoneRegex).optional()
                         .messages({ "string.pattern.base": "invalid WhatsApp number" }),
         landline:    Joi.string().pattern(landlineRegex).optional()
-                        .messages({ "string.pattern.base": "invalid landline number" })
+                        .messages({ "string.pattern.base": "invalid landline number" }),
+        consultationFee: Joi.number().min(0).required(),
+        followUpFee: Joi.number().min(0).required()
     })
     .or("phone", "whatsapp", "landline")
     .required()
@@ -38,6 +40,8 @@ export const updateClinicSchema = {
                             .messages({ "string.pattern.base": "invalid WhatsApp number" }),
             landline:    Joi.string().pattern(landlineRegex).allow("")
                             .messages({ "string.pattern.base": "invalid landline number" }),
+            consultationFee: Joi.number().min(0),
+            followUpFee: Joi.number().min(0),
             isActive:    Joi.boolean()
         }).min(1).required()
     };
