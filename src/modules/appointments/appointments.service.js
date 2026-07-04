@@ -1539,7 +1539,7 @@ export const generateCustomSlots = async (req, res, next) => {
         const dateObj = dayjs(dateStr, "YYYY-MM-DD");
         if (!dateObj.isValid()) continue;
 
-        const bookedInOtherClinics = await appointments_model.find({
+        const bookedInOtherClinics = await appointmentsmodel.find({
           doctorId,
           clinicId: { $ne: clinicId },
           status: "booked", // Or whatever statuses mean 'active'
