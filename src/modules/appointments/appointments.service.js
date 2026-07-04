@@ -372,54 +372,6 @@ export const updateAvailability = async (req, res, next) => {
       });
     }
 
-    const allDayOtherClinics = await availabilitymodel.find({
-      doctorId: req.user._id,
-      day: dayFilter(nextDay),
-      clinicId: { $ne: availability.clinicId },
-    });
-
-    const crossOverlap = allDayOtherClinics.find((a) => {
-      return newStart < toMinutes(a.endTime) && newEnd > toMinutes(a.startTime);
-    });
-
-    if (crossOverlap) {
-      throw new Error(
-        `Time conflict with another clinic: ${crossOverlap.startTime} – ${crossOverlap.endTime}`,
-        { cause: 409 },
-      );
-    }
-
-    // FIX: scoped to the day actually being changed (the ORIGINAL day,
-    // since that's the schedule whose hours are being modified) instead of
-    // counting every booked slot in the whole clinic.
-    const bookedAppointments = await getBookedSlotsOnDay({
-      doctorId: req.user._id,
-      clinicId: availability.clinicId,
-      day: availability.day,
-    });
-
-    const isForce = req.query?.force === "true" || req.body?.force === true;
-
-    if (bookedAppointments.length > 0 && !isForce) {
-      return successresponse({
-        res,
-        status: 409,
-        message: "cannot update availability with booked slots",
-        data: {
-          canUpdate: false,
-          bookedSlots: bookedAppointments.length,
-          affectedAppointments: bookedAppointments,
-        },
-      });
-    }
-
-    if (bookedAppointments.length > 0 && isForce) {
-      // Cancel affected appointments
-      for (const appt of bookedAppointments) {
-        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule changed by doctor");
-      }
-    }
-
     const updatedAvailability = await db_service.findOneAndUpdate({
       model: availabilitymodel,
       filter: { _id: availabilityId },
@@ -462,35 +414,6 @@ export const deleteAvailability = async (req, res, next) => {
 
     if (!availability) {
       throw new Error("availability not found", { cause: 404 });
-    }
-
-    // FIX: scoped to this availability's day only (see updateAvailability)
-    const bookedAppointments = await getBookedSlotsOnDay({
-      doctorId: req.user._id,
-      clinicId: availability.clinicId,
-      day: availability.day,
-    });
-
-    const isForce = req.query?.force === "true" || req.body?.force === true;
-
-    if (bookedAppointments.length > 0 && !isForce) {
-      return successresponse({
-        res,
-        status: 409,
-        message: "cannot delete availability with booked slots",
-        data: {
-          canDelete: false,
-          bookedSlots: bookedAppointments.length,
-          affectedAppointments: bookedAppointments,
-        },
-      });
-    }
-
-    if (bookedAppointments.length > 0 && isForce) {
-      // Cancel affected appointments
-      for (const appt of bookedAppointments) {
-        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule deleted by doctor");
-      }
     }
 
     await db_service.deleteOne({
@@ -1597,35 +1520,65 @@ export const overrideFollowUp = async (req, res, next) => {
 
 export const generateCustomSlots = async (req, res, next) => {
   try {
-    const { clinicId, dates } = req.body;
+    const { clinicId, dates, force } = req.body;
     const doctorId = req.user._id;
 
     if (!Array.isArray(dates) || dates.length === 0) {
       throw new Error("You must provide an array of dates to generate slots for", { cause: 400 });
     }
 
-    let totalGenerated = 0;
+    // 1. Check for Cross-Clinic Conflicts First
+    const isForce = force === true || req.query?.force === "true";
+    
+    // We only check conflicts if clinicId is provided, because if no clinicId is provided, 
+    // we are generating slots for all clinics? Actually the UI always provides clinicId.
+    if (clinicId && !isForce) {
+      const conflictDates = [];
+      const conflictAppointments = [];
 
+      for (const dateStr of dates) {
+        const dateObj = dayjs(dateStr, "YYYY-MM-DD");
+        if (!dateObj.isValid()) continue;
+
+        const bookedInOtherClinics = await appointments_model.find({
+          doctorId,
+          clinicId: { $ne: clinicId },
+          status: "booked", // Or whatever statuses mean 'active'
+          startDateTime: {
+            $gte: dateObj.startOf("day").toDate(),
+            $lte: dateObj.endOf("day").toDate(),
+          },
+        }).populate("clinicId", "name");
+
+        if (bookedInOtherClinics.length > 0) {
+          conflictDates.push(dateStr);
+          conflictAppointments.push(...bookedInOtherClinics);
+        }
+      }
+
+      if (conflictDates.length > 0) {
+        return successresponse({
+          res,
+          status: 409,
+          message: "You have booked appointments in other clinics on these dates.",
+          data: {
+            conflicts: true,
+            conflictDates,
+            conflictAppointments,
+          },
+        });
+      }
+    }
+
+    let totalGenerated = 0;
+    const allDesiredSlots = [];
+
+    // 2. Build the Desired Slots in Memory
     for (const dateStr of dates) {
       const dateObj = dayjs(dateStr, "YYYY-MM-DD");
       if (!dateObj.isValid()) continue;
 
       const dayOfWeek = dateObj.format("dddd").toLowerCase();
-
-      // Wipe any UNBOOKED slots on this specific day for this doctor
-      // Expanding time window by 3 hours to cover timezone differences (e.g., Egypt UTC+2/+3)
-      const deleteFilter = {
-        doctorId,
-        isBooked: false,
-        startDateTime: {
-          $gte: dateObj.subtract(3, 'hour').startOf("day").toDate(),
-          $lte: dateObj.add(3, 'hour').endOf("day").toDate(),
-        },
-      };
-      // We intentionally do NOT filter by clinicId here. If the doctor generates slots for a day,
-      // it should clean up any stale/wrong slots for that day before generating new ones.
-
-      await slotmodel.deleteMany(deleteFilter);
 
       // Find the availability rules for this day of week
       const availFilter = { doctorId, day: dayFilter(dayOfWeek) };
@@ -1638,8 +1591,6 @@ export const generateCustomSlots = async (req, res, next) => {
 
       if (!availabilities.length) continue;
 
-      const newSlots = [];
-
       for (const availability of availabilities) {
         let currentSlot = dayjs(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm");
         const endSlot = dayjs(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm");
@@ -1649,7 +1600,7 @@ export const generateCustomSlots = async (req, res, next) => {
           if (nextSlot.isAfter(endSlot)) break;
 
           if (currentSlot.isAfter(dayjs())) {
-            newSlots.push({
+            allDesiredSlots.push({
               doctorId,
               clinicId: availability.clinicId,
               startDateTime: currentSlot.toDate(),
@@ -1660,17 +1611,63 @@ export const generateCustomSlots = async (req, res, next) => {
           currentSlot = nextSlot;
         }
       }
+    }
 
-      if (newSlots.length > 0) {
-        await slotmodel.insertMany(newSlots);
-        totalGenerated += newSlots.length;
+    // 3. Smart Diff (Update existing slots instead of wipe-and-replace)
+    for (const dateStr of dates) {
+      const dateObj = dayjs(dateStr, "YYYY-MM-DD");
+      if (!dateObj.isValid()) continue;
+
+      // Desired slots for THIS date
+      const desiredForDate = allDesiredSlots.filter(s => dayjs(s.startDateTime).format("YYYY-MM-DD") === dateStr);
+      
+      // Existing unbooked slots for THIS date (expanding time window slightly for timezone safety)
+      const existingUnbooked = await slotmodel.find({
+        doctorId,
+        isBooked: false,
+        startDateTime: {
+          $gte: dateObj.subtract(3, 'hour').startOf("day").toDate(),
+          $lte: dateObj.add(3, 'hour').endOf("day").toDate(),
+        },
+        ...(clinicId ? { clinicId } : {})
+      });
+
+      const slotsToInsert = [];
+      const slotsToKeepIds = new Set();
+
+      for (const ds of desiredForDate) {
+        const match = existingUnbooked.find(es => 
+          es.startDateTime.getTime() === ds.startDateTime.getTime() && 
+          es.clinicId.toString() === ds.clinicId.toString()
+        );
+
+        if (match) {
+          slotsToKeepIds.add(match._id.toString());
+        } else {
+          slotsToInsert.push(ds);
+        }
+      }
+
+      // Delete unbooked slots that are NO LONGER desired
+      const idsToDelete = existingUnbooked
+        .filter(es => !slotsToKeepIds.has(es._id.toString()))
+        .map(es => es._id);
+
+      if (idsToDelete.length > 0) {
+        await slotmodel.deleteMany({ _id: { $in: idsToDelete } });
+      }
+
+      // Insert new slots
+      if (slotsToInsert.length > 0) {
+        await slotmodel.insertMany(slotsToInsert);
+        totalGenerated += slotsToInsert.length;
       }
     }
 
     return successresponse({
       res,
       status: 200,
-      message: `Generated ${totalGenerated} slots successfully`,
+      message: `Generated/Updated slots successfully. Added ${totalGenerated} new slots.`,
       data: { totalSlots: totalGenerated },
     });
 
