@@ -421,6 +421,22 @@ export const deleteAvailability = async (req, res, next) => {
       filter: { _id: availabilityId },
     });
 
+    // Automatically clean up future unbooked slots for this day/clinic
+    const futureUnbookedSlots = await slotmodel.find({
+      doctorId: req.user._id,
+      clinicId: availability.clinicId,
+      isBooked: false,
+      startDateTime: { $gte: new Date() },
+    });
+
+    const slotsToDelete = futureUnbookedSlots
+      .filter(s => dayjs(s.startDateTime).format("dddd").toLowerCase() === availability.day.toLowerCase())
+      .map(s => s._id);
+
+    if (slotsToDelete.length > 0) {
+      await slotmodel.deleteMany({ _id: { $in: slotsToDelete } });
+    }
+
     return successresponse({
       res,
       status: 200,
