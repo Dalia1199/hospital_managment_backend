@@ -1578,6 +1578,7 @@ export const generateCustomSlots = async (req, res, next) => {
       if (!dateObj.isValid()) continue;
 
       const dayOfWeek = dateObj.format("dddd").toLowerCase();
+      console.log(`[generateCustomSlots] dateStr=${dateStr}, dayOfWeek=${dayOfWeek}`);
 
       // Find the availability rules for this day of week
       const availFilter = { doctorId, day: dayFilter(dayOfWeek) };
@@ -1587,6 +1588,8 @@ export const generateCustomSlots = async (req, res, next) => {
         model: availabilitymodel,
         filter: availFilter,
       });
+
+      console.log(`[generateCustomSlots] availabilities for ${dayOfWeek}:`, availabilities.length);
 
       if (!availabilities.length) continue;
 
@@ -1619,14 +1622,15 @@ export const generateCustomSlots = async (req, res, next) => {
 
       // Desired slots for THIS date
       const desiredForDate = allDesiredSlots.filter(s => dayjs(s.startDateTime).format("YYYY-MM-DD") === dateStr);
+      console.log(`[Smart Diff] ${dateStr}: desiredForDate.length = ${desiredForDate.length}`);
       
       // Existing unbooked slots for THIS date (expanding time window slightly for timezone safety)
       const existingUnbooked = await slotmodel.find({
         doctorId,
         isBooked: false,
         startDateTime: {
-          $gte: dateObj.subtract(3, 'hour').startOf("day").toDate(),
-          $lte: dateObj.add(3, 'hour').endOf("day").toDate(),
+          $gte: dateObj.startOf("day").toDate(),
+          $lte: dateObj.endOf("day").toDate(),
         },
         ...(clinicId ? { clinicId } : {})
       });
@@ -1661,6 +1665,7 @@ export const generateCustomSlots = async (req, res, next) => {
         await slotmodel.insertMany(slotsToInsert);
         totalGenerated += slotsToInsert.length;
       }
+      console.log(`[Smart Diff] ${dateStr}: inserted = ${slotsToInsert.length}, deleted = ${idsToDelete.length}`);
     }
 
     return successresponse({
