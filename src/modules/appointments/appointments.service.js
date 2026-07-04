@@ -665,6 +665,30 @@ export const confirmAndCreate = async (req, res, next) => {
     if (!payment) {
       throw new Error('valid payment not found', { cause: 400 });
     }
+    let isFollowUp = false;
+    let parentAppointmentId = null;
+
+    // Check if there is a scheduled follow-up
+    const validFollowUp = await appointmentsmodel.findOne({
+      patientId: req.user._id,
+      doctorId: slot.doctorId,
+      status: "completed",
+      followUpStatus: { $in: ["scheduled", "overridden"] }
+    }).sort({ createdAt: -1 });
+
+    if (validFollowUp) {
+      const bookingDate = dayjs(slot.startDateTime);
+      const deadline = dayjs(validFollowUp.followUpDeadline);
+      
+      if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+         isFollowUp = true;
+         parentAppointmentId = validFollowUp._id;
+      } else if (validFollowUp.followUpStatus === "scheduled") {
+         validFollowUp.followUpStatus = "expired";
+         await validFollowUp.save();
+      }
+    }
+
     // Create appointment with paid status
     const appointment = await db_service.create({
       model: appointmentsmodel,
@@ -679,8 +703,17 @@ export const confirmAndCreate = async (req, res, next) => {
         endDateTime: slot.endDateTime,
         paymentStatus: 'paid',
         status: 'booked',
+        isFollowUp,
+        parentAppointmentId
       },
     });
+
+    if (isFollowUp && parentAppointmentId) {
+       await appointmentsmodel.findByIdAndUpdate(parentAppointmentId, {
+           followUpStatus: "used"
+       });
+    }
+
     // Mark slot as booked and clear reservation
     await slotmodel.findByIdAndUpdate(slotId, { isBooked: true, isReserved: false, reservedAt: null });
     // Notify patient and doctor
@@ -826,7 +859,7 @@ export const getDoctorAppointments = async (req, res, next) => {
 };
 
 //done
-export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reason) => {
+export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reason, cancelledByDoctor = false) => {
   const appointment = await appointmentsmodel.findById(appointmentId);
   if (!appointment) return;
 
@@ -840,12 +873,16 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
   if (appointment.isFollowUp && appointment.parentAppointmentId) {
     const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
     if (parentAppt && parentAppt.followUpStatus === "used") {
-      const originalDeadline = new Date(parentAppt.followUpDeadline);
-      const newDeadline = new Date();
-      newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+      if (cancelledByDoctor || (actionByUserId && actionByUserId.toString() === appointment.doctorId.toString())) {
+        parentAppt.followUpStatus = "overridden";
+      } else {
+        const originalDeadline = new Date(parentAppt.followUpDeadline);
+        const newDeadline = new Date();
+        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
 
-      parentAppt.followUpStatus = "scheduled";
-      parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+      }
       await parentAppt.save();
     }
   }
@@ -1698,7 +1735,7 @@ export const deleteDoctorSlot = async (req, res, next) => {
             const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
             if (appointment) {
                 try {
-                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor", true);
                 } catch (cancelErr) {
                     console.error("[deleteDoctorSlot] Failed to cancel appointment, forcing slot delete anyway:", cancelErr);
                     // Force-mark the appointment as cancelled even if refund failed
@@ -1736,7 +1773,7 @@ export const deleteMultipleDoctorSlots = async (req, res, next) => {
                 const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
                 if (appointment) {
                     try {
-                        await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                        await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor", true);
                     } catch (cancelErr) {
                         console.error("[deleteMultipleDoctorSlots] Failed to cancel appointment:", cancelErr);
                         await appointmentsmodel.findByIdAndUpdate(appointment._id, { status: "cancelled" });
