@@ -146,6 +146,14 @@ appointmensrouter.post(
     }
   }
 );
+
+appointmensrouter.delete(
+  "/slots/:slotId",
+  authentication,
+  authorization([roleenum.doctor]),
+  AS.deleteDoctorSlot
+);
+
 //done
 appointmensrouter.get(
 

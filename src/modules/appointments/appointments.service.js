@@ -506,20 +506,57 @@ export const deleteAvailability = async (req, res, next) => {
 export const getAvailableSlots = async (req, res, next) => {
   try {
     const { doctorId } = req.params;
-    const { clinicId, startDate, endDate } = req.query;
+    const { clinicId, startDate, endDate, includeBooked } = req.query;
 
     const start = startDate ? new Date(startDate) : new Date();
     const filter = {
       doctorId,
-      isBooked: false,
       startDateTime: { $gte: start },
     };
+    
+    // Only patients restrict by isBooked: false, OR if not specifically requested
+    if (!(req.user?.role === 'doctor' && includeBooked === 'true')) {
+        filter.isBooked = false;
+    }
+
     if (endDate) {
       filter.startDateTime.$lte = new Date(endDate);
     }
     if (clinicId) filter.clinicId = clinicId;
 
-    const slots = await slotmodel.find(filter).sort({ startDateTime: 1 });
+    const slots = await slotmodel.find(filter).sort({ startDateTime: 1 }).lean();
+
+    if (req.user?.role === 'doctor' && includeBooked === 'true') {
+        const slotIds = slots.map(s => s._id);
+        const appointments = await db_service.find({
+            model: appointmentsmodel,
+            filter: { slotId: { $in: slotIds }, status: 'booked' },
+            populate: [{ path: 'patientId', select: 'fullName phoneNumber' }]
+        });
+        
+        const appointmentMap = {};
+        appointments.forEach(app => {
+            if (app.patientId && app.patientId.phoneNumber) {
+                try {
+                    app.patientId.phoneNumber = decrypt(app.patientId.phoneNumber);
+                } catch (e) {
+                    console.error("Failed to decrypt patient phone", e);
+                }
+            }
+            appointmentMap[app.slotId.toString()] = app;
+        });
+
+        slots.forEach(slot => {
+            if (slot.isBooked && appointmentMap[slot._id.toString()]) {
+                const app = appointmentMap[slot._id.toString()];
+                slot.appointmentDetails = {
+                    patientName: app.patientId?.fullName,
+                    patientPhone: app.patientId?.phoneNumber,
+                    appointmentId: app._id
+                };
+            }
+        });
+    }
 
     return successresponse({
       res,
@@ -876,27 +913,21 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
   });
 
   if (appointment.paymentStatus === "paid") {
-    const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
     const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
-    const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+    const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
     
-    const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
-    if (payment) {
-        // If doctor cancels, doctor compensation is 0, patient gets 100% refund.
-        // Wait, calculateRefundSplit checks who canceled. In our new requirement, if a schedule change causes it, 
-        // the doctor is canceling it. We should force full refund to patient.
-        const patientRefund = payment.amount;
+    const docRevenueTx = await transactionmodel.findOne({
+        userId: appointment.doctorId,
+        purpose: 'online_booking_revenue',
+        $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
+    });
+
+    if (docRevenueTx && docRevenueTx.metadata && docRevenueTx.metadata.totalPaid) {
+        const totalPaid = docRevenueTx.metadata.totalPaid;
+        const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
         
-        // Add to patient wallet
-        await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
-        
-        const { getAppConfig } = await import('../appconfig/appconfig.service.js');
-        const config = await getAppConfig();
-        let platformFeeFixed = config.platformFeePercentage > 0 
-            ? (payment.amount * config.platformFeePercentage) / 100 
-            : config.platformFeeFixed;
-        const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
-        
+        // Doctor cancelled -> 100% refund
+        await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
         await removePendingBalance(appointment.doctorId, originalDoctorShare);
     }
   }
@@ -937,21 +968,21 @@ export const cancelAppointment = async (req, res, next) => {
     if (appointment.paymentStatus === "paid") {
       const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
       const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
-      const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+      const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
       
-      const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
-      if (payment) {
-          const { patientRefund, doctorCompensation } = await calculateRefundSplit(payment.amount);
+      const docRevenueTx = await transactionmodel.findOne({
+          userId: appointment.doctorId,
+          purpose: 'online_booking_revenue',
+          $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
+      });
+
+      if (docRevenueTx && docRevenueTx.metadata && docRevenueTx.metadata.totalPaid) {
+          const totalPaid = docRevenueTx.metadata.totalPaid;
+          const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
           
-          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
+          const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
           
-          const { getAppConfig } = await import('../appconfig/appconfig.service.js');
-          const config = await getAppConfig();
-          let platformFeeFixed = config.platformFeePercentage > 0 
-              ? (payment.amount * config.platformFeePercentage) / 100 
-              : config.platformFeeFixed;
-          const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
-          
+          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
           await removePendingBalance(appointment.doctorId, originalDoctorShare);
           
           if (doctorCompensation > 0) {
@@ -1604,4 +1635,38 @@ export const generateCustomSlots = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+export const deleteDoctorSlot = async (req, res, next) => {
+    try {
+        const { slotId } = req.params;
+        const doctorId = req.user._id;
+
+        const slot = await slotmodel.findById(slotId);
+        if (!slot) {
+            throw new Error("slot not found", { cause: 404 });
+        }
+
+        if (slot.doctorId.toString() !== doctorId.toString()) {
+            throw new Error("unauthorized to delete this slot", { cause: 403 });
+        }
+
+        if (slot.isBooked) {
+            const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
+            if (appointment) {
+                await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+            }
+        }
+
+        await slotmodel.findByIdAndDelete(slotId);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "slot deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
 };
