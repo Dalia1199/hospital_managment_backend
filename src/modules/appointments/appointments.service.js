@@ -1583,16 +1583,18 @@ export const generateCustomSlots = async (req, res, next) => {
 
       const dayOfWeek = dateObj.format("dddd").toLowerCase();
 
-      // Wipe any UNBOOKED slots on this specific day for this doctor/clinic
+      // Wipe any UNBOOKED slots on this specific day for this doctor
+      // Expanding time window by 3 hours to cover timezone differences (e.g., Egypt UTC+2/+3)
       const deleteFilter = {
         doctorId,
         isBooked: false,
         startDateTime: {
-          $gte: dateObj.startOf("day").toDate(),
-          $lte: dateObj.endOf("day").toDate(),
+          $gte: dateObj.subtract(3, 'hour').startOf("day").toDate(),
+          $lte: dateObj.add(3, 'hour').endOf("day").toDate(),
         },
       };
-      if (clinicId) deleteFilter.clinicId = clinicId;
+      // We intentionally do NOT filter by clinicId here. If the doctor generates slots for a day,
+      // it should clean up any stale/wrong slots for that day before generating new ones.
 
       await slotmodel.deleteMany(deleteFilter);
 
