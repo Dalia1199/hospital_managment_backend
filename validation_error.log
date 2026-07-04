@@ -1,0 +1,16 @@
+{
+  "url": "/appointmens/availability/6a445482ae4f43df4488e7d8?clinicId=6a3b2f2572c1ec9cbf6253a2",
+  "query": {
+    "clinicId": "6a3b2f2572c1ec9cbf6253a2"
+  },
+  "params": {
+    "availabilityId": "6a445482ae4f43df4488e7d8"
+  },
+  "errorresult": [
+    {
+      "key": "query",
+      "path": "clinicId",
+      "message": "\"clinicId\" is not allowed"
+    }
+  ]
+}

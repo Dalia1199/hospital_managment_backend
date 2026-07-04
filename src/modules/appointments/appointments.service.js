@@ -26,6 +26,13 @@ const toMinutes = (time) => {
   return hours * 60 + minutes;
 };
 
+// Normalize a stored time string like "9:00" or "09:00" to always be "09:00"
+// so that dayjs("YYYY-MM-DD HH:mm") parses it correctly.
+const normalizeTime = (time) => {
+  const [h, m] = time.split(":");
+  return `${String(Number(h)).padStart(2, "0")}:${String(Number(m)).padStart(2, "0")}`;
+};
+
 // case-insensitive "day" matcher — availability.day may have been stored as
 // "Monday", "monday", etc. depending on who created it. Using a regex filter
 // at the DB level keeps the overlap checks correct regardless of casing,
@@ -265,12 +272,12 @@ export async function regenerateSlotsForRange({
 
     for (const availability of dayAvailabilities) {
       let currentSlot = dayjs(
-        `${currentDate.format("YYYY-MM-DD")} ${availability.startTime}`,
+        `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.startTime)}`,
         "YYYY-MM-DD HH:mm",
       );
 
       const endSlot = dayjs(
-        `${currentDate.format("YYYY-MM-DD")} ${availability.endTime}`,
+        `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.endTime)}`,
         "YYYY-MM-DD HH:mm",
       );
 
@@ -932,7 +939,12 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
     }
   }
 
-  await notify.appointmentCancelled(appointment.patientId);
+  // Non-blocking: notification failure should never prevent cancellation
+  try {
+    await notify.appointmentCancelled(appointment.patientId);
+  } catch (notifyErr) {
+    console.error("[cancelAppointmentLogic] Failed to send cancellation notification:", notifyErr);
+  }
   return appointment;
 };
 
@@ -1599,8 +1611,8 @@ export const generateCustomSlots = async (req, res, next) => {
       const newSlots = [];
 
       for (const availability of availabilities) {
-        let currentSlot = dayjs(`${dateStr} ${availability.startTime}`, "YYYY-MM-DD HH:mm");
-        const endSlot = dayjs(`${dateStr} ${availability.endTime}`, "YYYY-MM-DD HH:mm");
+        let currentSlot = dayjs(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm");
+        const endSlot = dayjs(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm");
 
         while (currentSlot.isBefore(endSlot)) {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
@@ -1654,7 +1666,13 @@ export const deleteDoctorSlot = async (req, res, next) => {
         if (slot.isBooked) {
             const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
             if (appointment) {
-                await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                try {
+                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                } catch (cancelErr) {
+                    console.error("[deleteDoctorSlot] Failed to cancel appointment, forcing slot delete anyway:", cancelErr);
+                    // Force-mark the appointment as cancelled even if refund failed
+                    await appointmentsmodel.findByIdAndUpdate(appointment._id, { status: "cancelled" });
+                }
             }
         }
 
@@ -1686,7 +1704,12 @@ export const deleteMultipleDoctorSlots = async (req, res, next) => {
             if (slot.isBooked) {
                 const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
                 if (appointment) {
-                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                    try {
+                        await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                    } catch (cancelErr) {
+                        console.error("[deleteMultipleDoctorSlots] Failed to cancel appointment:", cancelErr);
+                        await appointmentsmodel.findByIdAndUpdate(appointment._id, { status: "cancelled" });
+                    }
                 }
             }
             await slotmodel.findByIdAndDelete(slot._id);
