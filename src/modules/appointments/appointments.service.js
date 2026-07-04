@@ -110,23 +110,6 @@ export const addAvailability = async (req, res, next) => {
     // Instead of failing if one exists, we update it (upsert)
     let existingAvailability = availabilities.length > 0 ? availabilities[0] : null;
 
-    const allDayAvailabilities = await availabilitymodel.find({
-      doctorId: req.user._id,
-      day: dayFilter(day),
-      clinicId: { $ne: clinicId },
-    });
-
-    const crossOverlap = allDayAvailabilities.find((a) => {
-      return newStart < toMinutes(a.endTime) && newEnd > toMinutes(a.startTime);
-    });
-
-    if (crossOverlap) {
-      throw new Error(
-        `Time conflict with another clinic: ${crossOverlap.startTime} – ${crossOverlap.endTime}`,
-        { cause: 409 },
-      );
-    }
-
     let availability;
     if (existingAvailability) {
         existingAvailability.startTime = startTime;
