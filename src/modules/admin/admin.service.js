@@ -1062,3 +1062,74 @@ export const deleteAdminProfileImage = async (req, res, next) => {
         next(error);
     }
 };
+
+// ─── GET /admin/doctors/appointments-ranking ─────────────────────────────
+export const getDoctorsAppointmentsRanking = async (req, res, next) => {
+    try {
+
+        const topDoctors = await appointments_model.aggregate([
+            {
+                $match: {status: "completed"}
+            },
+            {
+                $group: {
+                    _id: "$doctorId",
+                    totalAppointments: {
+                        $sum: 1
+                    }
+                }
+            },
+            {
+                $sort: {
+                    totalAppointments: -1
+                }
+            },
+
+            // lookup like join in sql , return array
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "_id", // the result of the previous aggregation
+                    foreignField: "_id", // the field of the previous collection (user ==> _id)
+                    as: "user"
+                }
+            },
+            // $unwind ==> to convert array to object
+            {
+                $unwind: "$user"
+            },
+            {
+                $lookup: {
+                    from: "doctors",
+                    localField: "_id",
+                    foreignField: "userId",
+                    as: "doctor"
+                }
+            },
+            {
+                $unwind: "$doctor"
+            },
+            // $project ==> final output
+            {
+                $project: {
+                    _id: 0,
+                    doctorId: "$_id",
+                    doctorName: "$user.fullName",
+                    specialization: "$doctor.specialization",
+                    experience: "$doctor.experience",
+                    totalAppointments: 1
+                }
+            }
+
+        ]);
+
+        return successresponse({
+            res,
+            message: "Doctors appointments ranking retrieved successfully",
+            data: topDoctors
+        });
+    }
+    catch(error) {
+        next(error);
+    }
+}

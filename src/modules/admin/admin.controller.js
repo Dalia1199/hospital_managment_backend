@@ -175,4 +175,12 @@ adminrouter.delete(
     AS.deleteAdminProfileImage
 );
 
+// get top doctors in case of appointments
+adminrouter.get(
+    "/doctors/appointments-ranking",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getDoctorsAppointmentsRanking
+);
+
 export default adminrouter;
