@@ -107,18 +107,8 @@ export const addAvailability = async (req, res, next) => {
       });
     }
 
-    const overlap = availabilities.find((a) => {
-      const existingStart = toMinutes(a.startTime);
-      const existingEnd = toMinutes(a.endTime);
-
-      return newStart < existingEnd && newEnd > existingStart;
-    });
-
-    if (overlap) {
-      throw new Error("availability overlaps with existing schedule", {
-        cause: 409,
-      });
-    }
+    // Instead of failing if one exists, we update it (upsert)
+    let existingAvailability = availabilities.length > 0 ? availabilities[0] : null;
 
     const allDayAvailabilities = await availabilitymodel.find({
       doctorId: req.user._id,
@@ -137,22 +127,31 @@ export const addAvailability = async (req, res, next) => {
       );
     }
 
-    const availability = await db_service.create({
-      model: availabilitymodel,
-      data: {
-        doctorId: req.user._id,
-        day: day.toLowerCase(),
-        startTime,
-        endTime,
-        appointmentDuration,
-        clinicId,
-      },
-    });
+    let availability;
+    if (existingAvailability) {
+        existingAvailability.startTime = startTime;
+        existingAvailability.endTime = endTime;
+        existingAvailability.appointmentDuration = appointmentDuration;
+        await existingAvailability.save();
+        availability = existingAvailability;
+    } else {
+        availability = await db_service.create({
+          model: availabilitymodel,
+          data: {
+            doctorId: req.user._id,
+            day: day.toLowerCase(),
+            startTime,
+            endTime,
+            appointmentDuration,
+            clinicId,
+          },
+        });
+    }
 
     successresponse({
       res,
-      status: 201,
-      message: "availability added successfully",
+      status: existingAvailability ? 200 : 201,
+      message: existingAvailability ? "availability updated successfully" : "availability added successfully",
       data: {
         availability,
       },
