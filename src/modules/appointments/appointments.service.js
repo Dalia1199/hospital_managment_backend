@@ -1670,3 +1670,35 @@ export const deleteDoctorSlot = async (req, res, next) => {
         next(error);
     }
 };
+
+export const deleteMultipleDoctorSlots = async (req, res, next) => {
+    try {
+        const { slotIds } = req.body;
+        const doctorId = req.user._id;
+
+        if (!Array.isArray(slotIds) || slotIds.length === 0) {
+            throw new Error("slotIds array is required", { cause: 400 });
+        }
+
+        const slots = await slotmodel.find({ _id: { $in: slotIds }, doctorId });
+
+        for (const slot of slots) {
+            if (slot.isBooked) {
+                const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
+                if (appointment) {
+                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor");
+                }
+            }
+            await slotmodel.findByIdAndDelete(slot._id);
+        }
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "slots deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
+};
