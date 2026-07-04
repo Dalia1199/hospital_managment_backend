@@ -397,10 +397,11 @@ export const paymentCallback = async (req, res, next) => {
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
                 const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         } else if (
@@ -419,10 +420,11 @@ export const paymentCallback = async (req, res, next) => {
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
                 const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         }
@@ -664,10 +666,11 @@ export const paymentWebhook = async (req, res, next) => {
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
                 const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         } else if (
@@ -686,10 +689,11 @@ export const paymentWebhook = async (req, res, next) => {
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
                 const { doctorShare, platformFee } = await calculateCommission(totalPaid);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         }

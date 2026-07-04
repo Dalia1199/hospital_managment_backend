@@ -914,6 +914,20 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
   // could save reason if schema allows, skipping for now
   await appointment.save();
 
+  // Restore follow-up rights if this was a follow-up appointment
+  if (appointment.isFollowUp && appointment.parentAppointmentId) {
+    const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
+    if (parentAppt && parentAppt.followUpStatus === "used") {
+      const originalDeadline = new Date(parentAppt.followUpDeadline);
+      const newDeadline = new Date();
+      newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+
+      parentAppt.followUpStatus = "scheduled";
+      parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+      await parentAppt.save();
+    }
+  }
+
   await slotmodel.findByIdAndUpdate(appointment.slotId, {
     isBooked: false,
   });
@@ -971,6 +985,20 @@ export const cancelAppointment = async (req, res, next) => {
     // Since this is patient-initiated, use the regular logic
     appointment.status = "cancelled";
     await appointment.save();
+
+    // Restore follow-up rights if this was a follow-up appointment
+    if (appointment.isFollowUp && appointment.parentAppointmentId) {
+      const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
+      if (parentAppt && parentAppt.followUpStatus === "used") {
+        const originalDeadline = new Date(parentAppt.followUpDeadline);
+        const newDeadline = new Date();
+        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+        await parentAppt.save();
+      }
+    }
 
     await slotmodel.findByIdAndUpdate(appointment.slotId, {
       isBooked: false,
@@ -1522,7 +1550,8 @@ export const scheduleFollowUp = async (req, res, next) => {
         if (!appointment) throw new Error("Appointment not found", { cause: 404 });
 
         const deadline = new Date();
-        deadline.setDate(deadline.getDate() + parseInt(gracePeriodDays));
+        const GRACE_BUFFER_DAYS = 3; // Adding a 3-day automatic grace period for patient convenience
+        deadline.setDate(deadline.getDate() + parseInt(gracePeriodDays) + GRACE_BUFFER_DAYS);
 
         appointment.isFollowUp = true;
         appointment.followUpStatus = "scheduled";
