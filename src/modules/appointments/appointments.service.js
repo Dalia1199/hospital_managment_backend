@@ -398,7 +398,7 @@ export const updateAvailability = async (req, res, next) => {
       day: availability.day,
     });
 
-    const isForce = req.query.force === "true" || req.body.force === true;
+    const isForce = req.query?.force === "true" || req.body?.force === true;
 
     if (bookedAppointments.length > 0 && !isForce) {
       return successresponse({
@@ -471,7 +471,7 @@ export const deleteAvailability = async (req, res, next) => {
       day: availability.day,
     });
 
-    const isForce = req.query.force === "true" || req.body.force === true;
+    const isForce = req.query?.force === "true" || req.body?.force === true;
 
     if (bookedAppointments.length > 0 && !isForce) {
       return successresponse({
