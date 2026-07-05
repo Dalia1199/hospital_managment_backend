@@ -26,6 +26,13 @@ doctorrouter.get(
     authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
     DS.getAllDoctors
 );
+
+// GET /doctor/global — accessible by anyone
+doctorrouter.get(
+    "/global",
+    DS.getAllDoctors
+);
+
 // GET /doctor/dashboard
 doctorrouter.get(
     "/dashboard",
