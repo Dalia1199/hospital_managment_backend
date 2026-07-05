@@ -18,6 +18,7 @@ export const requestPayoutChangeSchema = {
 export const requestPayoutSchema = {
     body: joi.object({
         amount: joi.number().positive().required(),
+        selectedMethodId: joi.string().optional(),
     }).required(),
 };
 
