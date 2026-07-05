@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const payoutRequestSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'user',
         required: true
     },
     amount: {
@@ -20,9 +20,17 @@ const payoutRequestSchema = new mongoose.Schema({
         enum: ['instapay', 'vodafone_cash', 'bank_transfer', 'other'],
         required: true
     },
+    selectedMethodId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'PayoutMethod'
+    },
     paymentDetails: {
         type: String, // e.g., "Instapay handle: user@instapay" or Vodafone Cash number
         required: true
+    },
+    receiptPhoto: {
+        secure_url: String,
+        public_id: String
     },
     adminNotes: {
         type: String,

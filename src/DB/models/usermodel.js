@@ -74,6 +74,27 @@ const userschema = new mongoose.Schema({
     rejectedReason: {
         type: String
     },
+
+    payoutProfile: {
+        paymentMethod: {
+            type: String,
+            enum: ['instapay', 'vodafone_cash', 'bank_transfer', 'other'],
+        },
+        accountDetails: String,
+        isSetup: {
+            type: Boolean,
+            default: false
+        },
+        idPhoto: {
+            secure_url: String,
+            public_id: String
+        },
+        isSuspended: {
+            type: Boolean,
+            default: false
+        },
+        suspendReason: String
+    },
 }, {
     timestamps: true,
     strictQuery: true,

@@ -26,6 +26,13 @@ const toMinutes = (time) => {
   return hours * 60 + minutes;
 };
 
+// Normalize a stored time string like "9:00" or "09:00" to always be "09:00"
+// so that dayjs("YYYY-MM-DD HH:mm") parses it correctly.
+const normalizeTime = (time) => {
+  const [h, m] = time.split(":");
+  return `${String(Number(h)).padStart(2, "0")}:${String(Number(m)).padStart(2, "0")}`;
+};
+
 // case-insensitive "day" matcher — availability.day may have been stored as
 // "Monday", "monday", etc. depending on who created it. Using a regex filter
 // at the DB level keeps the overlap checks correct regardless of casing,
@@ -100,52 +107,34 @@ export const addAvailability = async (req, res, next) => {
       });
     }
 
-    const overlap = availabilities.find((a) => {
-      const existingStart = toMinutes(a.startTime);
-      const existingEnd = toMinutes(a.endTime);
+    // Instead of failing if one exists, we update it (upsert)
+    let existingAvailability = availabilities.length > 0 ? availabilities[0] : null;
 
-      return newStart < existingEnd && newEnd > existingStart;
-    });
-
-    if (overlap) {
-      throw new Error("availability overlaps with existing schedule", {
-        cause: 409,
-      });
+    let availability;
+    if (existingAvailability) {
+        existingAvailability.startTime = startTime;
+        existingAvailability.endTime = endTime;
+        existingAvailability.appointmentDuration = appointmentDuration;
+        await existingAvailability.save();
+        availability = existingAvailability;
+    } else {
+        availability = await db_service.create({
+          model: availabilitymodel,
+          data: {
+            doctorId: req.user._id,
+            day: day.toLowerCase(),
+            startTime,
+            endTime,
+            appointmentDuration,
+            clinicId,
+          },
+        });
     }
-
-    const allDayAvailabilities = await availabilitymodel.find({
-      doctorId: req.user._id,
-      day: dayFilter(day),
-      clinicId: { $ne: clinicId },
-    });
-
-    const crossOverlap = allDayAvailabilities.find((a) => {
-      return newStart < toMinutes(a.endTime) && newEnd > toMinutes(a.startTime);
-    });
-
-    if (crossOverlap) {
-      throw new Error(
-        `Time conflict with another clinic: ${crossOverlap.startTime} – ${crossOverlap.endTime}`,
-        { cause: 409 },
-      );
-    }
-
-    const availability = await db_service.create({
-      model: availabilitymodel,
-      data: {
-        doctorId: req.user._id,
-        day: day.toLowerCase(),
-        startTime,
-        endTime,
-        appointmentDuration,
-        clinicId,
-      },
-    });
 
     successresponse({
       res,
-      status: 201,
-      message: "availability added successfully",
+      status: existingAvailability ? 200 : 201,
+      message: existingAvailability ? "availability updated successfully" : "availability added successfully",
       data: {
         availability,
       },
@@ -265,12 +254,12 @@ export async function regenerateSlotsForRange({
 
     for (const availability of dayAvailabilities) {
       let currentSlot = dayjs(
-        `${currentDate.format("YYYY-MM-DD")} ${availability.startTime}`,
+        `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.startTime)}`,
         "YYYY-MM-DD HH:mm",
       );
 
       const endSlot = dayjs(
-        `${currentDate.format("YYYY-MM-DD")} ${availability.endTime}`,
+        `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.endTime)}`,
         "YYYY-MM-DD HH:mm",
       );
 
@@ -366,54 +355,6 @@ export const updateAvailability = async (req, res, next) => {
       });
     }
 
-    const allDayOtherClinics = await availabilitymodel.find({
-      doctorId: req.user._id,
-      day: dayFilter(nextDay),
-      clinicId: { $ne: availability.clinicId },
-    });
-
-    const crossOverlap = allDayOtherClinics.find((a) => {
-      return newStart < toMinutes(a.endTime) && newEnd > toMinutes(a.startTime);
-    });
-
-    if (crossOverlap) {
-      throw new Error(
-        `Time conflict with another clinic: ${crossOverlap.startTime} – ${crossOverlap.endTime}`,
-        { cause: 409 },
-      );
-    }
-
-    // FIX: scoped to the day actually being changed (the ORIGINAL day,
-    // since that's the schedule whose hours are being modified) instead of
-    // counting every booked slot in the whole clinic.
-    const bookedAppointments = await getBookedSlotsOnDay({
-      doctorId: req.user._id,
-      clinicId: availability.clinicId,
-      day: availability.day,
-    });
-
-    const isForce = req.query.force === "true" || req.body.force === true;
-
-    if (bookedAppointments.length > 0 && !isForce) {
-      return successresponse({
-        res,
-        status: 409,
-        message: "cannot update availability with booked slots",
-        data: {
-          canUpdate: false,
-          bookedSlots: bookedAppointments.length,
-          affectedAppointments: bookedAppointments,
-        },
-      });
-    }
-
-    if (bookedAppointments.length > 0 && isForce) {
-      // Cancel affected appointments
-      for (const appt of bookedAppointments) {
-        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule changed by doctor");
-      }
-    }
-
     const updatedAvailability = await db_service.findOneAndUpdate({
       model: availabilitymodel,
       filter: { _id: availabilityId },
@@ -458,39 +399,26 @@ export const deleteAvailability = async (req, res, next) => {
       throw new Error("availability not found", { cause: 404 });
     }
 
-    // FIX: scoped to this availability's day only (see updateAvailability)
-    const bookedAppointments = await getBookedSlotsOnDay({
-      doctorId: req.user._id,
-      clinicId: availability.clinicId,
-      day: availability.day,
-    });
-
-    const isForce = req.query.force === "true" || req.body.force === true;
-
-    if (bookedAppointments.length > 0 && !isForce) {
-      return successresponse({
-        res,
-        status: 409,
-        message: "cannot delete availability with booked slots",
-        data: {
-          canDelete: false,
-          bookedSlots: bookedAppointments.length,
-          affectedAppointments: bookedAppointments,
-        },
-      });
-    }
-
-    if (bookedAppointments.length > 0 && isForce) {
-      // Cancel affected appointments
-      for (const appt of bookedAppointments) {
-        await cancelAppointmentLogic(appt._id, req.user._id, "Schedule deleted by doctor");
-      }
-    }
-
     await db_service.deleteOne({
       model: availabilitymodel,
       filter: { _id: availabilityId },
     });
+
+    // Automatically clean up future unbooked slots for this day/clinic
+    const futureUnbookedSlots = await slotmodel.find({
+      doctorId: req.user._id,
+      clinicId: availability.clinicId,
+      isBooked: false,
+      startDateTime: { $gte: new Date() },
+    });
+
+    const slotsToDelete = futureUnbookedSlots
+      .filter(s => dayjs(s.startDateTime).format("dddd").toLowerCase() === availability.day.toLowerCase())
+      .map(s => s._id);
+
+    if (slotsToDelete.length > 0) {
+      await slotmodel.deleteMany({ _id: { $in: slotsToDelete } });
+    }
 
     return successresponse({
       res,
@@ -506,20 +434,57 @@ export const deleteAvailability = async (req, res, next) => {
 export const getAvailableSlots = async (req, res, next) => {
   try {
     const { doctorId } = req.params;
-    const { clinicId, startDate, endDate } = req.query;
+    const { clinicId, startDate, endDate, includeBooked } = req.query;
 
     const start = startDate ? new Date(startDate) : new Date();
     const filter = {
       doctorId,
-      isBooked: false,
       startDateTime: { $gte: start },
     };
+    
+    // Only patients restrict by isBooked: false, OR if not specifically requested
+    if (!(req.user?.role === 'doctor' && includeBooked === 'true')) {
+        filter.isBooked = false;
+    }
+
     if (endDate) {
       filter.startDateTime.$lte = new Date(endDate);
     }
     if (clinicId) filter.clinicId = clinicId;
 
-    const slots = await slotmodel.find(filter).sort({ startDateTime: 1 });
+    const slots = await slotmodel.find(filter).sort({ startDateTime: 1 }).lean();
+
+    if (req.user?.role === 'doctor' && includeBooked === 'true') {
+        const slotIds = slots.map(s => s._id);
+        const appointments = await db_service.find({
+            model: appointmentsmodel,
+            filter: { slotId: { $in: slotIds }, status: 'booked' },
+            populate: [{ path: 'patientId', select: 'fullName phoneNumber' }]
+        });
+        
+        const appointmentMap = {};
+        appointments.forEach(app => {
+            if (app.patientId && app.patientId.phoneNumber) {
+                try {
+                    app.patientId.phoneNumber = decrypt(app.patientId.phoneNumber);
+                } catch (e) {
+                    console.error("Failed to decrypt patient phone", e);
+                }
+            }
+            appointmentMap[app.slotId.toString()] = app;
+        });
+
+        slots.forEach(slot => {
+            if (slot.isBooked && appointmentMap[slot._id.toString()]) {
+                const app = appointmentMap[slot._id.toString()];
+                slot.appointmentDetails = {
+                    patientName: app.patientId?.fullName,
+                    patientPhone: app.patientId?.phoneNumber,
+                    appointmentId: app._id
+                };
+            }
+        });
+    }
 
     return successresponse({
       res,
@@ -652,8 +617,14 @@ export const holdSlot = async (req, res, next) => {
     const { slotId } = req.body;
 
     const slotData = await slotmodel.findById(slotId);
-    if (!slotData || slotData.isBooked || slotData.isReserved || new Date(slotData.startDateTime) < new Date()) {
+    if (!slotData || slotData.isBooked || new Date(slotData.startDateTime) < new Date()) {
       throw new Error("slot not available", {
+        cause: 409,
+      });
+    }
+
+    if (slotData.isReserved && slotData.reservedBy?.toString() !== req.user._id.toString()) {
+      throw new Error("slot not available (already reserved)", {
         cause: 409,
       });
     }
@@ -671,7 +642,7 @@ export const holdSlot = async (req, res, next) => {
       });
     }
 
-    const slot = await createReservation(slotId);
+    const slot = await createReservation(slotId, req.user._id);
 
     return successresponse({
       res,
@@ -688,7 +659,7 @@ export const confirmAndCreate = async (req, res, next) => {
   try {
     const { slotId, reason, paymentId } = req.body;
     // Reserve the slot (5‑minute hold)
-    await createReservation(slotId);
+    await createReservation(slotId, req.user._id);
     // Verify slot still free
     const slot = await slotmodel.findOne({ _id: slotId, isBooked: false, isReserved: true });
     if (!slot) {
@@ -700,6 +671,30 @@ export const confirmAndCreate = async (req, res, next) => {
     if (!payment) {
       throw new Error('valid payment not found', { cause: 400 });
     }
+    let isFollowUp = false;
+    let parentAppointmentId = null;
+
+    // Check if there is a scheduled follow-up
+    const validFollowUp = await appointmentsmodel.findOne({
+      patientId: req.user._id,
+      doctorId: slot.doctorId,
+      status: "completed",
+      followUpStatus: { $in: ["scheduled", "overridden"] }
+    }).sort({ createdAt: -1 });
+
+    if (validFollowUp) {
+      const bookingDate = dayjs(slot.startDateTime);
+      const deadline = dayjs(validFollowUp.followUpDeadline);
+      
+      if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+         isFollowUp = true;
+         parentAppointmentId = validFollowUp._id;
+      } else if (validFollowUp.followUpStatus === "scheduled") {
+         validFollowUp.followUpStatus = "expired";
+         await validFollowUp.save();
+      }
+    }
+
     // Create appointment with paid status
     const appointment = await db_service.create({
       model: appointmentsmodel,
@@ -714,8 +709,17 @@ export const confirmAndCreate = async (req, res, next) => {
         endDateTime: slot.endDateTime,
         paymentStatus: 'paid',
         status: 'booked',
+        isFollowUp,
+        parentAppointmentId
       },
     });
+
+    if (isFollowUp && parentAppointmentId) {
+       await appointmentsmodel.findByIdAndUpdate(parentAppointmentId, {
+           followUpStatus: "used"
+       });
+    }
+
     // Mark slot as booked and clear reservation
     await slotmodel.findByIdAndUpdate(slotId, { isBooked: true, isReserved: false, reservedAt: null });
     // Notify patient and doctor
@@ -861,7 +865,7 @@ export const getDoctorAppointments = async (req, res, next) => {
 };
 
 //done
-export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reason) => {
+export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reason, cancelledByDoctor = false) => {
   const appointment = await appointmentsmodel.findById(appointmentId);
   if (!appointment) return;
 
@@ -871,37 +875,79 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
   // could save reason if schema allows, skipping for now
   await appointment.save();
 
+  // Restore follow-up rights if this was a follow-up appointment
+  if (appointment.isFollowUp && appointment.parentAppointmentId) {
+    const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
+    if (parentAppt && parentAppt.followUpStatus === "used") {
+      const originalDeadline = new Date(parentAppt.followUpDeadline);
+      const newDeadline = new Date();
+
+      if (cancelledByDoctor || (actionByUserId && actionByUserId.toString() === appointment.doctorId.toString())) {
+        newDeadline.setDate(newDeadline.getDate() + 7); // Give a full week (7 days)
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline;
+      } else {
+        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+      }
+      await parentAppt.save();
+    }
+  }
+
   await slotmodel.findByIdAndUpdate(appointment.slotId, {
     isBooked: false,
   });
 
   if (appointment.paymentStatus === "paid") {
-    const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
     const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
-    const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+    const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
     
-    const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
-    if (payment) {
-        // If doctor cancels, doctor compensation is 0, patient gets 100% refund.
-        // Wait, calculateRefundSplit checks who canceled. In our new requirement, if a schedule change causes it, 
-        // the doctor is canceling it. We should force full refund to patient.
-        const patientRefund = payment.amount;
+    const docRevenueTx = await transactionmodel.findOne({
+        userId: appointment.doctorId,
+        purpose: 'online_booking_revenue',
+        $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
+    });
+
+    if (docRevenueTx && docRevenueTx.metadata) {
+        const totalPaid = appointment.paidAmount > 0 ? appointment.paidAmount : (docRevenueTx.metadata.totalPaid || 0);
+        const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
         
-        // Add to patient wallet
-        await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
+        const now = new Date();
+        const apptStart = new Date(appointment.startDateTime);
+        const hoursUntilAppointment = (apptStart - now) / (1000 * 60 * 60);
         
-        const { getAppConfig } = await import('../appconfig/appconfig.service.js');
-        const config = await getAppConfig();
-        let platformFeeFixed = config.platformFeePercentage > 0 
-            ? (payment.amount * config.platformFeePercentage) / 100 
-            : config.platformFeeFixed;
-        const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
-        
-        await removePendingBalance(appointment.doctorId, originalDoctorShare);
+        let isEarlyCancellation = true;
+        if (!cancelledByDoctor && hoursUntilAppointment < 24) {
+            isEarlyCancellation = false;
+        }
+
+        if (cancelledByDoctor || isEarlyCancellation) {
+            // 100% refund
+            if (totalPaid > 0) {
+                await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
+            }
+            if (originalDoctorShare > 0) {
+                await removePendingBalance(appointment.doctorId, originalDoctorShare);
+            }
+            docRevenueTx.status = 'cancelled';
+            await docRevenueTx.save();
+        } else {
+            // Late cancellation (< 24h): No refund. Doctor gets paid as if completed.
+            const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
+            if (originalDoctorShare > 0) {
+                await releasePendingToAvailable(appointment.doctorId, originalDoctorShare);
+            }
+        }
     }
   }
 
-  await notify.appointmentCancelled(appointment.patientId);
+  // Non-blocking: notification failure should never prevent cancellation
+  try {
+    await notify.appointmentCancelled(appointment.patientId);
+  } catch (notifyErr) {
+    console.error("[cancelAppointmentLogic] Failed to send cancellation notification:", notifyErr);
+  }
   return appointment;
 };
 
@@ -930,6 +976,20 @@ export const cancelAppointment = async (req, res, next) => {
     appointment.status = "cancelled";
     await appointment.save();
 
+    // Restore follow-up rights if this was a follow-up appointment
+    if (appointment.isFollowUp && appointment.parentAppointmentId) {
+      const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
+      if (parentAppt && parentAppt.followUpStatus === "used") {
+        const originalDeadline = new Date(parentAppt.followUpDeadline);
+        const newDeadline = new Date();
+        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
+        await parentAppt.save();
+      }
+    }
+
     await slotmodel.findByIdAndUpdate(appointment.slotId, {
       isBooked: false,
     });
@@ -937,21 +997,21 @@ export const cancelAppointment = async (req, res, next) => {
     if (appointment.paymentStatus === "paid") {
       const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
       const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
-      const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+      const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
       
-      const payment = await paymentmodel.findOne({ referenceId: appointment._id, purpose: "appointment", paymentStatus: "paid" });
-      if (payment) {
-          const { patientRefund, doctorCompensation } = await calculateRefundSplit(payment.amount);
+      const docRevenueTx = await transactionmodel.findOne({
+          userId: appointment.doctorId,
+          purpose: 'online_booking_revenue',
+          $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
+      });
+
+      if (docRevenueTx && docRevenueTx.metadata && docRevenueTx.metadata.totalPaid) {
+          const totalPaid = docRevenueTx.metadata.totalPaid;
+          const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
           
-          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid: payment.amount });
+          const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
           
-          const { getAppConfig } = await import('../appconfig/appconfig.service.js');
-          const config = await getAppConfig();
-          let platformFeeFixed = config.platformFeePercentage > 0 
-              ? (payment.amount * config.platformFeePercentage) / 100 
-              : config.platformFeeFixed;
-          const originalDoctorShare = Math.max(0, payment.amount - platformFeeFixed);
-          
+          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
           await removePendingBalance(appointment.doctorId, originalDoctorShare);
           
           if (doctorCompensation > 0) {
@@ -1445,8 +1505,9 @@ export const getPatientAppointments = async (req, res, next) => {
     });
 
     const appointmentsWithAmount = await Promise.all(appointments.map(async (appt) => {
-      const doc = await doctormodel.findOne({ userId: appt.doctorId }).lean();
-      const amount = appt.isFollowUp ? (doc?.followUpFee ?? ((doc?.consultationFee ?? 0) * 0.5)) : (doc?.consultationFee ?? 0);
+      const doc = await doctormodel.findOne({ userId: appt.doctorId }).select("userId firstName lastName profileImage specialization");
+      const clinic = await clinicmodel.findById(appt.clinicId).select("consultationFee followUpFee");
+      const amount = appt.isFollowUp ? (clinic?.followUpFee ?? ((clinic?.consultationFee ?? 0) * 0.5)) : (clinic?.consultationFee ?? 0);
       return { ...appt.toObject(), amount };
     }));
 
@@ -1480,7 +1541,8 @@ export const scheduleFollowUp = async (req, res, next) => {
         if (!appointment) throw new Error("Appointment not found", { cause: 404 });
 
         const deadline = new Date();
-        deadline.setDate(deadline.getDate() + parseInt(gracePeriodDays));
+        const GRACE_BUFFER_DAYS = 3; // Adding a 3-day automatic grace period for patient convenience
+        deadline.setDate(deadline.getDate() + parseInt(gracePeriodDays) + GRACE_BUFFER_DAYS);
 
         appointment.isFollowUp = true;
         appointment.followUpStatus = "scheduled";
@@ -1526,33 +1588,66 @@ export const overrideFollowUp = async (req, res, next) => {
 
 export const generateCustomSlots = async (req, res, next) => {
   try {
-    const { clinicId, dates } = req.body;
+    const { clinicId, dates, force } = req.body;
     const doctorId = req.user._id;
 
     if (!Array.isArray(dates) || dates.length === 0) {
       throw new Error("You must provide an array of dates to generate slots for", { cause: 400 });
     }
 
-    let totalGenerated = 0;
+    // 1. Check for Cross-Clinic Conflicts First
+    const isForce = force === true || req.query?.force === "true";
+    
+    // We only check conflicts if clinicId is provided, because if no clinicId is provided, 
+    // we are generating slots for all clinics? Actually the UI always provides clinicId.
+    if (clinicId && !isForce) {
+      const conflictDates = [];
+      const conflictAppointments = [];
 
+      for (const dateStr of dates) {
+        const dateObj = dayjs(dateStr, "YYYY-MM-DD");
+        if (!dateObj.isValid()) continue;
+
+        const bookedInOtherClinics = await appointmentsmodel.find({
+          doctorId,
+          clinicId: { $ne: clinicId },
+          status: "booked", // Or whatever statuses mean 'active'
+          startDateTime: {
+            $gte: dateObj.startOf("day").toDate(),
+            $lte: dateObj.endOf("day").toDate(),
+          },
+        }).populate("clinicId", "name");
+
+        if (bookedInOtherClinics.length > 0) {
+          conflictDates.push(dateStr);
+          conflictAppointments.push(...bookedInOtherClinics);
+        }
+      }
+
+      if (conflictDates.length > 0) {
+        return successresponse({
+          res,
+          status: 409,
+          message: "You have booked appointments in other clinics on these dates.",
+          data: {
+            conflicts: true,
+            conflictDates,
+            conflictAppointments,
+          },
+        });
+      }
+    }
+
+    let totalGenerated = 0;
+    const allDesiredSlots = [];
+
+    // 2. Build the Desired Slots in Memory
     for (const dateStr of dates) {
       const dateObj = dayjs(dateStr, "YYYY-MM-DD");
       if (!dateObj.isValid()) continue;
 
       const dayOfWeek = dateObj.format("dddd").toLowerCase();
-
-      // Wipe any UNBOOKED slots on this specific day for this doctor/clinic
-      const deleteFilter = {
-        doctorId,
-        isBooked: false,
-        startDateTime: {
-          $gte: dateObj.startOf("day").toDate(),
-          $lte: dateObj.endOf("day").toDate(),
-        },
-      };
-      if (clinicId) deleteFilter.clinicId = clinicId;
-
-      await slotmodel.deleteMany(deleteFilter);
+      console.log(`[generateCustomSlots] dateStr=${dateStr}, dayOfWeek=${dayOfWeek}`);
 
       // Find the availability rules for this day of week
       const availFilter = { doctorId, day: dayFilter(dayOfWeek) };
@@ -1563,20 +1658,20 @@ export const generateCustomSlots = async (req, res, next) => {
         filter: availFilter,
       });
 
+      console.log(`[generateCustomSlots] availabilities for ${dayOfWeek}:`, availabilities.length);
+
       if (!availabilities.length) continue;
 
-      const newSlots = [];
-
       for (const availability of availabilities) {
-        let currentSlot = dayjs(`${dateStr} ${availability.startTime}`, "YYYY-MM-DD HH:mm");
-        const endSlot = dayjs(`${dateStr} ${availability.endTime}`, "YYYY-MM-DD HH:mm");
+        let currentSlot = dayjs(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm");
+        const endSlot = dayjs(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm");
 
         while (currentSlot.isBefore(endSlot)) {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
           if (nextSlot.isAfter(endSlot)) break;
 
           if (currentSlot.isAfter(dayjs())) {
-            newSlots.push({
+            allDesiredSlots.push({
               doctorId,
               clinicId: availability.clinicId,
               startDateTime: currentSlot.toDate(),
@@ -1587,21 +1682,146 @@ export const generateCustomSlots = async (req, res, next) => {
           currentSlot = nextSlot;
         }
       }
+    }
 
-      if (newSlots.length > 0) {
-        await slotmodel.insertMany(newSlots);
-        totalGenerated += newSlots.length;
+    // 3. Smart Diff (Update existing slots instead of wipe-and-replace)
+    for (const dateStr of dates) {
+      const dateObj = dayjs(dateStr, "YYYY-MM-DD");
+      if (!dateObj.isValid()) continue;
+
+      // Desired slots for THIS date
+      const desiredForDate = allDesiredSlots.filter(s => dayjs(s.startDateTime).format("YYYY-MM-DD") === dateStr);
+      console.log(`[Smart Diff] ${dateStr}: desiredForDate.length = ${desiredForDate.length}`);
+      
+      // Existing unbooked slots for THIS date (expanding time window slightly for timezone safety)
+      const existingUnbooked = await slotmodel.find({
+        doctorId,
+        isBooked: false,
+        startDateTime: {
+          $gte: dateObj.startOf("day").toDate(),
+          $lte: dateObj.endOf("day").toDate(),
+        },
+        ...(clinicId ? { clinicId } : {})
+      });
+
+      const slotsToInsert = [];
+      const slotsToKeepIds = new Set();
+
+      for (const ds of desiredForDate) {
+        const match = existingUnbooked.find(es => 
+          es.startDateTime.getTime() === ds.startDateTime.getTime() && 
+          es.clinicId.toString() === ds.clinicId.toString()
+        );
+
+        if (match) {
+          slotsToKeepIds.add(match._id.toString());
+        } else {
+          slotsToInsert.push(ds);
+        }
       }
+
+      // Delete unbooked slots that are NO LONGER desired
+      const idsToDelete = existingUnbooked
+        .filter(es => !slotsToKeepIds.has(es._id.toString()))
+        .map(es => es._id);
+
+      if (idsToDelete.length > 0) {
+        await slotmodel.deleteMany({ _id: { $in: idsToDelete } });
+      }
+
+      // Insert new slots
+      if (slotsToInsert.length > 0) {
+        await slotmodel.insertMany(slotsToInsert);
+        totalGenerated += slotsToInsert.length;
+      }
+      console.log(`[Smart Diff] ${dateStr}: inserted = ${slotsToInsert.length}, deleted = ${idsToDelete.length}`);
     }
 
     return successresponse({
       res,
       status: 200,
-      message: `Generated ${totalGenerated} slots successfully`,
+      message: `Generated/Updated slots successfully. Added ${totalGenerated} new slots.`,
       data: { totalSlots: totalGenerated },
     });
 
   } catch (error) {
     next(error);
   }
+};
+
+export const deleteDoctorSlot = async (req, res, next) => {
+    try {
+        const { slotId } = req.params;
+        const doctorId = req.user._id;
+
+        const slot = await slotmodel.findById(slotId);
+        if (!slot) {
+            throw new Error("slot not found", { cause: 404 });
+        }
+
+        if (slot.doctorId.toString() !== doctorId.toString()) {
+            throw new Error("unauthorized to delete this slot", { cause: 403 });
+        }
+
+        if (slot.isBooked) {
+            const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
+            if (appointment) {
+                try {
+                    await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor", true);
+                } catch (cancelErr) {
+                    console.error("[deleteDoctorSlot] Failed to cancel appointment, forcing slot delete anyway:", cancelErr);
+                    // Force-mark the appointment as cancelled even if refund failed
+                    await appointmentsmodel.findByIdAndUpdate(appointment._id, { status: "cancelled" });
+                }
+            }
+        }
+
+        await slotmodel.findByIdAndDelete(slotId);
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "slot deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const deleteMultipleDoctorSlots = async (req, res, next) => {
+    try {
+        const { slotIds } = req.body;
+        const doctorId = req.user._id;
+
+        if (!Array.isArray(slotIds) || slotIds.length === 0) {
+            throw new Error("slotIds array is required", { cause: 400 });
+        }
+
+        const slots = await slotmodel.find({ _id: { $in: slotIds }, doctorId });
+
+        for (const slot of slots) {
+            if (slot.isBooked) {
+                const appointment = await appointmentsmodel.findOne({ slotId: slot._id, status: "booked" });
+                if (appointment) {
+                    try {
+                        await cancelAppointmentLogic(appointment._id, doctorId, "Slot deleted by doctor", true);
+                    } catch (cancelErr) {
+                        console.error("[deleteMultipleDoctorSlots] Failed to cancel appointment:", cancelErr);
+                        await appointmentsmodel.findByIdAndUpdate(appointment._id, { status: "cancelled" });
+                    }
+                }
+            }
+            await slotmodel.findByIdAndDelete(slot._id);
+        }
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "slots deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
 };

@@ -5,11 +5,11 @@ import slotmodel from "../../DB/models/slot_model.js";
  * Marks slot as reserved and sets reservedAt timestamp.
  * After 5 minutes the reservation is automatically released if not booked.
  */
-export const createReservation = async (slotId) => {
+export const createReservation = async (slotId, userId = null) => {
   const now = new Date();
   const slot = await slotmodel.findByIdAndUpdate(
     slotId,
-    { isReserved: true, reservedAt: now, isBooked: false },
+    { isReserved: true, reservedAt: now, isBooked: false, reservedBy: userId },
     { new: true }
   );
   if (!slot) {
@@ -20,12 +20,12 @@ export const createReservation = async (slotId) => {
   setTimeout(async () => {
     const freshSlot = await slotmodel.findById(slotId);
     if (freshSlot && freshSlot.isReserved && !freshSlot.isBooked) {
-      await slotmodel.findByIdAndUpdate(slotId, { isReserved: false, reservedAt: null });
+      await slotmodel.findByIdAndUpdate(slotId, { isReserved: false, reservedAt: null, reservedBy: null });
     }
   }, 5 * 60 * 1000);
   return slot;
 };
 
 export const releaseReservation = async (slotId) => {
-  await slotmodel.findByIdAndUpdate(slotId, { isReserved: false, reservedAt: null });
+  await slotmodel.findByIdAndUpdate(slotId, { isReserved: false, reservedAt: null, reservedBy: null });
 };

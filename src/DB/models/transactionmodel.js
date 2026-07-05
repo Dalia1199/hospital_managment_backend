@@ -24,7 +24,10 @@ const transactionSchema = new mongoose.Schema({
             'payout_withdrawal',      // Doctor/Patient requested payout
             'refund',                 // Patient got refunded
             'cancellation_fee',       // Fee deducted upon patient cancellation
-            'split_payment_deduction' // Deducted from wallet when splitting with card
+            'split_payment_deduction',// Deducted from wallet when splitting with card
+            'manual_adjustment',      // Admin manual credit/debit
+            'platform_revenue',       // Platform fee collected
+            'admin_compensation'      // Compensation issued by support
         ],
         required: true
     },

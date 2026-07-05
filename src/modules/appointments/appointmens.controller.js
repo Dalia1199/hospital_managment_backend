@@ -146,6 +146,21 @@ appointmensrouter.post(
     }
   }
 );
+
+appointmensrouter.delete(
+  "/slots/:slotId",
+  authentication,
+  authorization([roleenum.doctor]),
+  AS.deleteDoctorSlot
+);
+
+appointmensrouter.post(
+  "/slots/delete-multiple",
+  authentication,
+  authorization([roleenum.doctor]),
+  AS.deleteMultipleDoctorSlots
+);
+
 //done
 appointmensrouter.get(
 

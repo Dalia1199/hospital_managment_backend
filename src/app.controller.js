@@ -20,7 +20,9 @@ import airouter from "./modules/ai/ai.routes.js";
 import drugsrouter from "./modules/drugs/drugs.routes.js";
 import walletRouter from "./modules/wallet/wallet.router.js";
 import payoutRouter from "./modules/payout/payout.router.js";
+import appConfigRouter from "./modules/appconfig/appconfig.router.js";
 import { startMedicationCron } from "./common/cron/medicationCron.js";
+import cronRouter from "./common/cron/cron.controller.js";
 import paymentRouter from "./modules/payment/payment.controller.js";
 import reviewrouter from "./modules/reviews/review.controller.js";
 import webauthnrouter from "./modules/webauthn/webauthn.controller.js";
@@ -75,8 +77,10 @@ const bootstrap = () => {
     app.use("/subscriptions", subscriptionRouter);
     app.use("/doctorsubscriptions", doctorSubscriptionRouter);
     app.use("/admindashboard", adminDashboardRouter);
+    app.use("/api/cron", cronRouter);
     app.use("/wallet", walletRouter);
     app.use("/payout", payoutRouter);
+    app.use("/appconfig", appConfigRouter);
 
     app.use("{/*demo}", (req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });

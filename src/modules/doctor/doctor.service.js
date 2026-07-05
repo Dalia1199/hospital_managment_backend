@@ -5,6 +5,7 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
 import { sendemail, generateotp } from "../../common/utilits/email/send email.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
@@ -437,7 +438,9 @@ export const createSession = async (req, res, next) => {
                     guestPhone,
                     guestAge,
                     clinicId: req.body.clinicId || undefined,
-                    fees: doctor.consultationFee || 0,
+                    // In a real flow, you should look up the clinic fee here too,
+                    // but since this is just mock data generation, we can use 0 or fetch clinic.
+                    fees: 0,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
                     order: Date.now()
@@ -495,14 +498,28 @@ export const createSession = async (req, res, next) => {
                 await sessionmodel.findByIdAndDelete(existingSession._id);
             }
 
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date();
+            endOfDay.setHours(23, 59, 59, 999);
+
             let order = Date.now();
             const lastAppointment = await appointmentsmodel.findOne({
                 patientId,
                 doctorId,
-                status: "booked"
+                status: "booked",
+                startDateTime: { $gte: startOfDay, $lte: endOfDay }
             }).sort({ startDateTime: 1 });
             if (lastAppointment) {
                 order = lastAppointment.startDateTime.getTime();
+            }
+
+            let fallbackFee = 0;
+            if (req.body.clinicId) {
+                const clinic = await clinicmodel.findById(req.body.clinicId);
+                if (clinic && clinic.consultationFee !== undefined && clinic.consultationFee !== null) {
+                    fallbackFee = clinic.consultationFee;
+                }
             }
 
             if (sharingSetting === "all" || sharingSetting === "own_only") {
@@ -513,7 +530,8 @@ export const createSession = async (req, res, next) => {
                         patientId,
                         clinicId: req.body.clinicId || undefined,
                         otp: "AUTO",
-                        fees: doctor.consultationFee || 0,
+                        fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
+                        isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                         status: "in_progress",
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
                         order
@@ -539,7 +557,8 @@ export const createSession = async (req, res, next) => {
                     patientId,
                     clinicId: req.body.clinicId || undefined,
                     otp,
-                    fees: doctor.consultationFee || 0,
+                    fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
+                    isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                     status: "pending_otp",
                     validUntil: new Date(Date.now() + 10 * 60 * 1000),
                     order
@@ -833,10 +852,16 @@ export const endSession = async (req, res, next) => {
             }
         }
         if (!session.isOfflinePatient) {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date();
+            endOfDay.setHours(23, 59, 59, 999);
+
             const lastAppointment = await appointmentsmodel.findOne({
                 patientId: session.patientId,
                 doctorId: doctorId,
-                status: "booked"
+                status: "booked",
+                startDateTime: { $gte: startOfDay, $lte: endOfDay }
             }).sort({ startDateTime: 1 }); // Ascending to find the closest upcoming/today appointment
 
             if (lastAppointment) {
@@ -852,16 +877,27 @@ export const endSession = async (req, res, next) => {
 
                 // If paid online, release the doctor's share from pending to available
                 if (lastAppointment.paymentStatus === "paid") {
-                    const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+                    const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
                     const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
                     
-                    const config = await getAppConfig();
-                    let platformFee = config.platformFeePercentage > 0 
-                        ? (session.fees * config.platformFeePercentage) / 100 
-                        : config.platformFeeFixed;
-                        
-                    const doctorShare = Math.max(0, session.fees - platformFee);
-                    await releasePendingToAvailable(doctorId, doctorShare);
+                    const transaction = await transactionmodel.findOne({
+                        userId: doctorId,
+                        referenceId: lastAppointment._id,
+                        purpose: 'online_booking_revenue'
+                    });
+                    
+                    if (transaction) {
+                        await releasePendingToAvailable(doctorId, transaction.amount);
+                    } else {
+                        const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+                        const config = await getAppConfig();
+                        let platformFee = config.platformFeePercentage > 0 
+                            ? (session.fees * config.platformFeePercentage) / 100 
+                            : config.platformFeeFixed;
+                            
+                        const doctorShare = Math.max(0, session.fees - platformFee);
+                        await releasePendingToAvailable(doctorId, doctorShare);
+                    }
                 }
             }
         }
@@ -1483,6 +1519,8 @@ export const getReportsAnalytics = async (req, res, next) => {
         });
 
         // Current KPIs
+        let onlineRevenue = 0;
+        let offlineRevenue = 0;
         let currentRevenue = 0;
         let onlineCount = 0;
         let walkinCount = 0;
@@ -1490,7 +1528,12 @@ export const getReportsAnalytics = async (req, res, next) => {
         const onlineUserIds = new Set();
 
         currentSessions.forEach(session => {
-            currentRevenue += (session.fees || 0);
+            if (session.isFeesFinalized) {
+                onlineRevenue += (session.fees || 0);
+            } else {
+                offlineRevenue += (session.fees || 0);
+            }
+
             if (session.isOfflinePatient) walkinCount++;
             else {
                 onlineCount++;
@@ -1501,6 +1544,8 @@ export const getReportsAnalytics = async (req, res, next) => {
             const dateStr = createdAt.toISOString().split('T')[0];
             trendMap[dateStr] = (trendMap[dateStr] || 0) + 1;
         });
+        
+        currentRevenue = onlineRevenue + offlineRevenue;
 
         // Fetch ages from patientmodel
         const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } }).lean();
@@ -1575,6 +1620,8 @@ export const getReportsAnalytics = async (req, res, next) => {
             data: {
                 kpis: {
                     totalRevenue: currentRevenue,
+                    onlineRevenue,
+                    offlineRevenue,
                     revenueGrowth,
                     totalVisits: currentSessions.length,
                     visitsGrowth,
@@ -1905,8 +1952,8 @@ export const updateSessionFees = async (req, res, next) => {
             throw new Error("Session not found", { cause: 404 });
         }
 
-        if (existingSession.isFeesFinalized) {
-            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        if (existingSession.isFeesFinalized && fees < existingSession.fees) {
+            throw new Error(`Fees cannot be reduced below the online paid amount (${existingSession.fees})`, { cause: 400 });
         }
 
         const updateObj = { fees };

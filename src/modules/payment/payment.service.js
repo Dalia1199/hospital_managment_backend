@@ -3,6 +3,7 @@
 import paymentmodel from "../../DB/models/paymentmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
+import dayjs from "dayjs";
 
 import {
     KASHIER_API_KEY
@@ -17,6 +18,7 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import slotmodel from "../../DB/models/slot_model.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
 import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
 import usermodel from "../../DB/models/usermodel.js";
 import { roleenum } from "../../common/enum/user.enum.js";
@@ -124,38 +126,35 @@ export const createCheckout = async (
             purpose === "appointment"
         ) {
 
-            const slot =
-                await slotmodel.findById(
-                    referenceId
-                );
+            const slot = await slotmodel.findById(referenceId);
+            if (!slot) throw new Error("slot not found");
 
-            if (!slot) {
+            const clinic = await clinicmodel.findById(slot.clinicId);
+            if (!clinic) throw new Error("clinic not found");
 
-                throw new Error(
-                    "slot not found"
-                );
+            let isFollowUp = false;
+            const validFollowUp = await appointmentsmodel.findOne({
+              patientId: req.user._id,
+              doctorId: slot.doctorId,
+              status: "completed",
+              followUpStatus: { $in: ["scheduled", "overridden"] }
+            }).sort({ createdAt: -1 });
 
+            if (validFollowUp) {
+              const bookingDate = dayjs(slot.startDateTime);
+              const deadline = dayjs(validFollowUp.followUpDeadline);
+              
+              if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+                 isFollowUp = true;
+              }
             }
 
-            const doctor =
-                await doctormodel.findOne({
-
-                    userId:
-                        slot.doctorId
-
-                });
-
-            if (!doctor) {
-
-                throw new Error(
-                    "doctor not found"
-                );
-
-            }
-
-            amount =
-                doctor.consultationFee;
-
+            const doctor = await doctormodel.findOne({ userId: slot.doctorId });
+            if (!doctor) throw new Error("doctor not found");
+            
+            const baseFee = clinic.consultationFee || 0;
+            const followUpFee = clinic.followUpFee ?? (baseFee * 0.5);
+            amount = isFollowUp ? followUpFee : baseFee;
         }
 
         // =========================
@@ -172,13 +171,10 @@ export const createCheckout = async (
                 throw new Error("this appointment is not a follow-up consultation");
             }
 
-            const doctor = await doctormodel.findOne({ userId: appointment.doctorId });
+            const clinic = await clinicmodel.findById(appointment.clinicId);
+            if (!clinic) throw new Error("clinic not found");
 
-            if (!doctor) {
-                throw new Error("doctor not found");
-            }
-
-            amount = doctor.followUpFee ?? (doctor.consultationFee * 0.5);
+            amount = clinic.followUpFee ?? (clinic.consultationFee * 0.5);
         }
 
         // =========================
@@ -377,6 +373,31 @@ export const paymentCallback = async (req, res, next) => {
                     const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
                     await deductAvailableBalance(payment.userId, payment.walletDeduction, 'split_payment_deduction', payment._id);
                 }
+                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
+
+                let isFollowUp = false;
+                let parentAppointmentId = null;
+
+                const validFollowUp = await appointmentsmodel.findOne({
+                  patientId: payment.userId,
+                  doctorId: slot.doctorId,
+                  status: "completed",
+                  followUpStatus: { $in: ["scheduled", "overridden"] }
+                }).sort({ createdAt: -1 });
+
+                if (validFollowUp) {
+                  const bookingDate = dayjs(slot.startDateTime);
+                  const deadline = dayjs(validFollowUp.followUpDeadline);
+                  
+                  if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+                     isFollowUp = true;
+                     parentAppointmentId = validFollowUp._id;
+                  } else if (validFollowUp.followUpStatus === "scheduled") {
+                     validFollowUp.followUpStatus = "expired";
+                     await validFollowUp.save();
+                  }
+                }
+
                 const appointment = await appointmentsmodel.create({
                     doctorId: slot.doctorId,
                     patientId: payment.userId,
@@ -386,21 +407,31 @@ export const paymentCallback = async (req, res, next) => {
                     startDateTime: slot.startDateTime,
                     endDateTime: slot.endDateTime,
                     paymentStatus: 'paid',
-                    status: 'booked'
+                    status: 'booked',
+                    isFollowUp,
+                    parentAppointmentId,
+                    paidAmount: totalPaid
                 });
+
+                if (isFollowUp && parentAppointmentId) {
+                   await appointmentsmodel.findByIdAndUpdate(parentAppointmentId, {
+                       followUpStatus: "used"
+                   });
+                }
+
                 slot.isBooked = true;
                 slot.isReserved = false;
                 await slot.save();
 
-                const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid, appointment.doctorId);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         } else if (
@@ -417,13 +448,27 @@ export const paymentCallback = async (req, res, next) => {
                 const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                const platformledgermodel = (await import('../../DB/models/platform_ledger_model.js')).default;
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid, appointment.doctorId);
+                
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
+                
+                if (platformFee > 0) {
+                    await platformledgermodel.create({
+                        amount: platformFee,
+                        source: 'appointment',
+                        referenceId: payment._id,
+                        appointmentId: appointment._id,
+                        doctorId: appointment.doctorId,
+                        patientId: appointment.patientId
+                    });
+                }
             }
         }
 
@@ -519,11 +564,36 @@ export const payWithWallet = async (req, res, next) => {
         if (purpose === "appointment") {
             const slot = await slotmodel.findById(referenceId);
             if (!slot || slot.isBooked) throw new Error("Slot not found or already booked");
-            const doctor = await doctormodel.findOne({ userId: slot.doctorId });
-            if (!doctor) throw new Error("doctor not found");
+            const clinic = await clinicmodel.findById(slot.clinicId);
+            if (!clinic) throw new Error("clinic not found");
             
-            amount = doctor.consultationFee;
+            let isFollowUp = false;
+            let parentAppointmentId = null;
+
+            const validFollowUp = await appointmentsmodel.findOne({
+              patientId: userId,
+              doctorId: slot.doctorId,
+              status: "completed",
+              followUpStatus: { $in: ["scheduled", "overridden"] }
+            }).sort({ createdAt: -1 });
+
+            if (validFollowUp) {
+              const bookingDate = dayjs(slot.startDateTime);
+              const deadline = dayjs(validFollowUp.followUpDeadline);
+              
+              if (validFollowUp.followUpStatus === "overridden" || bookingDate.isBefore(deadline) || bookingDate.isSame(deadline, 'day')) {
+                 isFollowUp = true;
+                 parentAppointmentId = validFollowUp._id;
+              } else if (validFollowUp.followUpStatus === "scheduled") {
+                 validFollowUp.followUpStatus = "expired";
+                 await validFollowUp.save();
+              }
+            }
             
+            const baseFee = clinic.consultationFee || 0;
+            const followUpFee = clinic.followUpFee ?? (baseFee * 0.5);
+            amount = isFollowUp ? followUpFee : baseFee;
+
             const { deductAvailableBalance } = await import('../wallet/wallet.service.js');
             await deductAvailableBalance(userId, amount, 'online_booking_payment', referenceId);
 
@@ -536,15 +606,25 @@ export const payWithWallet = async (req, res, next) => {
                 startDateTime: slot.startDateTime,
                 endDateTime: slot.endDateTime,
                 paymentStatus: 'paid',
-                status: 'booked'
+                status: 'booked',
+                isFollowUp,
+                parentAppointmentId,
+                paidAmount: amount
             });
+
+            if (isFollowUp && parentAppointmentId) {
+               await appointmentsmodel.findByIdAndUpdate(parentAppointmentId, {
+                   followUpStatus: "used"
+               });
+            }
+
             slot.isBooked = true;
             slot.isReserved = false;
             await slot.save();
 
             const { calculateCommission } = await import('../appconfig/appconfig.service.js');
             const { addPendingBalance } = await import('../wallet/wallet.service.js');
-            const { doctorShare, platformFee } = await calculateCommission(amount);
+            const { doctorShare, platformFee } = await calculateCommission(amount, appointment.doctorId);
             
             await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                 platformFee, 
@@ -555,10 +635,10 @@ export const payWithWallet = async (req, res, next) => {
         } else if (purpose === "followup") {
             const appointment = await appointmentsmodel.findById(referenceId);
             if (!appointment) throw new Error("appointment not found");
-            const doctor = await doctormodel.findOne({ userId: appointment.doctorId });
-            if (!doctor) throw new Error("doctor not found");
-            
-            amount = doctor.followUpFee ?? (doctor.consultationFee * 0.5);
+            const clinic = await clinicmodel.findById(appointment.clinicId);
+            if (!clinic) throw new Error("clinic not found");
+
+            amount = clinic.followUpFee ?? (clinic.consultationFee * 0.5);
             
             if (appointment.paymentStatus === "paid") {
                 throw new Error("appointment already paid");
@@ -574,7 +654,7 @@ export const payWithWallet = async (req, res, next) => {
 
             const { calculateCommission } = await import('../appconfig/appconfig.service.js');
             const { addPendingBalance } = await import('../wallet/wallet.service.js');
-            const { doctorShare, platformFee } = await calculateCommission(amount);
+            const { doctorShare, platformFee } = await calculateCommission(amount, appointment.doctorId);
             
             await addPendingBalance(appointment.doctorId, doctorShare, referenceId, { 
                 platformFee, 
@@ -662,12 +742,13 @@ export const paymentWebhook = async (req, res, next) => {
                 const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid, appointment.doctorId);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         } else if (
@@ -684,12 +765,13 @@ export const paymentWebhook = async (req, res, next) => {
                 const totalPaid = Number(payment.amount) + Number(payment.walletDeduction || 0);
                 const { calculateCommission } = await import('../appconfig/appconfig.service.js');
                 const { addPendingBalance } = await import('../wallet/wallet.service.js');
-                const { doctorShare, platformFee } = await calculateCommission(totalPaid);
+                const { doctorShare, platformFee } = await calculateCommission(totalPaid, appointment.doctorId);
                 
-                await addPendingBalance(appointment.doctorId, doctorShare, payment._id, { 
+                await addPendingBalance(appointment.doctorId, doctorShare, appointment._id, { 
                     platformFee, 
                     doctorShare, 
-                    totalPaid
+                    totalPaid,
+                    paymentId: payment._id
                 });
             }
         }

@@ -19,9 +19,11 @@ export const addAvailabilitySchema = {
             .required(),
 
         startTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'startTime must be in HH:MM 24-hour format, e.g. 09:00' })
             .required(),
 
         endTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'endTime must be in HH:MM 24-hour format, e.g. 17:00' })
             .required(),
 
         appointmentDuration: Joi.number()
@@ -50,6 +52,11 @@ export const updateAvailabilitySchema = {
  
     }).required(),
  
+    // fetchClient auto-appends clinicId from localStorage — allow it to pass through
+    query: Joi.object({
+        clinicId: generalrules.id
+    }),
+ 
     body: Joi.object({
  
         day: Joi.string()
@@ -63,9 +70,11 @@ export const updateAvailabilitySchema = {
                 "saturday"
             ),
  
-        startTime: Joi.string(),
+        startTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'startTime must be in HH:MM 24-hour format, e.g. 09:00' }),
  
-        endTime: Joi.string(),
+        endTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'endTime must be in HH:MM 24-hour format, e.g. 17:00' }),
  
         appointmentDuration: Joi.number()
             .valid(15, 20, 30, 45, 60),
@@ -85,7 +94,8 @@ export const deleteAvailabilitySchema = {
     }).required(),
  
     query: Joi.object({
-        force: Joi.boolean()
+        force: Joi.boolean(),
+        clinicId: generalrules.id
     })
  
 };
