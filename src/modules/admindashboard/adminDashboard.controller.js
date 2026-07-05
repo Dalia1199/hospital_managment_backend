@@ -24,6 +24,13 @@ adminDashboardRouter.get(
 
 );
 
+adminDashboardRouter.get(
+    "/financial-stats",
+    authentication,
+    authorization([roleenum.admin]),
+    ADS.getFinancialStats
+);
+
 //done
 adminDashboardRouter.get(
     "/revenue-chart",

@@ -62,6 +62,10 @@ const appointmentsSchema = new mongoose.Schema(
         ],
         default: "unpaid"
     },
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
     isFollowUp: {
         type: Boolean,
         default: false

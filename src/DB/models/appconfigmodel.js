@@ -17,6 +17,17 @@ const appConfigSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    // Dynamic Commission Rates based on Doctor's Plan
+    commissionRates: {
+        type: Map,
+        of: Number,
+        default: {
+            'free': 10,
+            'silver': 8,
+            'gold': 5,
+            'premium': 2
+        }
+    },
     // Fee configurations for patient cancellation
     patientCancellationRefundPercentage: {
         type: Number,

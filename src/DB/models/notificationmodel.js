@@ -26,7 +26,7 @@ const notificationSchema = new mongoose.Schema(
                 "license_approved", "license_rejected", "patient_booked_appointment", "patient_cancelled_appointment", // doctor 
                 "patient_completed_appointment" , "patient_rescheduled_appointment", // doctor
                 "certificate_added", "certificate_updated", "certificate_deleted",  // doctor
-                "medication"
+                "medication", "payout_approved", "payout_rejected", "wallet_setup_approved", "wallet_setup_rejected", "wallet_suspended"
             ],
             required: true
         },

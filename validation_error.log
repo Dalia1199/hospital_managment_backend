@@ -1,0 +1,18 @@
+{
+  "url": "/payout/request?clinicId=6a3b2f2572c1ec9cbf6253a2",
+  "body": {
+    "amount": 95,
+    "selectedMethodId": "6a49b52cb7b57806b248cbe9"
+  },
+  "query": {
+    "clinicId": "6a3b2f2572c1ec9cbf6253a2"
+  },
+  "params": {},
+  "errorresult": [
+    {
+      "key": "body",
+      "path": "selectedMethodId",
+      "message": "\"selectedMethodId\" is not allowed"
+    }
+  ]
+}

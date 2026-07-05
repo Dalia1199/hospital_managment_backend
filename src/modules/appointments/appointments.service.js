@@ -617,8 +617,14 @@ export const holdSlot = async (req, res, next) => {
     const { slotId } = req.body;
 
     const slotData = await slotmodel.findById(slotId);
-    if (!slotData || slotData.isBooked || slotData.isReserved || new Date(slotData.startDateTime) < new Date()) {
+    if (!slotData || slotData.isBooked || new Date(slotData.startDateTime) < new Date()) {
       throw new Error("slot not available", {
+        cause: 409,
+      });
+    }
+
+    if (slotData.isReserved && slotData.reservedBy?.toString() !== req.user._id.toString()) {
+      throw new Error("slot not available (already reserved)", {
         cause: 409,
       });
     }
@@ -636,7 +642,7 @@ export const holdSlot = async (req, res, next) => {
       });
     }
 
-    const slot = await createReservation(slotId);
+    const slot = await createReservation(slotId, req.user._id);
 
     return successresponse({
       res,
@@ -653,7 +659,7 @@ export const confirmAndCreate = async (req, res, next) => {
   try {
     const { slotId, reason, paymentId } = req.body;
     // Reserve the slot (5‑minute hold)
-    await createReservation(slotId);
+    await createReservation(slotId, req.user._id);
     // Verify slot still free
     const slot = await slotmodel.findOne({ _id: slotId, isBooked: false, isReserved: true });
     if (!slot) {
@@ -873,13 +879,15 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
   if (appointment.isFollowUp && appointment.parentAppointmentId) {
     const parentAppt = await appointmentsmodel.findById(appointment.parentAppointmentId);
     if (parentAppt && parentAppt.followUpStatus === "used") {
-      if (cancelledByDoctor || (actionByUserId && actionByUserId.toString() === appointment.doctorId.toString())) {
-        parentAppt.followUpStatus = "overridden";
-      } else {
-        const originalDeadline = new Date(parentAppt.followUpDeadline);
-        const newDeadline = new Date();
-        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
+      const originalDeadline = new Date(parentAppt.followUpDeadline);
+      const newDeadline = new Date();
 
+      if (cancelledByDoctor || (actionByUserId && actionByUserId.toString() === appointment.doctorId.toString())) {
+        newDeadline.setDate(newDeadline.getDate() + 7); // Give a full week (7 days)
+        parentAppt.followUpStatus = "scheduled";
+        parentAppt.followUpDeadline = newDeadline;
+      } else {
+        newDeadline.setDate(newDeadline.getDate() + 3); // Extend by 3 days from cancellation
         parentAppt.followUpStatus = "scheduled";
         parentAppt.followUpDeadline = newDeadline > originalDeadline ? newDeadline : originalDeadline;
       }
@@ -901,13 +909,36 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
         $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
     });
 
-    if (docRevenueTx && docRevenueTx.metadata && docRevenueTx.metadata.totalPaid) {
-        const totalPaid = docRevenueTx.metadata.totalPaid;
+    if (docRevenueTx && docRevenueTx.metadata) {
+        const totalPaid = appointment.paidAmount > 0 ? appointment.paidAmount : (docRevenueTx.metadata.totalPaid || 0);
         const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
         
-        // Doctor cancelled -> 100% refund
-        await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
-        await removePendingBalance(appointment.doctorId, originalDoctorShare);
+        const now = new Date();
+        const apptStart = new Date(appointment.startDateTime);
+        const hoursUntilAppointment = (apptStart - now) / (1000 * 60 * 60);
+        
+        let isEarlyCancellation = true;
+        if (!cancelledByDoctor && hoursUntilAppointment < 24) {
+            isEarlyCancellation = false;
+        }
+
+        if (cancelledByDoctor || isEarlyCancellation) {
+            // 100% refund
+            if (totalPaid > 0) {
+                await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
+            }
+            if (originalDoctorShare > 0) {
+                await removePendingBalance(appointment.doctorId, originalDoctorShare);
+            }
+            docRevenueTx.status = 'cancelled';
+            await docRevenueTx.save();
+        } else {
+            // Late cancellation (< 24h): No refund. Doctor gets paid as if completed.
+            const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
+            if (originalDoctorShare > 0) {
+                await releasePendingToAvailable(appointment.doctorId, originalDoctorShare);
+            }
+        }
     }
   }
 
@@ -1474,8 +1505,9 @@ export const getPatientAppointments = async (req, res, next) => {
     });
 
     const appointmentsWithAmount = await Promise.all(appointments.map(async (appt) => {
-      const doc = await doctormodel.findOne({ userId: appt.doctorId }).lean();
-      const amount = appt.isFollowUp ? (doc?.followUpFee ?? ((doc?.consultationFee ?? 0) * 0.5)) : (doc?.consultationFee ?? 0);
+      const doc = await doctormodel.findOne({ userId: appt.doctorId }).select("userId firstName lastName profileImage specialization");
+      const clinic = await clinicmodel.findById(appt.clinicId).select("consultationFee followUpFee");
+      const amount = appt.isFollowUp ? (clinic?.followUpFee ?? ((clinic?.consultationFee ?? 0) * 0.5)) : (clinic?.consultationFee ?? 0);
       return { ...appt.toObject(), amount };
     }));
 

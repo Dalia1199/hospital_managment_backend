@@ -35,6 +35,11 @@ const slotSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    reservedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
   },
   {
     timestamps: true,
