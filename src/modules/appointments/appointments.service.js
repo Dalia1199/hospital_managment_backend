@@ -433,7 +433,10 @@ export const deleteAvailability = async (req, res, next) => {
 
 export const getAvailableSlots = async (req, res, next) => {
   try {
-    const { doctorId } = req.params;
+    let { doctorId } = req.params;
+    if (!doctorId && req.user) {
+       doctorId = req.user._id.toString();
+    }
     const { clinicId, startDate, endDate, includeBooked, page, limit } = req.query;
 
     const pageNum = parseInt(page) || 1;

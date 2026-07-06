@@ -1,1 +1,0 @@
-{"files":["freelancer (Mostaql).pdf","freelancer (Upwork).pdf"],"sizeMB":"N/A (Pinecone Index)","activeDb":"Default_DB","databases":["Default_DB","test"]}

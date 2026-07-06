@@ -6,6 +6,7 @@ import sessionmodel from "../../DB/models/sessionmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
+import transactionmodel from "../../DB/models/transactionmodel.js";
 import { sendemail, generateotp } from "../../common/utilits/email/send email.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
@@ -408,7 +409,7 @@ export const getPatientCompliance = async (req, res, next) => {
 
 export const createSession = async (req, res, next) => {
     try {
-        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge } = req.body;
+        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge, appointmentId, skipQueue } = req.body;
         // clinicId can come from the request body OR as a query param (auto-injected by fetchClient)
         const resolvedClinicId = req.body.clinicId || req.query.clinicId || undefined;
         const doctorId = req.user._id;
@@ -431,6 +432,13 @@ export const createSession = async (req, res, next) => {
                 throw new Error("This patient already has an active session in the queue.", { cause: 400 });
             }
 
+            let finalOrder = Date.now();
+            if (skipQueue) finalOrder = 0;
+            else if (appointmentId) {
+                const appt = await appointmentsmodel.findById(appointmentId);
+                if (appt) finalOrder = appt.startDateTime.getTime();
+            }
+
             const session = await db_service.create({
                 model: sessionmodel,
                 data: {
@@ -445,7 +453,7 @@ export const createSession = async (req, res, next) => {
                     fees: 0,
                     status: "in_progress",
                     validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
-                    order: Date.now()
+                    order: finalOrder
                 }
             });
             return successresponse({
@@ -500,20 +508,27 @@ export const createSession = async (req, res, next) => {
                 await sessionmodel.findByIdAndDelete(existingSession._id);
             }
 
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date();
-            endOfDay.setHours(23, 59, 59, 999);
-
             let order = Date.now();
-            const lastAppointment = await appointmentsmodel.findOne({
-                patientId,
-                doctorId,
-                status: "booked",
-                startDateTime: { $gte: startOfDay, $lte: endOfDay }
-            }).sort({ startDateTime: 1 });
-            if (lastAppointment) {
-                order = lastAppointment.startDateTime.getTime();
+            if (skipQueue) {
+                order = 0;
+            } else if (appointmentId) {
+                const appt = await appointmentsmodel.findById(appointmentId);
+                if (appt) order = appt.startDateTime.getTime();
+            } else {
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date();
+                endOfDay.setHours(23, 59, 59, 999);
+
+                const lastAppointment = await appointmentsmodel.findOne({
+                    patientId,
+                    doctorId,
+                    status: "booked",
+                    startDateTime: { $gte: startOfDay, $lte: endOfDay }
+                }).sort({ startDateTime: 1 });
+                if (lastAppointment) {
+                    order = lastAppointment.startDateTime.getTime();
+                }
             }
 
             let fallbackFee = 0;
@@ -1622,6 +1637,14 @@ export const getReportsAnalytics = async (req, res, next) => {
             .sort((a, b) => b.count - a.count)
             .slice(0, 5);
 
+        // Calculate Total Withdrawn (Payouts)
+        const payoutTransactions = await db_service.find({
+            model: transactionmodel,
+            filter: { userId: doctorId, purpose: 'payout_withdrawal', createdAt: { $gte: start, $lte: end } },
+            options: { lean: true }
+        });
+        const totalWithdrawn = payoutTransactions.reduce((acc, t) => acc + t.amount, 0);
+
         return successresponse({
             res,
             status: 200,
@@ -1635,7 +1658,8 @@ export const getReportsAnalytics = async (req, res, next) => {
                     totalVisits: currentSessions.length,
                     visitsGrowth,
                     onlineVisits: onlineCount,
-                    walkinVisits: walkinCount
+                    walkinVisits: walkinCount,
+                    totalWithdrawn
                 },
                 visitTrends,
                 topDiagnosis,

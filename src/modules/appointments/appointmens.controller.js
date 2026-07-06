@@ -70,7 +70,15 @@ appointmensrouter.post(
 );
 
 appointmensrouter.get(
+    "/available-slots/me",
+    authentication,
+    spoofAssistantToDoctor,
+    authorization([roleenum.patient, roleenum.doctor]),
+    validation(AV.getAvailableSlotsMeSchema),
+    AS.getAvailableSlots
+);
 
+appointmensrouter.get(
     "/available-slots/:doctorId",
 
     authentication,
