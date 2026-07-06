@@ -572,6 +572,8 @@ export const getprofile = async (req, res, next) => {
       .populate('doctorId', 'fullName')
       .populate('clinicId', 'name');
       
+    console.log("[getprofile] populated assistantData:", assistantData);
+      
     if (assistantData && assistantData.isActive === false) {
       return next(new Error("Account suspended. Please contact your doctor.", { cause: 403 }));
     }

@@ -409,6 +409,8 @@ export const getPatientCompliance = async (req, res, next) => {
 export const createSession = async (req, res, next) => {
     try {
         const { isOfflinePatient, patientId, guestName, guestPhone, guestAge } = req.body;
+        // clinicId can come from the request body OR as a query param (auto-injected by fetchClient)
+        const resolvedClinicId = req.body.clinicId || req.query.clinicId || undefined;
         const doctorId = req.user._id;
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -437,7 +439,7 @@ export const createSession = async (req, res, next) => {
                     guestName,
                     guestPhone,
                     guestAge,
-                    clinicId: req.body.clinicId || undefined,
+                    clinicId: resolvedClinicId,
                     // In a real flow, you should look up the clinic fee here too,
                     // but since this is just mock data generation, we can use 0 or fetch clinic.
                     fees: 0,
@@ -515,8 +517,8 @@ export const createSession = async (req, res, next) => {
             }
 
             let fallbackFee = 0;
-            if (req.body.clinicId) {
-                const clinic = await clinicmodel.findById(req.body.clinicId);
+            if (resolvedClinicId) {
+                const clinic = await clinicmodel.findById(resolvedClinicId);
                 if (clinic && clinic.consultationFee !== undefined && clinic.consultationFee !== null) {
                     fallbackFee = clinic.consultationFee;
                 }
@@ -528,7 +530,7 @@ export const createSession = async (req, res, next) => {
                     data: {
                         doctorId,
                         patientId,
-                        clinicId: req.body.clinicId || undefined,
+                        clinicId: resolvedClinicId,
                         otp: "AUTO",
                         fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
                         isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
@@ -555,7 +557,7 @@ export const createSession = async (req, res, next) => {
                 data: {
                     doctorId,
                     patientId,
-                    clinicId: req.body.clinicId || undefined,
+                    clinicId: resolvedClinicId,
                     otp,
                     fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
                     isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
@@ -958,7 +960,12 @@ export const getActiveSessions = async (req, res, next) => {
         };
         
         if (req.query.clinicId && req.query.clinicId !== "all") {
-            filterQuery.clinicId = req.query.clinicId;
+            // Include sessions that belong to this clinic OR have no clinic set (e.g. added without clinic context)
+            filterQuery.$or = [
+                { clinicId: req.query.clinicId },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
 
         if (req.query.status === "completed" || req.query.status === "all") {
@@ -1042,11 +1049,12 @@ export const getMedicationHistory = async (req, res, next) => {
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
             const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
+            
             filter.patientId = patientId;
-            if (sharingSetting === "own_only") {
+            
+            // If the doctor doesn't have global access (due to OTP or strict privacy),
+            // OR if the setting is explicitly 'own_only', they can STILL see their own records.
+            if (!hasAccess || sharingSetting === "own_only") {
                 filter.doctorId = req.user._id;
             }
         }
@@ -1140,11 +1148,12 @@ export const getPatientMedicalHistory = async (req, res, next) => {
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
             const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
+            
             filter.patientId = patientId;
-            if (sharingSetting === "own_only") {
+            
+            // If the doctor doesn't have global access (due to OTP or strict privacy),
+            // OR if the setting is explicitly 'own_only', they can STILL see their own records.
+            if (!hasAccess || sharingSetting === "own_only") {
                 filter.doctorId = req.user._id;
             }
         }

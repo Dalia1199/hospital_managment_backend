@@ -1,18 +1,21 @@
 {
-  "url": "/payout/request?clinicId=6a3b2f2572c1ec9cbf6253a2",
-  "body": {
-    "amount": 95,
-    "selectedMethodId": "6a49b52cb7b57806b248cbe9"
-  },
+  "url": "/appointmens/available-slots/null?cb=1783312694091&clinicId=6a3ae2e7ced0f6b003aa4bc7&startDate=2026-07-05T21%3A00%3A00.000Z&endDate=2026-07-06T20%3A59%3A59.999Z&includeBooked=true&limit=500",
   "query": {
-    "clinicId": "6a3b2f2572c1ec9cbf6253a2"
+    "cb": "1783312694091",
+    "clinicId": "6a3ae2e7ced0f6b003aa4bc7",
+    "startDate": "2026-07-05T21:00:00.000Z",
+    "endDate": "2026-07-06T20:59:59.999Z",
+    "includeBooked": "true",
+    "limit": "500"
   },
-  "params": {},
+  "params": {
+    "doctorId": "null"
+  },
   "errorresult": [
     {
-      "key": "body",
-      "path": "selectedMethodId",
-      "message": "\"selectedMethodId\" is not allowed"
+      "key": "params",
+      "path": "doctorId",
+      "message": "invalid id"
     }
   ]
 }

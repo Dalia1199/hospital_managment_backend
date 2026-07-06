@@ -434,7 +434,11 @@ export const deleteAvailability = async (req, res, next) => {
 export const getAvailableSlots = async (req, res, next) => {
   try {
     const { doctorId } = req.params;
-    const { clinicId, startDate, endDate, includeBooked } = req.query;
+    const { clinicId, startDate, endDate, includeBooked, page, limit } = req.query;
+
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 100;
+    const skip = (pageNum - 1) * limitNum;
 
     const start = startDate ? new Date(startDate) : new Date();
     const filter = {
@@ -442,7 +446,6 @@ export const getAvailableSlots = async (req, res, next) => {
       startDateTime: { $gte: start },
     };
     
-    // Only patients restrict by isBooked: false, OR if not specifically requested
     if (!(req.user?.role === 'doctor' && includeBooked === 'true')) {
         filter.isBooked = false;
     }
@@ -452,7 +455,16 @@ export const getAvailableSlots = async (req, res, next) => {
     }
     if (clinicId) filter.clinicId = clinicId;
 
-    const slots = await slotmodel.find(filter).sort({ startDateTime: 1 }).lean();
+    console.log(`[getAvailableSlots] filter:`, JSON.stringify(filter));
+    
+    const totalCount = await slotmodel.countDocuments(filter);
+    const slots = await slotmodel.find(filter)
+        .sort({ startDateTime: 1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean();
+    
+    console.log(`[getAvailableSlots] found ${slots.length} slots`);
 
     if (req.user?.role === 'doctor' && includeBooked === 'true') {
         const slotIds = slots.map(s => s._id);
@@ -490,7 +502,15 @@ export const getAvailableSlots = async (req, res, next) => {
       res,
       status: 200,
       message: "available slots fetched successfully",
-      data: slots,
+      data: {
+        slots,
+        pagination: {
+          total: totalCount,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(totalCount / limitNum)
+        }
+      },
     });
   } catch (error) {
     next(error);
@@ -1592,7 +1612,11 @@ export const generateCustomSlots = async (req, res, next) => {
     const doctorId = req.user._id;
 
     if (!Array.isArray(dates) || dates.length === 0) {
-      throw new Error("You must provide an array of dates to generate slots for", { cause: 400 });
+      throw new Error("dates array is required and must not be empty", { cause: 400 });
+    }
+
+    if (dates.length > 30) {
+      throw new Error("Cannot generate slots for more than 30 days at once", { cause: 400 });
     }
 
     // 1. Check for Cross-Clinic Conflicts First
