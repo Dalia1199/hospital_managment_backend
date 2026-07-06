@@ -74,7 +74,9 @@ export const createSessionSchema = {
         }),
         guestPhone: Joi.string().trim().min(10).max(15).optional(),
         guestAge: Joi.number().min(0).max(120).optional(),
-        clinicId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional()
+        clinicId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional(),
+        appointmentId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional(),
+        skipQueue: Joi.boolean().optional()
     })
 };
 
