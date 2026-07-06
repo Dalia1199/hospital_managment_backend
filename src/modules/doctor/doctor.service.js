@@ -509,18 +509,19 @@ export const createSession = async (req, res, next) => {
             }
 
             let order = Date.now();
+            let lastAppointment = null;
             if (skipQueue) {
                 order = 0;
             } else if (appointmentId) {
-                const appt = await appointmentsmodel.findById(appointmentId);
-                if (appt) order = appt.startDateTime.getTime();
+                lastAppointment = await appointmentsmodel.findById(appointmentId);
+                if (lastAppointment) order = lastAppointment.startDateTime.getTime();
             } else {
                 const startOfDay = new Date();
                 startOfDay.setHours(0, 0, 0, 0);
                 const endOfDay = new Date();
                 endOfDay.setHours(23, 59, 59, 999);
 
-                const lastAppointment = await appointmentsmodel.findOne({
+                lastAppointment = await appointmentsmodel.findOne({
                     patientId,
                     doctorId,
                     status: "booked",
