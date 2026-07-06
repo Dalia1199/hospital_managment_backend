@@ -8,7 +8,7 @@ const assistantSchema = new mongoose.Schema({
     },
     doctorId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "doctor",
+        ref: "user",
         required: true
     },
     clinicId: {

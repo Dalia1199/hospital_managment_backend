@@ -62,6 +62,7 @@ appointmensrouter.post(
     "/generate-slots",
     authentication,
     requirePermission("canManageAppointments"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(AV.generateSlotsSchema),
     auditLogger("GENERATE_SLOTS"),
@@ -69,7 +70,15 @@ appointmensrouter.post(
 );
 
 appointmensrouter.get(
+    "/available-slots/me",
+    authentication,
+    spoofAssistantToDoctor,
+    authorization([roleenum.patient, roleenum.doctor]),
+    validation(AV.getAvailableSlotsMeSchema),
+    AS.getAvailableSlots
+);
 
+appointmensrouter.get(
     "/available-slots/:doctorId",
 
     authentication,

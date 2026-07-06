@@ -109,6 +109,17 @@ export const generateSlotsSchema = {
     }).required()
 };
 
+export const getAvailableSlotsMeSchema = {
+    query: Joi.object({
+         clinicId: generalrules.id,
+         startDate: Joi.date().iso().optional(),
+         endDate: Joi.date().iso().optional(),
+         includeBooked: Joi.string().valid("true", "false").optional(),
+         page: Joi.number().min(1).optional(),
+         limit: Joi.number().min(1).optional()
+    }).unknown(true)
+};
+
 export const getAvailableSlotsSchema = {
 
     params: Joi.object({
@@ -128,8 +139,11 @@ export const getAvailableSlotsSchema = {
     query: Joi.object({
          clinicId: generalrules.id,
          startDate: Joi.date().iso().optional(),
-         endDate: Joi.date().iso().optional()
-    }).unknown(true).required()
+         endDate: Joi.date().iso().optional(),
+         includeBooked: Joi.string().valid("true", "false").optional(),
+         page: Joi.number().min(1).optional(),
+         limit: Joi.number().min(1).optional()
+    }).unknown(true)
 
 };
 export const bookAppointmentSchema = {
