@@ -145,33 +145,6 @@ export const manualWalletAdjust = async (req, res, next) => {
         const type = amount > 0 ? 'credit' : 'debit';
         const absAmount = Math.abs(amount);
         
-        if (balanceType === 'pending') {
-            const { addPendingBalance, removePendingBalance } = await import('./wallet.service.js');
-            if (amount > 0) {
-                await addPendingBalance(targetUserId, absAmount, null, { adminNotes: reason, adminId: req.user._id });
-            } else {
-                await removePendingBalance(targetUserId, absAmount);
-                // removePendingBalance doesn't create a transaction, so we manually create one
-                await transactionmodel.create({
-                    userId: targetUserId,
-                    amount: absAmount,
-                    type: 'debit',
-                    purpose: 'manual_adjustment',
-                    metadata: { adminNotes: reason, adminId: req.user._id }
-                });
-            }
-        } else {
-            const { addAvailableBalance, deductAvailableBalance } = await import('./wallet.service.js');
-            if (amount > 0) {
-                await addAvailableBalance(targetUserId, absAmount, 'admin_compensation', null, { adminNotes: reason, adminId: req.user._id });
-            } else {
-                await deductAvailableBalance(targetUserId, absAmount, 'manual_adjustment');
-                // deductAvailableBalance creates a generic debit transaction, we can update it or just let it be.
-                // Actually, let's just do it directly with findOneAndUpdate for better control
-            }
-        }
-        
-        // Wait, it's cleaner to just do it directly if it's admin:
         const walletmodel = (await import('../../DB/models/walletmodel.js')).default;
         
         let updateQuery = {};
@@ -194,11 +167,37 @@ export const manualWalletAdjust = async (req, res, next) => {
             purpose: 'manual_adjustment',
             metadata: { adminNotes: reason, adminId: req.user._id, balanceType }
         });
+
+        const { createNotification } = await import('../notifications/notification.service.js');
+        await createNotification({
+            userId: targetUserId,
+            message: `An adjustment of ${Math.abs(amount)} EGP has been made to your ${balanceType} balance. Reason: ${reason}.`,
+            type: "wallet_update",
+            link: "/doctor/wallet"
+        });
         
         return successresponse({
             res,
             message: "Wallet adjusted successfully",
             data: updatedWallet
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getUserWallet = async (req, res, next) => {
+    try {
+        const { userId } = req.params;
+        const wallet = await getWallet(userId);
+        
+        return successresponse({
+            res,
+            message: "User wallet retrieved successfully",
+            data: {
+                availableBalance: wallet.availableBalance,
+                pendingBalance: wallet.pendingBalance
+            }
         });
     } catch (error) {
         next(error);
