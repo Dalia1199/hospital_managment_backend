@@ -40,6 +40,11 @@ export const getDashboard = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.assistant && req.assistant.clinicId) {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+        }
 
         const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
             prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
@@ -87,6 +92,7 @@ export const getDoctorProfile = async (req, res, next) => {
                 licenseimage: doctor.licenseimage ?? null,
                 pendingLicenseImage: doctor.pendingLicenseImage ?? null,
                 previousLicenseImage: doctor.previousLicenseImage ?? null,
+                certificates: doctor.certificates || [],
             }
         });
     } catch (error) {
@@ -1264,8 +1270,10 @@ export const getMyPatients = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
-        if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = req.query.clinicId;
+        if (req.assistant && req.assistant.clinicId) {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);

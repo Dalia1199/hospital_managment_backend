@@ -299,42 +299,54 @@ export const getallusers = async (req, res, next) => {
 
         const currentPage = parseInt(page);
         const itemsPerPage = parseInt(limit);
-        const skip = (currentPage - 1) * itemsPerPage;
 
         const filter = {};
         if (role) filter.role = role;
         if (status) filter.status = status;
-        if (search) {
-            filter.$or = [
-                { fullName: { $regex: search, $options: "i" } },
-                { email: { $regex: search, $options: "i" } }
-            ];
-        }
 
-        const users = await db_service.find({
+        // Fetch all matching basic filters to do in-memory search and decryption
+        let users = await db_service.find({
             model: usermodel,
             filter: filter,
             options: {
-                skip: skip,
-                limit: itemsPerPage,
                 select: "-password",
                 lean: true
             }
         });
 
-        const totalCount = await db_service.count({
-            model: usermodel,
-            filter: filter
+        // Decrypt phone numbers
+        users = users.map(user => {
+            if (user.phoneNumber) {
+                try {
+                    user.phoneNumber = decrypt(user.phoneNumber);
+                } catch (e) { /* ignore invalid decryption */ }
+            }
+            return user;
         });
 
-        const totalPages = Math.ceil(totalCount / itemsPerPage);
+        // Apply search filter in-memory so we can search by decrypted phone number
+        if (search) {
+            const lowerSearch = search.toLowerCase();
+            users = users.filter(u => {
+                const matchName = u.fullName?.toLowerCase().includes(lowerSearch);
+                const matchEmail = u.email?.toLowerCase().includes(lowerSearch);
+                const matchPhone = u.phoneNumber?.toLowerCase().includes(lowerSearch);
+                return matchName || matchEmail || matchPhone;
+            });
+        }
+
+        const totalCount = users.length;
+        const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
+        
+        const skip = (currentPage - 1) * itemsPerPage;
+        const paginatedUsers = users.slice(skip, skip + itemsPerPage);
 
         return successresponse({
             res,
             status: 200,
             message: "Users fetched successfully",
             data: {
-                users,
+                users: paginatedUsers,
                 pagination: {
                     totalCount,
                     totalPages,

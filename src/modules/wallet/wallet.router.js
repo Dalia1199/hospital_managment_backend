@@ -29,6 +29,14 @@ walletRouter.get(
     WC.getWalletStats
 );
 
+// Admin: Get a specific user wallet balance
+walletRouter.get(
+    "/admin/user-wallet/:userId",
+    authentication,
+    authorization([roleenum.admin]),
+    WC.getUserWallet
+);
+
 // Admin: Manually adjust a user's wallet
 walletRouter.post(
     "/admin/adjust",
