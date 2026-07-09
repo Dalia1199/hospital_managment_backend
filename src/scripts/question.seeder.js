@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import questionmodel from "./src/DB/models/questionmodel.js";
+import questionmodel from "../DB/models/questionmodel.js";
 import { medicalHistoryQuestions } from "./medicalquestion.data.js"
 
 
