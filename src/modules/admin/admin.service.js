@@ -678,16 +678,32 @@ export const getMonthlyStats = async (req, res, next) => {
 // ─── GET /admin/stats/payments ───────────────────────────────────────────────
 export const getPaymentAnalytics = async (req, res, next) => {
     try {
+        const { startDate: startDateStr, endDate: endDateStr } = req.query;
+
+        // Build optional date filter
+        const dateFilter = {};
+        if (startDateStr || endDateStr) {
+            dateFilter.createdAt = {};
+            if (startDateStr) dateFilter.createdAt.$gte = new Date(startDateStr);
+            if (endDateStr) {
+                const end = new Date(endDateStr);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseMatch = { paymentStatus: "paid", ...dateFilter };
+
         // Total revenue
         const totalRevenueAggr = await paymentmodel.aggregate([
-            { $match: { paymentStatus: "completed" } },
+            { $match: baseMatch },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
         const totalRevenue = totalRevenueAggr[0]?.total || 0;
 
         // Revenue by purpose
         const revenueByPurposeAggr = await paymentmodel.aggregate([
-            { $match: { paymentStatus: "completed" } },
+            { $match: baseMatch },
             { $group: { _id: "$purpose", total: { $sum: "$amount" }, count: { $sum: 1 } } }
         ]);
 
@@ -697,14 +713,18 @@ export const getPaymentAnalytics = async (req, res, next) => {
             count: item.count
         }));
 
-        // Revenue over the last 6 months
+        // Revenue over the last 6 months (or within given range)
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
         sixMonthsAgo.setDate(1);
         sixMonthsAgo.setHours(0, 0, 0, 0);
 
+        const monthlyMatchFilter = startDateStr || endDateStr
+            ? baseMatch
+            : { paymentStatus: "paid", createdAt: { $gte: sixMonthsAgo } };
+
         const monthlyRevenueAggr = await paymentmodel.aggregate([
-            { $match: { paymentStatus: "completed", createdAt: { $gte: sixMonthsAgo } } },
+            { $match: monthlyMatchFilter },
             {
                 $group: {
                     _id: {
@@ -723,12 +743,12 @@ export const getPaymentAnalytics = async (req, res, next) => {
             total: item.total
         }));
 
-        // Recent transactions
-        const recentTransactions = await paymentmodel.find()
+        // Recent transactions (filtered by date if specified)
+        const recentTransactionsQuery = paymentmodel.find(dateFilter)
             .sort({ createdAt: -1 })
             .limit(10)
-            .populate("userId", "fullName email")
-            .lean();
+            .populate("userId", "fullName email");
+        const recentTransactions = await recentTransactionsQuery.lean();
 
         return successresponse({
             res,
@@ -745,6 +765,7 @@ export const getPaymentAnalytics = async (req, res, next) => {
         next(error);
     }
 };
+
 
 // ─── GET /admin/stats/daily ──────────────────────────────────────────────────
 export const getDailyStats = async (req, res, next) => {

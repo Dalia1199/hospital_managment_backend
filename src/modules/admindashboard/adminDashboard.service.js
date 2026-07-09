@@ -1334,20 +1334,34 @@ export const getTopSubscriptionPlans = async (req, res, next) => {
 
 export const getFinancialStats = async (req, res, next) => {
     try {
+        const { startDate: startDateStr, endDate: endDateStr } = req.query;
+
+        // Build optional date filter
+        const dateFilter = {};
+        if (startDateStr || endDateStr) {
+            dateFilter.createdAt = {};
+            if (startDateStr) dateFilter.createdAt.$gte = new Date(startDateStr);
+            if (endDateStr) {
+                const end = new Date(endDateStr);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
         // 1. Total Doctors Earnings (online_booking_revenue)
         const [doctorEarnings] = await transactionmodel.aggregate([
-            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' } } },
+            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' }, ...dateFilter } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
 
         // 2. Platform Profits
         const [transactionProfits] = await transactionmodel.aggregate([
-            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' } } },
+            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' }, ...dateFilter } },
             { $group: { _id: null, totalPlatformFee: { $sum: '$metadata.platformFee' } } }
         ]);
 
         const platformProfits = await platformledgermodel.aggregate([
-            { $match: { status: { $ne: 'cancelled' } } },
+            { $match: { status: { $ne: 'cancelled' }, ...dateFilter } },
             { $group: { _id: "$source", total: { $sum: "$amount" } } }
         ]);
 
@@ -1362,7 +1376,12 @@ export const getFinancialStats = async (req, res, next) => {
         });
 
         // 3. Cancellation Rate
+        const cancellationMatchStage = Object.keys(dateFilter).length > 0
+            ? { $match: dateFilter }
+            : { $match: {} };
+
         const [appointmentStats] = await appointmentsmodel.aggregate([
+            cancellationMatchStage,
             {
                 $group: {
                     _id: null,
