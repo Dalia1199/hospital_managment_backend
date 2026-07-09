@@ -24,6 +24,14 @@ supportrouter.get(
     SS.getMessages
 );
 
+// Get unread messages count (Admin only)
+supportrouter.get(
+    "/unread-count",
+    authentication,
+    authorization([roleenum.admin]),
+    SS.getUnreadCount
+);
+
 // Toggle read status (Admin only)
 supportrouter.patch(
     "/:messageId/read",
