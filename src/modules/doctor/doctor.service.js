@@ -5,6 +5,7 @@ import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
+import slotmodel from "../../DB/models/slot_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
 import transactionmodel from "../../DB/models/transactionmodel.js";
 import { sendemail, generateotp } from "../../common/utilits/email/send email.js";
@@ -441,8 +442,11 @@ export const createSession = async (req, res, next) => {
             let finalOrder = Date.now();
             if (skipQueue) finalOrder = 0;
             else if (appointmentId) {
-                const appt = await appointmentsmodel.findById(appointmentId);
-                if (appt) finalOrder = appt.startDateTime.getTime();
+                const slot = await slotmodel.findById(appointmentId);
+                if (slot) {
+                    finalOrder = slot.startDateTime.getTime();
+                    await slotmodel.findByIdAndUpdate(appointmentId, { isBooked: true });
+                }
             }
 
             const session = await db_service.create({
@@ -450,6 +454,7 @@ export const createSession = async (req, res, next) => {
                 data: {
                     doctorId,
                     isOfflinePatient,
+                    isOfflineEntry: true,
                     guestName,
                     guestPhone,
                     guestAge,
@@ -519,8 +524,11 @@ export const createSession = async (req, res, next) => {
             if (skipQueue) {
                 order = 0;
             } else if (appointmentId) {
-                lastAppointment = await appointmentsmodel.findById(appointmentId);
-                if (lastAppointment) order = lastAppointment.startDateTime.getTime();
+                const slot = await slotmodel.findById(appointmentId);
+                if (slot) {
+                    order = slot.startDateTime.getTime();
+                    await slotmodel.findByIdAndUpdate(appointmentId, { isBooked: true });
+                }
             } else {
                 const startOfDay = new Date();
                 startOfDay.setHours(0, 0, 0, 0);
@@ -558,7 +566,8 @@ export const createSession = async (req, res, next) => {
                         isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                         status: "in_progress",
                         validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
-                        order
+                        order,
+                        isOfflineEntry: !lastAppointment
                     }
                 });
                 
@@ -585,7 +594,8 @@ export const createSession = async (req, res, next) => {
                     isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                     status: "pending_otp",
                     validUntil: new Date(Date.now() + 10 * 60 * 1000),
-                    order
+                    order,
+                    isOfflineEntry: !lastAppointment
                 }
             });
             // Notify patient with the OTP
@@ -951,7 +961,11 @@ export const cancelSession = async (req, res, next) => {
         }
 
         if (session.status !== "pending_otp") {
-            throw new Error("Only pending sessions can be cancelled", { cause: 400 });
+            if (session.status === "in_progress" && session.isOfflineEntry) {
+                // Allowed to cancel offline session in-progress
+            } else {
+                throw new Error("Only pending sessions (or in-progress offline sessions) can be cancelled", { cause: 400 });
+            }
         }
 
         await sessionmodel.findByIdAndDelete(sessionId);
