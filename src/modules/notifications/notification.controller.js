@@ -22,6 +22,14 @@ notificationrouter.post(
     NS.savePushPermission
 );
 
+// DELETE /notifications/push-permission
+notificationrouter.delete(
+    "/push-permission",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin, roleenum.assistant]),
+    NS.removePushPermission
+);
+
 // PATCH /notifications/read-all
 notificationrouter.patch(
     "/read-all",
