@@ -30,6 +30,7 @@ import subscriptionRouter from "./modules/subscription/subscription.controller.j
 import { subscriptionCron } from "./common/cron/subscriptioncron.js";
 import doctorSubscriptionRouter from "./modules/doctor.subscription/doctorsubscription.controller.js";
 import adminDashboardRouter from "./modules/admindashboard/adminDashboard.controller.js";
+import supportrouter from "./modules/support/support.controller.js";
 const app = express();
 const Port = PORT || 3000;
 
@@ -66,7 +67,7 @@ const bootstrap = () => {
     app.use("/admin", adminrouter);
     app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
-    app.use("/appointmens", appointmensrouter);
+    app.use("/appointments", appointmensrouter);
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);
@@ -77,6 +78,7 @@ const bootstrap = () => {
     app.use("/subscriptions", subscriptionRouter);
     app.use("/doctorsubscriptions", doctorSubscriptionRouter);
     app.use("/admindashboard", adminDashboardRouter);
+    app.use("/support", supportrouter);
     app.use("/api/cron", cronRouter);
     app.use("/wallet", walletRouter);
     app.use("/payout", payoutRouter);

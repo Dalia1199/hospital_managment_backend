@@ -532,11 +532,12 @@ export const bookAppointment = async (req, res, next) => {
       });
     }
 
-    // Ensure the patient doesn't already have an active appointment with this doctor
+    // Ensure the patient doesn't already have an upcoming active appointment with this doctor
     const existingAppointment = await appointmentsmodel.findOne({
       patientId: req.user._id,
       doctorId: slotData.doctorId,
-      status: "booked"
+      status: "booked",
+      startDateTime: { $gte: new Date() }
     });
 
     if (existingAppointment) {
@@ -652,11 +653,12 @@ export const holdSlot = async (req, res, next) => {
       });
     }
 
-    // Ensure the patient doesn't already have an active appointment with this doctor
+    // Ensure the patient doesn't already have an upcoming active appointment with this doctor
     const existingAppointment = await appointmentsmodel.findOne({
       patientId: req.user._id,
       doctorId: slotData.doctorId,
-      status: "booked"
+      status: "booked",
+      startDateTime: { $gte: new Date() }
     });
 
     if (existingAppointment) {

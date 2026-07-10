@@ -529,6 +529,15 @@ export const paymentCallback = async (req, res, next) => {
                 );
             }
             notify.doctorPlanPaid(payment.userId, payment.amount);
+
+            // ✅ Record subscription revenue in platform ledger
+            const platformledgermodel = (await import('../../DB/models/platform_ledger_model.js')).default;
+            await platformledgermodel.create({
+                amount: payment.amount,
+                source: 'subscription',
+                referenceId: payment._id,
+                doctorId: payment.userId
+            });
         }
 
         const FRONTEND_URL = process.env.FRONTEND_URL || "https://carehub-two.vercel.app";

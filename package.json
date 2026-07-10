@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": " cross-env NODE_ENV=production node src/index.js",
-    "dev": " cross-env NODE_ENV=development nodemon --ignore src/DB/vectors/ src/index.js"
+    "dev": " cross-env NODE_ENV=development nodemon --ignore src/DB/vectors/ src/index.js",
+    "backfill:subscriptions": "cross-env NODE_ENV=development node --env-file=config/.env.development src/scripts/backfill_subscription_ledger.js"
   },
   "keywords": [],
   "author": "",

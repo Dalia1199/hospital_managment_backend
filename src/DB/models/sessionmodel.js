@@ -20,6 +20,10 @@ const sessionSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    isOfflineEntry: {
+        type: Boolean,
+        default: false
+    },
     guestName: {
         type: String,
         trim: true,

@@ -329,7 +329,9 @@ export const getMyProfile = async (req, res, next) => {
         address: userData.address,
         profilepicture: userData.profilepicture,
         // patient model fields
-        age: patient?.age ?? null,
+        dateOfBirth: patient?.dateOfBirth ?? null,
+        age: patient?.calculatedAge ?? patient?.age ?? null,
+        governorate: patient?.governorate ?? null,
         gender: patient?.gender ?? null,
         bloodType: patient?.bloodType ?? null,
         height: patient?.height ?? null,
@@ -354,7 +356,9 @@ export const updatePatientProfile = async (req, res, next) => {
       fullName,
       phoneNumber,
       address,
+      dateOfBirth,
       age,
+      governorate,
       gender,
       bloodType,
       allergies,
@@ -384,7 +388,9 @@ export const updatePatientProfile = async (req, res, next) => {
 
     // 2. Update patient model
     const patientUpdate = {};
+    if (dateOfBirth !== undefined) patientUpdate.dateOfBirth = dateOfBirth;
     if (age !== undefined) patientUpdate.age = age;
+    if (governorate !== undefined) patientUpdate.governorate = governorate;
     if (gender !== undefined) patientUpdate.gender = gender;
     if (bloodType !== undefined) patientUpdate.bloodType = bloodType;
     if (allergies !== undefined) patientUpdate.allergies = allergies;
