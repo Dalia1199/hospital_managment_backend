@@ -395,8 +395,9 @@ export const signup = async (req, res, next) => {
     confirmPassword,
     phoneNumber,
     role,
-    age,
+    dateOfBirth,
     gender,
+    governorate,
     address,
     bloodType,
     specialty,
@@ -507,8 +508,9 @@ export const signup = async (req, res, next) => {
         model: patientmodel,
         data: {
           userId: user._id,
-          age,
+          dateOfBirth,
           gender,
+          governorate,
           bloodType,
           address
         }

@@ -9,6 +9,7 @@ import patientmodel from "../../DB/models/patientmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import availabilitymodel from "../../DB/models/avalibility_model.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
 
 const SYSTEM_PROTECTION_GUARD = `
 --- SYSTEM PROTECTION & BOUNDARIES ---
@@ -543,7 +544,13 @@ export const patientChatbot = async (req, res, next) => {
                 ? upcomingAppointments.map(app => `Dr. ${app.doctorId?.fullName || "Unknown"} on ${new Date(app.appointmentDate).toLocaleDateString()}`).join(", ")
                 : "None";
 
+            const currentAge = patientProfile.dateOfBirth 
+                ? Math.floor((Date.now() - new Date(patientProfile.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+                : (patientProfile.age ?? "Unknown");
+
             vitalsText = `
+                Age: ${currentAge} years old
+                Governorate: ${patientProfile.governorate || "Unknown"}
                 Blood Type: ${patientProfile.bloodType || "Unknown"}
                 Height: ${patientProfile.height || "Unknown"}
                 Weight: ${patientProfile.weight || "Unknown"}
@@ -603,8 +610,19 @@ export const patientChatbot = async (req, res, next) => {
             }
         }
 
-        // --- 4. Query Doctors DB ---
-        const matchQuery = {};
+        // --- 4. Query Doctors DB via CLINIC GOVERNORATE ---
+        const patientGovernorateFallback = patientProfile?.governorate || "";
+        const governorateToSearch = filters.address || patientGovernorateFallback;
+
+        let clinicQuery = { isActive: true };
+        if (governorateToSearch) {
+            clinicQuery.governorate = { $regex: governorateToSearch, $options: "i" };
+        }
+
+        const clinics = await clinicmodel.find(clinicQuery).lean();
+        const doctorIdsInArea = [...new Set(clinics.map(c => c.doctorId.toString()))];
+
+        const matchQuery = { userId: { $in: doctorIdsInArea } };
         if (filters.specialty) {
             matchQuery.specialization = { $regex: filters.specialty, $options: "i" };
         }
@@ -617,14 +635,8 @@ export const patientChatbot = async (req, res, next) => {
             })
             .lean();
 
-        // Filter out null userIds (doctors who aren't approved) and match address if provided
-        const availableDoctors = doctors.filter(doc => {
-            if (!doc.userId) return false;
-            if (filters.address && doc.userId.address) {
-                return doc.userId.address.toLowerCase().includes(filters.address.toLowerCase());
-            }
-            return true;
-        }).slice(0, 5); // Limit to top 5 matches
+        // Filter out null userIds (doctors who aren't approved)
+        const availableDoctors = doctors.filter(doc => !!doc.userId).slice(0, 5);
 
         // Fetch their schedules
         const doctorIds = availableDoctors.map(doc => doc.userId._id);
@@ -634,7 +646,9 @@ export const patientChatbot = async (req, res, next) => {
         const doctorsContext = availableDoctors.map(doc => {
             const schedule = availabilities.filter(a => a.doctorId.toString() === doc.userId._id.toString());
             const days = schedule.length > 0 ? [...new Set(schedule.map(s => s.day))].join(", ") : "Not specified";
-            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Address: ${doc.userId?.address || "N/A"}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Schedule Days: ${days}`;
+            const docClinics = clinics.filter(c => c.doctorId.toString() === doc.userId._id.toString());
+            const clinicAddresses = docClinics.map(c => c.governorate).join(", ") || doc.userId?.address || "N/A";
+            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Governorate: ${clinicAddresses}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Schedule Days: ${days}`;
         }).join("\n");
 
         const finalSystemPrompt = `

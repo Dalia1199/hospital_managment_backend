@@ -817,6 +817,19 @@ export const endSession = async (req, res, next) => {
             medicalHistoryData.guestPhone = session.guestPhone;
         } else {
             medicalHistoryData.patientId = session.patientId;
+            
+            // Calculate ageAtEncounter
+            const patientRec = await patientmodel.findOne({ userId: session.patientId });
+            if (patientRec) {
+                if (patientRec.dateOfBirth) {
+                    const ageDiffMs = Date.now() - new Date(patientRec.dateOfBirth).getTime();
+                    const ageDate = new Date(ageDiffMs);
+                    medicalHistoryData.ageAtEncounter = Math.abs(ageDate.getUTCFullYear() - 1970);
+                } else if (patientRec.age != null) {
+                    medicalHistoryData.ageAtEncounter = patientRec.age;
+                }
+            }
+
             // Update patient model vitals if any exist
             if (height || weight || bloodType || parsedAllergies.length > 0 || parsedChronic.length > 0 || parsedSurgeries.length > 0) {
                 const updateData = {};
@@ -1964,6 +1977,16 @@ export const updateSessionVitals = async (req, res, next) => {
 
         let history = await medicalhistorymodel.findOne({ sessionId });
         if (!history) {
+            let ageAtEncounter = null;
+            if (!session.isOfflinePatient && session.patientId) {
+                const patientRec = await patientmodel.findOne({ userId: session.patientId });
+                if (patientRec?.dateOfBirth) {
+                    const ageDiffMs = Date.now() - new Date(patientRec.dateOfBirth).getTime();
+                    ageAtEncounter = Math.abs(new Date(ageDiffMs).getUTCFullYear() - 1970);
+                } else if (patientRec?.age != null) {
+                    ageAtEncounter = patientRec.age;
+                }
+            }
             history = await medicalhistorymodel.create({
                 doctorId: req.user._id,
                 patientId: session.patientId, // Null if guest
@@ -1974,6 +1997,7 @@ export const updateSessionVitals = async (req, res, next) => {
                 temperature,
                 weight,
                 height,
+                ageAtEncounter,
                 clinicId: session.clinicId
             });
         } else {
