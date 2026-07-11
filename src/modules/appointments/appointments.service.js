@@ -9,6 +9,8 @@ import availabilitymodel from "../../DB/models/avalibility_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
 import { decrypt } from "../../common/utilits/security/encrypt.js";
 import usermodel from "../../DB/models/usermodel.js";
 import { logAction } from "../../common/middleware/assistant.middleware.js";
@@ -17,6 +19,9 @@ import mongoose from "mongoose";
 // FIX: the plugin was imported but never registered, so the "YYYY-MM-DD HH:mm"
 // format string passed to dayjs() further down was silently ignored.
 dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault("Africa/Cairo");
 
 // shared helper — converts "HH:mm" into minutes-from-midnight so time ranges
 // can be compared as numbers instead of strings. (previously duplicated
@@ -253,23 +258,25 @@ export async function regenerateSlotsForRange({
     );
 
     for (const availability of dayAvailabilities) {
-      let currentSlot = dayjs(
+      let currentSlot = dayjs.tz(
         `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.startTime)}`,
         "YYYY-MM-DD HH:mm",
+        "Africa/Cairo"
       );
 
-      const endSlot = dayjs(
+      const endSlot = dayjs.tz(
         `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.endTime)}`,
         "YYYY-MM-DD HH:mm",
+        "Africa/Cairo"
       );
 
-      while (currentSlot.isBefore(endSlot)) {
+      while (currentSlot.isBefore(endSlot.add(1, 'minute'))) {
         const nextSlot = currentSlot.add(
           availability.appointmentDuration,
           "minute",
         );
 
-        if (nextSlot.isAfter(endSlot)) break;
+        if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
         if (currentSlot.isAfter(dayjs())) {
           slots.push({
@@ -1692,12 +1699,12 @@ export const generateCustomSlots = async (req, res, next) => {
       if (!availabilities.length) continue;
 
       for (const availability of availabilities) {
-        let currentSlot = dayjs(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm");
-        const endSlot = dayjs(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm");
+        let currentSlot = dayjs.tz(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm", "Africa/Cairo");
+        const endSlot = dayjs.tz(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm", "Africa/Cairo");
 
-        while (currentSlot.isBefore(endSlot)) {
+        while (currentSlot.isBefore(endSlot.add(1, 'minute'))) {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
-          if (nextSlot.isAfter(endSlot)) break;
+          if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
           if (currentSlot.isAfter(dayjs())) {
             allDesiredSlots.push({

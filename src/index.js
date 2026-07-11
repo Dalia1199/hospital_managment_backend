@@ -1,3 +1,5 @@
+process.env.TZ = "Africa/Cairo";
+
 import http from "http";
 import bootstrap from "./app.controller.js";
 import { initSocket } from "./common/socket/socket.service.js";
