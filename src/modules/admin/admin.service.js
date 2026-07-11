@@ -175,28 +175,46 @@ export const getAllDoctors = async (req, res, next) => {
         const skip = (page - 1) * limit;
 
         const { status, startDate, endDate } = req.query;
-        const filter = { role: roleenum.doctor };
-        if (status) filter.status = status;
         
+        const baseFilter = { role: roleenum.doctor };
         if (search) {
-            filter.$or = [
+            baseFilter.$or = [
                 { fullName: { $regex: search, $options: "i" } },
                 { email: { $regex: search, $options: "i" } }
             ];
         }
 
         if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
+            baseFilter.createdAt = {};
+            if (startDate) baseFilter.createdAt.$gte = new Date(startDate);
             if (endDate) {
                 const end = new Date(endDate);
                 end.setHours(23, 59, 59, 999);
-                filter.createdAt.$lte = end;
+                baseFilter.createdAt.$lte = end;
             }
         }
 
+        const filter = { ...baseFilter };
+        if (status) filter.status = status;
+
         const totalCount = await db_service.count({ model: usermodel, filter });
         const totalPages = Math.ceil(totalCount / limit);
+
+        const statusCountsAgg = await usermodel.aggregate([
+            { $match: baseFilter },
+            { $group: { _id: "$status", count: { $sum: 1 } } }
+        ]);
+
+        const statusCounts = {
+            approved: 0,
+            pending: 0,
+            rejected: 0,
+        };
+        statusCountsAgg.forEach(item => {
+            if (item._id) {
+                statusCounts[item._id] = item.count;
+            }
+        });
 
         const doctors = await db_service.find({
             model: usermodel,
@@ -238,7 +256,7 @@ export const getAllDoctors = async (req, res, next) => {
 
         const data = visible.map(({ _hasPendingLicenseUpdate, ...rest }) => rest);
 
-        return successresponse({ res, data, pagination: { totalPages, currentPage: page, totalRecords: totalCount } });
+        return successresponse({ res, data, pagination: { totalPages, currentPage: page, totalRecords: totalCount }, statusCounts });
     } catch (error) {
         next(error);
     }

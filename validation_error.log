@@ -1,0 +1,37 @@
+{
+  "url": "/users/signup?clinicId=6a3b2f2572c1ec9cbf6253a2",
+  "body": {
+    "fullName": "Ahmed Mohamed",
+    "email": "am@gmail.com",
+    "phoneNumber": "01211635125",
+    "password": "123123123",
+    "confirmPassword": "123123123",
+    "dateOfBirth": "2026-07-02",
+    "gender": "male",
+    "role": "patient",
+    "governorate": "New Valley",
+    "address": "test",
+    "bloodType": "A+"
+  },
+  "query": {
+    "clinicId": "6a3b2f2572c1ec9cbf6253a2"
+  },
+  "params": {},
+  "errorresult": [
+    {
+      "key": "body",
+      "path": "age",
+      "message": "\"age\" is required"
+    },
+    {
+      "key": "body",
+      "path": "dateOfBirth",
+      "message": "\"dateOfBirth\" is not allowed"
+    },
+    {
+      "key": "body",
+      "path": "governorate",
+      "message": "\"governorate\" is not allowed"
+    }
+  ]
+}
