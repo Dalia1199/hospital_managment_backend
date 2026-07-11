@@ -10,6 +10,7 @@ import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import availabilitymodel from "../../DB/models/avalibility_model.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
+import { checkDoctorAccess } from "../doctor/doctor.service.js";
 
 const SYSTEM_PROTECTION_GUARD = `
 --- SYSTEM PROTECTION & BOUNDARIES ---
@@ -159,24 +160,33 @@ export const askClinicalAssistant = async (req, res, next) => {
             let finalEncounters = [];
 
             if (specialty) {
-                const peerDoctors = await doctormodel.find({ specialization: specialty }).select("userId");
-                const peerDoctorIds = peerDoctors.map(d => d.userId);
+                const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
 
-                const specialtyEncounters = await medicalhistorymodel.find({ 
-                    patientId, 
-                    doctorId: { $in: peerDoctorIds }
-                }).sort({ createdAt: -1 }).limit(5).lean();
+                if (!hasAccess || sharingSetting === "own_only") {
+                    finalEncounters = await medicalhistorymodel.find({ 
+                        patientId, 
+                        doctorId: req.user._id 
+                    }).sort({ createdAt: -1 }).limit(5).lean();
+                } else {
+                    const peerDoctors = await doctormodel.find({ specialization: specialty }).select("userId");
+                    const peerDoctorIds = peerDoctors.map(d => d.userId);
 
-                finalEncounters = [...specialtyEncounters];
+                    const specialtyEncounters = await medicalhistorymodel.find({ 
+                        patientId, 
+                        doctorId: { $in: peerDoctorIds }
+                    }).sort({ createdAt: -1 }).limit(5).lean();
 
-                if (finalEncounters.length < 5) {
-                    const gap = 5 - finalEncounters.length;
-                    const otherEncounters = await medicalhistorymodel.find({
-                        patientId,
-                        doctorId: { $nin: peerDoctorIds }
-                    }).sort({ createdAt: -1 }).limit(gap).lean();
-                    
-                    finalEncounters = [...finalEncounters, ...otherEncounters];
+                    finalEncounters = [...specialtyEncounters];
+
+                    if (finalEncounters.length < 5) {
+                        const gap = 5 - finalEncounters.length;
+                        const otherEncounters = await medicalhistorymodel.find({
+                            patientId,
+                            doctorId: { $nin: peerDoctorIds }
+                        }).sort({ createdAt: -1 }).limit(gap).lean();
+                        
+                        finalEncounters = [...finalEncounters, ...otherEncounters];
+                    }
                 }
             } else {
                 finalEncounters = await medicalhistorymodel.find({ patientId })
@@ -248,8 +258,15 @@ export const getPatientInsights = async (req, res, next) => {
             throw new Error("Patient ID is required", { cause: 400 });
         }
 
+        const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+        
+        let encFilter = { patientId: patientId, status: "completed" };
+        if (!hasAccess || sharingSetting === "own_only") {
+            encFilter.doctorId = req.user._id;
+        }
+
         // Fetch last 5 encounters
-        const encounters = await medicalhistorymodel.find({ patientId: patientId, status: "completed" })
+        const encounters = await medicalhistorymodel.find(encFilter)
             .sort({ date: -1 })
             .limit(5)
             .lean();

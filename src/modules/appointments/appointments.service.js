@@ -1569,7 +1569,10 @@ export const scheduleFollowUp = async (req, res, next) => {
         const { appointmentId } = req.params;
         const { gracePeriodDays = 7 } = req.body;
 
-        const appointment = await appointments_model.findById(appointmentId);
+        const appointment = await appointments_model.findOne({
+            _id: appointmentId,
+            doctorId: req.user._id
+        });
         if (!appointment) throw new Error("Appointment not found", { cause: 404 });
 
         const deadline = new Date();
@@ -1599,7 +1602,10 @@ export const overrideFollowUp = async (req, res, next) => {
     try {
         const { appointmentId } = req.params;
         
-        const appointment = await appointments_model.findById(appointmentId);
+        const appointment = await appointments_model.findOne({
+            _id: appointmentId,
+            doctorId: req.user._id
+        });
         if (!appointment) throw new Error("Appointment not found", { cause: 404 });
 
         appointment.followUpStatus = "overridden";

@@ -319,7 +319,7 @@ export const signin = async (req, res, next) => {
 
   const uuid = uuidv4();
   const access_token = generatetoken({
-    payload: { id: user._id, email: user.email },
+    payload: { id: user._id, email: user.email, role: user.role },
     secret_key: access_secret_key,
     options: {
       expiresIn: "25h",
@@ -331,6 +331,7 @@ export const signin = async (req, res, next) => {
     payload: {
       id: user._id,
       email: user.email,
+      role: user.role
     },
     secret_key: refreshsecretkey,
     options: {
