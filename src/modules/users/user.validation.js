@@ -15,13 +15,17 @@ export const signupschema = {
 
         role: Joi.string().valid("doctor", "patient").required(),
 
-        phoneNumber: Joi.string().required(),
+        phoneNumber: Joi.string().pattern(/^(010|011|012|015)[0-9]{8}$/).required().messages({
+            "string.pattern.base": "Phone number must be a valid Egyptian mobile number (e.g. 010xxxxxxxx)"
+        }),
 
         
 
         dateOfBirth: Joi.when("role", {
             is: "patient",
-            then: Joi.date().required(),
+            then: Joi.date().max("now").required().messages({
+                "date.max": "Date of birth cannot be in the future"
+            }),
             otherwise: Joi.forbidden()
         }),
 
@@ -80,7 +84,7 @@ export const signupschema = {
 export const signinschema = {
     body: Joi.object({
         email: generalrules.email.required(),
-        password: generalrules.password.required(),
+        password: Joi.string().required(),
     }).required(),
 }
 
@@ -122,7 +126,7 @@ export const resetpasswordschema = {
 
 export const updatepassworsschema = {
     body: Joi.object({
-        oldpassword: generalrules.password.required(),
+        oldpassword: Joi.string().required(),
         newpassword: generalrules.password.required(),
         cpassword: Joi.string()
             .valid(Joi.ref("newpassword"))

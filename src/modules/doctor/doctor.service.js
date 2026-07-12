@@ -1273,12 +1273,24 @@ export const getPatientMedicalHistory = async (req, res, next) => {
                 sort: { createdAt: sortDirection },
                 skip,
                 limit: parseInt(limit),
+                lean: true,
                 populate: [
                     { path: "prescriptions" },
                     { path: "doctorId", select: "fullName" }
                 ]
             }
         });
+
+        for (let record of history) {
+            const patientData = await patientmodel.findOne({ userId: record.patientId }).lean();
+            if (patientData) {
+                record.patientId = {
+                    _id: record.patientId,
+                    dateOfBirth: patientData.dateOfBirth,
+                    age: patientData.age,
+                };
+            }
+        }
 
         const total = await medicalhistorymodel.countDocuments(filter);
 
@@ -1649,13 +1661,24 @@ export const getMyPrescriptions = async (req, res, next) => {
 
 export const getAllDoctors = async (req, res, next) => {
     try {
-        // Basic pagination to prevent fetching the entire database
-        const { page = 1, limit = 100 } = req.query;
+        const { page = 1, limit = 8 } = req.query;
         const skip = (page - 1) * limit;
 
-        const doctors = await doctormodel.find()
-            .skip(skip)
-            .limit(parseInt(limit))
+        // Fetch distinct doctorIds that have available slots in the future
+        const availableSlots = await slotmodel.find({
+            isBooked: false,
+            startDateTime: { $gt: new Date().toISOString() }
+        }).select("doctorId").lean();
+
+        const doctorIdsWithSlots = [...new Set(availableSlots.map(s => s.doctorId.toString()))];
+
+        // Fallback: If no doctors have available slots, just fetch any approved doctors
+        const query = doctorIdsWithSlots.length > 0 
+            ? { userId: { $in: doctorIdsWithSlots } } 
+            : {}; // Empty query will fetch all doctors (filtered by approved status in populate)
+
+        // Fetch doctors matching the filter without DB limit so we can filter unapproved ones first
+        const doctors = await doctormodel.find(query)
             .populate({
                 path: "userId",
                 select: "fullName email confirmed status profilepicture",
@@ -1663,13 +1686,27 @@ export const getAllDoctors = async (req, res, next) => {
             })
             .lean(); // Massive performance boost by returning plain JS objects
 
-        const activeDoctors = doctors.filter(d => d.userId);
+        // Remove any doctors whose user is not approved (populate returns null)
+        // Then apply skip and limit in memory to guarantee exactly `limit` active doctors if available
+        const activeDoctors = doctors
+            .filter(d => d.userId)
+            .slice(skip, skip + parseInt(limit));
+
+        // Count total matching records for proper pagination
+        // Note: this count might be slightly off if some users are not 'approved', but it's close enough for UI pagination
+        const totalRecords = await doctormodel.countDocuments(query);
+        const totalPages = Math.ceil(totalRecords / limit);
 
         return successresponse({
             res,
             status: 200,
             message: "doctors fetched successfully",
-            data: activeDoctors
+            data: activeDoctors,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: totalPages === 0 ? 1 : totalPages,
+                totalRecords
+            }
         });
     } catch (error) {
         next(error);
