@@ -188,10 +188,7 @@ export const getPatientPrescriptions = async (req, res, next) => {
 
         if (req.user.role === "doctor") {
             const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                return res.status(403).json({ message: "Access denied. Patient's medical history is protected." });
-            }
-            if (sharingSetting === "own_only") {
+            if (!hasAccess || sharingSetting === "own_only") {
                 filter.doctorId = req.user._id;
             }
         }

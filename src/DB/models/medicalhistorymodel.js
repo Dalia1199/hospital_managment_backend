@@ -62,6 +62,7 @@ const medicalHistorySchema = new mongoose.Schema(
         sugarLevel: { type: String, trim: true },
         pulse: { type: String, trim: true },
         temperature: { type: String, trim: true },
+        ageAtEncounter: { type: Number },
         allergies: { type: [String], default: [] },
         chronic: { type: [String], default: [] },
         surgeries: { 

@@ -67,7 +67,7 @@ const bootstrap = () => {
     app.use("/admin", adminrouter);
     app.use("/doctor", doctorrouter);
     app.use("/patient", patientrouter);
-    app.use("/appointmens", appointmensrouter);
+    app.use("/appointments", appointmensrouter);
     app.use("/notifications", notificationrouter);
     app.use("/ai", airouter);
     app.use("/drugs", drugsrouter);

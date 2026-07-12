@@ -47,10 +47,7 @@ export const getMedicalHistory = async (req, res, next) => {
 
         if (req.user.role === "doctor") {
             const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
-            if (sharingSetting === "own_only") {
+            if (!hasAccess || sharingSetting === "own_only") {
                 filter.doctorId = req.user._id;
             }
         }

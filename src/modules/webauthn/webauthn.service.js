@@ -75,7 +75,7 @@ export const registerOptions = async (req, res, next) => {
       authenticatorSelection: {
         residentKey: "preferred",
         userVerification: "preferred",
-        authenticatorAttachment: "platform", // forces TouchID/FaceID platform authenticator
+        // No attachment restriction — supports TouchID, FaceID, Windows Hello, Android fingerprint, and hardware keys
       },
     });
 

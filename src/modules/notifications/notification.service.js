@@ -403,3 +403,24 @@ export const savePushPermission = async (req, res, next) => {
         next(error);
     }
 };
+
+// 📌 DELETE /notifications/push-permission
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------
+export const removePushPermission = async (req, res, next) => {
+    try {
+        const { endpoint } = req.body;
+        if (!endpoint) {
+            return res.status(400).json({ message: "Subscription endpoint is required." });
+        }
+
+        await pushPermissionModel.deleteMany({ "subscription.endpoint": endpoint, userId: req.user._id });
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Push subscription removed successfully.",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
