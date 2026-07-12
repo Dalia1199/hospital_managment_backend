@@ -271,15 +271,16 @@ export const searchPatient = async (req, res, next) => {
 export const getPatientCompliance = async (req, res, next) => {
     try {
         const { patientId } = req.params;
-        const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
+        const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
 
-        if (!hasAccess) {
-            throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+        let rxFilter = { patientId, status: "active" };
+        if (!hasAccess || sharingSetting === "own_only") {
+            rxFilter.doctorId = req.user._id;
         }
 
         const prescriptions = await db_service.find({
             model: prescrptionmodel,
-            filter: { patientId, status: "active" }
+            filter: rxFilter
         });
 
         const activeMeds = [];
@@ -330,9 +331,14 @@ export const getPatientCompliance = async (req, res, next) => {
             }
         }
 
+        let trackFilter = { patientId };
+        if (!hasAccess || sharingSetting === "own_only") {
+            trackFilter.prescriptionId = { $in: prescriptions.map(p => p._id) };
+        }
+
         const trackingRecords = await db_service.find({
             model: medicationtrackingmodel,
-            filter: { patientId },
+            filter: trackFilter,
             options: { sort: { scheduledDoseDateTime: -1 } }
         });
 
@@ -1088,7 +1094,7 @@ export const getActiveSessions = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, scope } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -1097,13 +1103,16 @@ export const getMedicationHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
-            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            
-            filter.patientId = patientId;
-            
-            // If the doctor doesn't have global access (due to OTP or strict privacy),
-            // OR if the setting is explicitly 'own_only', they can STILL see their own records.
-            if (!hasAccess || sharingSetting === "own_only") {
+            if (scope === 'global') {
+                const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+                
+                filter.patientId = patientId;
+                
+                if (!hasAccess || sharingSetting === "own_only") {
+                    filter.doctorId = req.user._id;
+                }
+            } else {
+                filter.patientId = patientId;
                 filter.doctorId = req.user._id;
             }
         }
@@ -1187,7 +1196,7 @@ export const getMedicationHistory = async (req, res, next) => {
 
 export const getPatientMedicalHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate, sortOrder } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate, sortOrder, scope } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -1196,13 +1205,19 @@ export const getPatientMedicalHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
-            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            
-            filter.patientId = patientId;
-            
-            // If the doctor doesn't have global access (due to OTP or strict privacy),
-            // OR if the setting is explicitly 'own_only', they can STILL see their own records.
-            if (!hasAccess || sharingSetting === "own_only") {
+            if (scope === 'global') {
+                const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+                
+                filter.patientId = patientId;
+                
+                // If the doctor doesn't have global access (due to OTP or strict privacy),
+                // OR if the setting is explicitly 'own_only', they can STILL see their own records.
+                if (!hasAccess || sharingSetting === "own_only") {
+                    filter.doctorId = req.user._id;
+                }
+            } else {
+                // Default to own records for safety (prevents URL manipulation IDOR)
+                filter.patientId = patientId;
                 filter.doctorId = req.user._id;
             }
         }
@@ -1217,6 +1232,9 @@ export const getPatientMedicalHistory = async (req, res, next) => {
                 rxFilter.doctorId = req.user._id;
             } else {
                 rxFilter.patientId = patientId;
+                if (filter.doctorId) {
+                    rxFilter.doctorId = filter.doctorId;
+                }
             }
 
             const matchingPrescriptions = await prescrptionmodel.find(rxFilter).select('medicalHistoryId');
@@ -1461,7 +1479,7 @@ export const getMyPatients = async (req, res, next) => {
 
 export const getMyPrescriptions = async (req, res, next) => {
     try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, page = 1, limit = 10, search = "" } = req.query;
         const dateFilter = {};
         if (startDate || endDate) {
             dateFilter.createdAt = {};
@@ -1475,32 +1493,155 @@ export const getMyPrescriptions = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = req.query.clinicId;
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const parsedLimit = parseInt(limit);
+        const s = search.trim();
 
-        const prescriptions = await prescrptionmodel.find(baseFilter)
-            .populate({ path: "patientId", select: "fullName email phoneNumber" })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await prescrptionmodel.countDocuments(baseFilter);
-
-        return successresponse({
-            res,
-            status: 200,
-            message: "Prescriptions fetched successfully",
-            data: {
-                prescriptions,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
+        if (s) {
+            // Pipeline to join with users and filter
+            const pipeline = [
+                { $match: baseFilter },
+                {
+                    $lookup: {
+                        from: "users",
+                        localField: "patientId",
+                        foreignField: "_id",
+                        as: "patientIdData"
+                    }
+                },
+                {
+                    $unwind: { path: "$patientIdData", preserveNullAndEmptyArrays: true }
                 }
+            ];
+
+            const isPhoneSearch = /^\d+$/.test(s);
+            if (isPhoneSearch) {
+                // Must fetch all to decrypt and filter in-memory
+                pipeline.push({ $sort: { createdAt: -1 } });
+                let allPrescriptions = await prescrptionmodel.aggregate(pipeline);
+
+                allPrescriptions = allPrescriptions.map(p => {
+                    if (p.patientIdData && p.patientIdData.phoneNumber) {
+                        try {
+                            p.patientIdData.phoneNumber = decrypt(p.patientIdData.phoneNumber);
+                        } catch (e) { }
+                    }
+                    p.patientId = p.patientIdData; 
+                    delete p.patientIdData;
+                    return p;
+                });
+
+                let filtered = allPrescriptions.filter(p => 
+                    (p.patientId && p.patientId.phoneNumber && p.patientId.phoneNumber.includes(s)) ||
+                    (p.guestPhone && p.guestPhone.includes(s))
+                );
+
+                const total = filtered.length;
+                const paginated = filtered.slice(skip, skip + parsedLimit);
+
+                return successresponse({
+                    res,
+                    status: 200,
+                    message: "Prescriptions fetched successfully",
+                    data: {
+                        prescriptions: paginated,
+                        pagination: {
+                            total,
+                            page: parseInt(page),
+                            limit: parsedLimit,
+                            totalPages: Math.ceil(total / parsedLimit)
+                        }
+                    }
+                });
+            } else {
+                // Name search
+                pipeline.push({
+                    $match: {
+                        $or: [
+                            { "patientIdData.fullName": { $regex: s, $options: "i" } },
+                            { guestName: { $regex: s, $options: "i" } }
+                        ]
+                    }
+                });
+
+                pipeline.push({
+                    $facet: {
+                        metadata: [{ $count: "total" }],
+                        data: [
+                            { $sort: { createdAt: -1 } },
+                            { $skip: skip },
+                            { $limit: parsedLimit }
+                        ]
+                    }
+                });
+
+                const result = await prescrptionmodel.aggregate(pipeline);
+                const facetResult = result[0];
+                const total = facetResult.metadata.length > 0 ? facetResult.metadata[0].total : 0;
+                let paginated = facetResult.data;
+
+                paginated = paginated.map(p => {
+                    if (p.patientIdData && p.patientIdData.phoneNumber) {
+                        try {
+                            p.patientIdData.phoneNumber = decrypt(p.patientIdData.phoneNumber);
+                        } catch (e) { }
+                    }
+                    p.patientId = p.patientIdData;
+                    delete p.patientIdData;
+                    return p;
+                });
+
+                return successresponse({
+                    res,
+                    status: 200,
+                    message: "Prescriptions fetched successfully",
+                    data: {
+                        prescriptions: paginated,
+                        pagination: {
+                            total,
+                            page: parseInt(page),
+                            limit: parsedLimit,
+                            totalPages: Math.ceil(total / parsedLimit)
+                        }
+                    }
+                });
             }
-        });
+        } else {
+            const prescriptionsData = await prescrptionmodel.find(baseFilter)
+                .populate({ path: "patientId", select: "fullName email phoneNumber" })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parsedLimit)
+                .lean();
+
+            const prescriptions = prescriptionsData.map(p => {
+                if (p.patientId && p.patientId.phoneNumber) {
+                    try {
+                        p.patientId.phoneNumber = decrypt(p.patientId.phoneNumber);
+                    } catch (e) { }
+                }
+                return p;
+            });
+
+            const total = await prescrptionmodel.countDocuments(baseFilter);
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Prescriptions fetched successfully",
+                data: {
+                    prescriptions,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
+                }
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -1716,7 +1857,8 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
         filter: { userId: patientUserId }
     });
 
-    const sharingSetting = patientProfile?.sharingSetting ?? "all";
+    // CHANGE: Default to "otp" instead of "all" for better privacy by default
+    const sharingSetting = patientProfile?.sharingSetting ?? "otp";
 
     // 2. Evaluate access based on setting
     if (sharingSetting === "all" || sharingSetting === "own_only") {

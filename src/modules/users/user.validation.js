@@ -19,9 +19,15 @@ export const signupschema = {
 
         
 
-        age: Joi.when("role", {
+        dateOfBirth: Joi.when("role", {
             is: "patient",
-            then: Joi.number().required(),
+            then: Joi.date().required(),
+            otherwise: Joi.forbidden()
+        }),
+
+        governorate: Joi.when("role", {
+            is: "patient",
+            then: Joi.string().required(),
             otherwise: Joi.forbidden()
         }),
 
