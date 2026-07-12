@@ -32,11 +32,11 @@ export const generalrules = {
 
     password: joi
         .string()
-        .min(6)
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
         .required()
         .messages({
             "any.required": "password must not be empty",
-            "string.min": "password is too short"
+            "string.pattern.base": "Password must contain at least 8 characters, one uppercase, one lowercase, one number and one special character"
         }),
 
     confirmPassword: joi
