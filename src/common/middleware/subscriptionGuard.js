@@ -25,7 +25,9 @@ const getDoctorActiveSubscription = async (doctorId) => {
         name: "Free",
         price: 0,
         features: [
-            { code: "reports", enabled: true }
+            { code: "reports", enabled: false },
+            { code: "ai", enabled: false },
+            { code: "assistants", enabled: false }
         ],
         limits: [
             { code: "clinics", value: 1 }

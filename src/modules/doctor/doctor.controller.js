@@ -5,6 +5,7 @@ import * as DV from "./doctor.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import { requirePermission, auditLogger, spoofAssistantToDoctor } from "../../common/middleware/assistant.middleware.js";
+import { requireFeature } from "../../common/middleware/subscriptionGuard.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { multer_host } from "../../common/middleware/multer.js";
 import { multerenum } from "../../common/enum/multerenum.js";
@@ -13,11 +14,11 @@ import { validation } from "../../common/middleware/validation.js";
 const doctorrouter = Router();
 
 // Staff Management Routes
-doctorrouter.post("/staff", authentication, authorization([roleenum.doctor]), SS.createStaff);
-doctorrouter.get("/staff", authentication, authorization([roleenum.doctor]), SS.getStaff);
-doctorrouter.put("/staff/:id", authentication, authorization([roleenum.doctor]), SS.updateStaff);
-doctorrouter.delete("/staff/:id", authentication, authorization([roleenum.doctor]), SS.deleteStaff);
-doctorrouter.get("/staff/logs", authentication, authorization([roleenum.doctor]), SS.getLogs);
+doctorrouter.post("/staff", authentication, authorization([roleenum.doctor]), requireFeature("assistants"), SS.createStaff);
+doctorrouter.get("/staff", authentication, authorization([roleenum.doctor]), requireFeature("assistants"), SS.getStaff);
+doctorrouter.put("/staff/:id", authentication, authorization([roleenum.doctor]), requireFeature("assistants"), SS.updateStaff);
+doctorrouter.delete("/staff/:id", authentication, authorization([roleenum.doctor]), requireFeature("assistants"), SS.deleteStaff);
+doctorrouter.get("/staff/logs", authentication, authorization([roleenum.doctor]), requireFeature("assistants"), SS.getLogs);
 
 // GET /doctor/all — accessible by patient + doctor + admin
 doctorrouter.get(
@@ -49,6 +50,7 @@ doctorrouter.get(
     authentication,
     requirePermission("canManageReports"),
     authorization([roleenum.doctor]),
+    requireFeature("reports"),
     DS.getReportsAnalytics
 );
 
