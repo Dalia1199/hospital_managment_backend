@@ -15,10 +15,13 @@ export const updatePatientProfileSchema = {
     
     fullName: Joi.string().min(3).max(100).trim().optional(),
     phoneNumber: Joi.string().min(10).max(15).trim().optional(),
+    email: Joi.string().email().optional(),
     address: Joi.string().trim().optional(),
+    governorate: Joi.string().trim().optional(),
 
     // patient model fields
     age: Joi.number().min(1).max(120).optional(),
+    dateOfBirth: Joi.date().iso().less("now").optional(),
     gender: Joi.string().valid("male", "female").optional(),
     bloodType: Joi.string()
       .valid("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
