@@ -342,7 +342,9 @@ export const signin = async (req, res, next) => {
   console.log("REFRESH:", refreshtoken);
 
   let assistantData = null;
-  let subscriptionPlan = null;
+  let subscriptionPlan = "Free";
+  let subscriptionFeatures = [];
+  let clinicLimit = 0;
 
   if (user.role === roleenum.assistant) {
     assistantData = await AssistantModel.findOne({ userId: user._id })
@@ -351,16 +353,9 @@ export const signin = async (req, res, next) => {
   } else if (user.role === roleenum.doctor) {
     const doctor = await doctormodel.findOne({ userId: user._id }).lean();
     if (doctor) {
-      const activeSubscription = await DoctorSubscriptionModel.findOne({
-        doctorId: user._id,
-        status: "active"
-      }).populate('subscriptionId', 'name').lean();
-
-      if (activeSubscription && activeSubscription.subscriptionId) {
-        subscriptionPlan = activeSubscription.subscriptionId.name;
-      } else {
-        subscriptionPlan = "Free"; // Default if missing
-      }
+      subscriptionPlan = await getPlanName(user._id);
+      subscriptionFeatures = await getActiveFeatures(user._id);
+      clinicLimit = await getClinicLimit(user._id);
     }
   }
 
@@ -375,7 +370,11 @@ export const signin = async (req, res, next) => {
       id: user._id,
       fullName: user.fullName,
       profilepicture: user.profilepicture,
-      ...(subscriptionPlan && { subscriptionPlan }),
+      ...(user.role === roleenum.doctor && {
+        subscriptionPlan,
+        subscriptionFeatures,
+        clinicLimit
+      }),
       ...(assistantData && {
         permissions: assistantData.permissions,
         doctorId: assistantData.doctorId?._id || assistantData.doctorId,

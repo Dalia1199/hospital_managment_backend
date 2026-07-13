@@ -61,6 +61,8 @@ export const createPlan = async (req, res, next) => {
         next(error);
     }
 };
+import appconfigmodel from "../../DB/models/appconfigmodel.js";
+
 // =========================
 // GET ALL PLANS
 // =========================
@@ -129,11 +131,26 @@ export const getPlans = async ( req, res, next) => {
 
             });
 
+        const config = await appconfigmodel.findOne({ isGlobalConfig: true });
+        const commissionRates = config?.commissionRates || new Map();
+        const defaultFee = config?.platformFeePercentage || 10;
+        
+        const plansWithCommission = plans.map(plan => {
+            const planObj = plan.toObject ? plan.toObject() : plan;
+            const normalizedName = plan.name.toLowerCase().replace(' plan', '').trim();
+            let commission = defaultFee;
+            if (commissionRates.has(normalizedName)) {
+                commission = commissionRates.get(normalizedName);
+            }
+            planObj.commissionRate = commission;
+            return planObj;
+        });
+
         return successresponse({ res,message: "subscription plans fetched successfully",
 
             data: {
 
-                plans,
+                plans: plansWithCommission,
 
                 pagination: {
 
