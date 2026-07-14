@@ -41,25 +41,25 @@ const app = express();
 const Port = PORT || 3000;
 
 const bootstrap = () => {
-    const limiter=rateLimit({
-        windowMs:60*10*1000,
-        limit:3,
-        requestPropertyName:"rate_limit",
-        handler:(req,res,next)=>{
-            return res.status(401).json({message:"too many request please try again later"})
-        }
-    });
-    app.use(limiter)
-    app.use(mongoSanitize());
-
-    app.use(express.json());
-    
     app.use(cors({
         origin: true,
         credentials: true,
         allowedHeaders: ["Content-Type", "Authorization"],
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     }));
+
+    const limiter=rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        limit: 1000,
+        requestPropertyName:"rate_limit",
+        handler:(req,res,next)=>{
+            return res.status(429).json({message:"too many requests please try again later"})
+        }
+    });
+    app.use(limiter)
+    app.use(mongoSanitize());
+
+    app.use(express.json());
    app.use( helmet())
    app.use (hpp())
 
