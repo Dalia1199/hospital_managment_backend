@@ -487,7 +487,8 @@ export const paymentWebhook = async (req, res, next) => {
 
                             endDate,
 
-                            status: subscriptionStatusEnum.active
+                            status: subscriptionStatusEnum.active,
+                            
 
                         },
 

@@ -26,10 +26,26 @@ import { subscriptionCron } from "./common/cron/subscriptioncron.js";
 import doctorSubscriptionRouter from "./modules/doctor.subscription/doctorsubscription.controller.js";
 import adminDashboardRouter from "./modules/admindashboard/adminDashboard.controller.js";
 import doctorDashboardRouter from "./modules/doctordashboard/doctordashboard.controller.js";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import mongoSanitize from "express-mongo-sanitize";
+import hpp from "hpp";
+
 const app = express();
 const Port = PORT || 3000;
 
 const bootstrap = () => {
+    const limiter=rateLimit({
+        windowMs:60*10*1000,
+        limit:3,
+        requestPropertyName:"rate_limit",
+        handler:(req,res,next)=>{
+            return res.status(401).json({message:"too many request please try again later"})
+        }
+    });
+    app.use(limiter)
+    app.use(mongoSanitize());
+
     app.use(express.json());
 
     app.use(cors({
@@ -40,6 +56,8 @@ const bootstrap = () => {
         allowedHeaders: ["Content-Type", "Authorization"],
         methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     }));
+   app.use( helmet())
+   app.use (hpp())
 
     // DB connection is now awaited in index.js before starting the server
     connectionredis();
