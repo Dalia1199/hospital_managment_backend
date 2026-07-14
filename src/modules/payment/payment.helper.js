@@ -55,8 +55,8 @@ export const normalizeStatus = (status) => {
     if (!status) return "pending";
     const s = status.toLowerCase();
     // In Kashier Sandbox, if the webhook fails, it sometimes returns serverError even for successful payments.
-    if (s === "success" || s === "paid" || s === "captured" || s === "servererror") return "paid";
-    if (s === "failed") return "failed";
+    if (s === "success" || s === "paid" || s === "captured" || s === "servererror" || s === "approved" || s === "completed" || s === "succeeded") return "paid";
+    if (s === "failed" || s === "void" || s === "refunded") return "failed";
     return "pending";
 };
 
@@ -87,8 +87,8 @@ export const verifyKashierSignature = (data) => {
             return process.env.NODE_ENV !== "production";
         }
 
-        // Build path identical to Kashier standard signature format
-        const path = `/?payment=${KASHIER_MERCHANT_ID}.${orderId}.${amount}.${currency}&status=${paymentStatus}`;
+        // Build path identical to Kashier standard signature format (matching generation)
+        const path = `/?payment=${KASHIER_MERCHANT_ID}.${orderId}.${amount}.${currency}`;
         
         const computedSignature = crypto
             .createHmac("sha256", KASHIER_API_KEY)
