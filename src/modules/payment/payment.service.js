@@ -356,7 +356,7 @@ export const paymentCallback = async (req, res, next) => {
         payment.paymentMethod = data.paymentMethod || "card";
         
         // Set payment status based entirely on Kashier's response
-        payment.paymentStatus = normalizeStatus(data.paymentStatus);
+        payment.paymentStatus = normalizeStatus(data.paymentStatus || data.status);
 
         await payment.save();
 
