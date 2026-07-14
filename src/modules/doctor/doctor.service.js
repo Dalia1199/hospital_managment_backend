@@ -4,6 +4,10 @@ import patientmodel from "../../DB/models/patientmodel.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import sessionmodel from "../../DB/models/sessionmodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
+import slotmodel from "../../DB/models/slot_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
+import transactionmodel from "../../DB/models/transactionmodel.js";
 import { sendemail, generateotp } from "../../common/utilits/email/send email.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
@@ -37,6 +41,11 @@ export const getDashboard = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.assistant && req.assistant.clinicId) {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+        }
 
         const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
             prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
@@ -84,6 +93,7 @@ export const getDoctorProfile = async (req, res, next) => {
                 licenseimage: doctor.licenseimage ?? null,
                 pendingLicenseImage: doctor.pendingLicenseImage ?? null,
                 previousLicenseImage: doctor.previousLicenseImage ?? null,
+                certificates: doctor.certificates || [],
             }
         });
     } catch (error) {
@@ -157,7 +167,8 @@ export const uploadLicense = async (req, res, next) => {
             filter: { userId: req.user._id }
         });
 
-        const oldPublicId = doctor.licenseimage?.public_id;
+        // Save old public_id before uploading new one
+        const oldPublicId = doctor?.licenseimage?.public_id ?? null;
         // 1. Upload new image
         const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
             folder: "carehub/doctors/licenses"
@@ -171,13 +182,15 @@ export const uploadLicense = async (req, res, next) => {
                 options: { new: true }
             });
 
+            // NOTE: we intentionally do NOT touch the user's status here.
+            // This doctor is already approved and can keep working normally
+            // while the new license is under review — only
+            // pendingLicenseImage marks it as needing admin attention (see
+            // GET /admin/doctors/pending-licenses). Flipping status to
+            // "pending" used to lock the doctor out of login entirely until
+            // the admin acted, and it also leaked into the general
+            // first-time-signup approvals queue.
             await notify.newLicenseUnderReview(updatedDoctor.userId);
-
-            // await db_service.findOneAndUpdate({
-            //     model: usermodel,
-            //     filter: { _id: req.user._id },
-            //     update: { status: "pending" }
-            // });
 
             const admins = await db_service.find({
                 model: usermodel,
@@ -207,37 +220,6 @@ export const uploadLicense = async (req, res, next) => {
 
     } catch (error) {
         return next(error);
-    }
-};
-
-export const cancelPendingLicense = async (req, res, next) => {
-    try {
-        const doctor = await db_service.findOne({
-            model: doctormodel,
-            filter: { userId: req.user._id }
-        });
-
-        if (!doctor?.pendingLicenseImage?.public_id) {
-            return next(new Error("No pending license to cancel", { cause: 400 }));
-        }
-
-        // Delete from cloudinary
-        await cloudinary.uploader.destroy(doctor.pendingLicenseImage.public_id);
-
-        const updatedDoctor = await db_service.findOneAndUpdate({
-            model: doctormodel,
-            filter: { userId: req.user._id },
-            update: { $unset: { pendingLicenseImage: 1 } },
-            options: { new: true }
-        });
-
-        return successresponse({
-            res,
-            message: "Pending license cancelled successfully",
-            data: updatedDoctor
-        });
-    } catch (error) {
-        next(error);
     }
 };
 
@@ -289,15 +271,16 @@ export const searchPatient = async (req, res, next) => {
 export const getPatientCompliance = async (req, res, next) => {
     try {
         const { patientId } = req.params;
-        const { hasAccess } = await checkDoctorAccess(req.user._id, patientId);
+        const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
 
-        if (!hasAccess) {
-            throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
+        let rxFilter = { patientId, status: "active" };
+        if (!hasAccess || sharingSetting === "own_only") {
+            rxFilter.doctorId = req.user._id;
         }
 
         const prescriptions = await db_service.find({
             model: prescrptionmodel,
-            filter: { patientId, status: "active" }
+            filter: rxFilter
         });
 
         const activeMeds = [];
@@ -348,9 +331,14 @@ export const getPatientCompliance = async (req, res, next) => {
             }
         }
 
+        let trackFilter = { patientId };
+        if (!hasAccess || sharingSetting === "own_only") {
+            trackFilter.prescriptionId = { $in: prescriptions.map(p => p._id) };
+        }
+
         const trackingRecords = await db_service.find({
             model: medicationtrackingmodel,
-            filter: { patientId },
+            filter: trackFilter,
             options: { sort: { scheduledDoseDateTime: -1 } }
         });
 
@@ -434,7 +422,9 @@ export const getPatientCompliance = async (req, res, next) => {
 
 export const createSession = async (req, res, next) => {
     try {
-        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge } = req.body;
+        const { isOfflinePatient, patientId, guestName, guestPhone, guestAge, appointmentId, skipQueue } = req.body;
+        // clinicId can come from the request body OR as a query param (auto-injected by fetchClient)
+        const resolvedClinicId = req.body.clinicId || req.query.clinicId || undefined;
         const doctorId = req.user._id;
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -455,16 +445,32 @@ export const createSession = async (req, res, next) => {
                 throw new Error("This patient already has an active session in the queue.", { cause: 400 });
             }
 
+            let finalOrder = Date.now();
+            if (skipQueue) finalOrder = 0;
+            else if (appointmentId) {
+                const slot = await slotmodel.findById(appointmentId);
+                if (slot) {
+                    finalOrder = slot.startDateTime.getTime();
+                    await slotmodel.findByIdAndUpdate(appointmentId, { isBooked: true });
+                }
+            }
+
             const session = await db_service.create({
                 model: sessionmodel,
                 data: {
                     doctorId,
                     isOfflinePatient,
+                    isOfflineEntry: true,
                     guestName,
                     guestPhone,
                     guestAge,
+                    clinicId: resolvedClinicId,
+                    // In a real flow, you should look up the clinic fee here too,
+                    // but since this is just mock data generation, we can use 0 or fetch clinic.
+                    fees: 0,
                     status: "in_progress",
-                    validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                    validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                    order: finalOrder
                 }
             });
             return successresponse({
@@ -490,7 +496,7 @@ export const createSession = async (req, res, next) => {
             // Check for existing session
             const existingSession = await db_service.findOne({
                 model: sessionmodel,
-                filter: { doctorId, patientId }
+                filter: { doctorId, patientId, status: { $in: ["pending_otp", "in_progress"] } }
             });
 
             if (existingSession) {
@@ -519,15 +525,55 @@ export const createSession = async (req, res, next) => {
                 await sessionmodel.findByIdAndDelete(existingSession._id);
             }
 
+            let order = Date.now();
+            let lastAppointment = null;
+            if (skipQueue) {
+                order = 0;
+            } else if (appointmentId) {
+                const slot = await slotmodel.findById(appointmentId);
+                if (slot) {
+                    order = slot.startDateTime.getTime();
+                    await slotmodel.findByIdAndUpdate(appointmentId, { isBooked: true });
+                }
+            } else {
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date();
+                endOfDay.setHours(23, 59, 59, 999);
+
+                lastAppointment = await appointmentsmodel.findOne({
+                    patientId,
+                    doctorId,
+                    status: "booked",
+                    startDateTime: { $gte: startOfDay, $lte: endOfDay }
+                }).sort({ startDateTime: 1 });
+                if (lastAppointment) {
+                    order = lastAppointment.startDateTime.getTime();
+                }
+            }
+
+            let fallbackFee = 0;
+            if (resolvedClinicId) {
+                const clinic = await clinicmodel.findById(resolvedClinicId);
+                if (clinic && clinic.consultationFee !== undefined && clinic.consultationFee !== null) {
+                    fallbackFee = clinic.consultationFee;
+                }
+            }
+
             if (sharingSetting === "all" || sharingSetting === "own_only") {
                 const session = await db_service.create({
                     model: sessionmodel,
                     data: {
                         doctorId,
                         patientId,
+                        clinicId: resolvedClinicId,
                         otp: "AUTO",
+                        fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
+                        isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                         status: "in_progress",
-                        validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                        validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                        order,
+                        isOfflineEntry: !lastAppointment
                     }
                 });
                 
@@ -548,32 +594,23 @@ export const createSession = async (req, res, next) => {
                 data: {
                     doctorId,
                     patientId,
+                    clinicId: resolvedClinicId,
                     otp,
+                    fees: lastAppointment && lastAppointment.paymentStatus === "paid" ? lastAppointment.paidAmount : fallbackFee,
+                    isFeesFinalized: lastAppointment && lastAppointment.paymentStatus === "paid" ? true : false,
                     status: "pending_otp",
-                    validUntil: new Date(Date.now() + 10 * 60 * 1000)
+                    validUntil: new Date(Date.now() + 10 * 60 * 1000),
+                    order,
+                    isOfflineEntry: !lastAppointment
                 }
             });
-
-            //commented to avoid sending real emails during testing
-            /*
-            await sendemail({
-                to: patient.email,
-                subject: "Carehub - Doctor Access OTP",
-                html: `<h3>Hello ${patient.fullName},</h3>
-                       <p>Your doctor is requesting access to your medical history.</p>
-                       <p>Please provide the following OTP to grant access for 24 hours:</p>
-                       <h2 style="color: blue; letter-spacing: 5px;">${otp}</h2>
-                       <p>This OTP expires in 10 minutes.</p>`
-            });
-            */
-
-            // Notify patient
-            await notify.accessRequested(patientId, req.user.fullName);
+            // Notify patient with the OTP
+            await notify.accessRequested(patientId, req.user.fullName, otp);
 
             return successresponse({
                 res,
-                message: "OTP generated successfully",
-                data: { session, temp_otp: otp } // Sending OTP to frontend for testing <Temporary>
+                message: "OTP generated successfully and sent via notification",
+                data: { session } // Removed temp_otp from response
             });
         }
     } catch (error) {
@@ -667,13 +704,30 @@ export const updatePatientAlerts = async (req, res, next) => {
 export const endSession = async (req, res, next) => {
     try {
         const { sessionId } = req.params;
-        const { fees, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries } = req.body;
+        const { fees, isFeesFinalized, diagnosis, notes, prescriptionText, height, weight, bloodPressure, sugarLevel, pulse, temperature, bloodType, allergies, chronic, surgeries, followUpDays } = req.body;
         const doctorId = req.user._id;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (fees !== undefined && existingSession.isFeesFinalized) {
+            throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
+        }
+
+        const updateObj = { status: "completed" };
+        if (fees !== undefined) updateObj.fees = fees;
+        if (isFeesFinalized !== undefined) updateObj.isFeesFinalized = isFeesFinalized;
 
         const session = await db_service.findOneAndUpdate({
             model: sessionmodel,
             filter: { _id: sessionId, doctorId },
-            update: { status: "completed", fees: fees || 0 },
+            update: updateObj,
             options: { new: true }
         });
 
@@ -759,7 +813,8 @@ export const endSession = async (req, res, next) => {
             allergies: parsedAllergies,
             chronic: parsedChronic,
             surgeries: parsedSurgeries,
-            documents
+            documents,
+            clinicId: session.clinicId
         };
 
         if (session.isOfflinePatient) {
@@ -768,6 +823,19 @@ export const endSession = async (req, res, next) => {
             medicalHistoryData.guestPhone = session.guestPhone;
         } else {
             medicalHistoryData.patientId = session.patientId;
+            
+            // Calculate ageAtEncounter
+            const patientRec = await patientmodel.findOne({ userId: session.patientId });
+            if (patientRec) {
+                if (patientRec.dateOfBirth) {
+                    const ageDiffMs = Date.now() - new Date(patientRec.dateOfBirth).getTime();
+                    const ageDate = new Date(ageDiffMs);
+                    medicalHistoryData.ageAtEncounter = Math.abs(ageDate.getUTCFullYear() - 1970);
+                } else if (patientRec.age != null) {
+                    medicalHistoryData.ageAtEncounter = patientRec.age;
+                }
+            }
+
             // Update patient model vitals if any exist
             if (height || weight || bloodType || parsedAllergies.length > 0 || parsedChronic.length > 0 || parsedSurgeries.length > 0) {
                 const updateData = {};
@@ -786,10 +854,17 @@ export const endSession = async (req, res, next) => {
             }
         }
 
-        const medicalHistory = await db_service.create({
-            model: medicalhistorymodel,
-            data: medicalHistoryData
-        });
+        let medicalHistory = await medicalhistorymodel.findOne({ sessionId });
+        if (medicalHistory) {
+            Object.assign(medicalHistory, medicalHistoryData);
+            await medicalHistory.save();
+        } else {
+            medicalHistoryData.sessionId = sessionId;
+            medicalHistory = await db_service.create({
+                model: medicalhistorymodel,
+                data: medicalHistoryData
+            });
+        }
 
         if (!session.isOfflinePatient) {
             await notify.medicalHistoryAdded(session.patientId);
@@ -829,6 +904,56 @@ export const endSession = async (req, res, next) => {
                 await notify.prescriptionIssued(session.patientId);
             }
         }
+        if (!session.isOfflinePatient) {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date();
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const lastAppointment = await appointmentsmodel.findOne({
+                patientId: session.patientId,
+                doctorId: doctorId,
+                status: "booked",
+                startDateTime: { $gte: startOfDay, $lte: endOfDay }
+            }).sort({ startDateTime: 1 }); // Ascending to find the closest upcoming/today appointment
+
+            if (lastAppointment) {
+                lastAppointment.status = "completed"; 
+                
+                if (followUpDays) {
+                    lastAppointment.followUpDeadline = new Date(Date.now() + parseInt(followUpDays) * 24 * 60 * 60 * 1000);
+                    lastAppointment.followUpStatus = "scheduled";
+                    lastAppointment.followUpSetBy = doctorId;
+                }
+                
+                await lastAppointment.save();
+
+                // If paid online, release the doctor's share from pending to available
+                if (lastAppointment.paymentStatus === "paid") {
+                    const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
+                    const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
+                    
+                    const transaction = await transactionmodel.findOne({
+                        userId: doctorId,
+                        referenceId: lastAppointment._id,
+                        purpose: 'online_booking_revenue'
+                    });
+                    
+                    if (transaction) {
+                        await releasePendingToAvailable(doctorId, transaction.amount);
+                    } else {
+                        const { getAppConfig } = await import('../appconfig/appconfig.service.js');
+                        const config = await getAppConfig();
+                        let platformFee = config.platformFeePercentage > 0 
+                            ? (session.fees * config.platformFeePercentage) / 100 
+                            : config.platformFeeFixed;
+                            
+                        const doctorShare = Math.max(0, session.fees - platformFee);
+                        await releasePendingToAvailable(doctorId, doctorShare);
+                    }
+                }
+            }
+        }
 
         return successresponse({
             res,
@@ -855,7 +980,11 @@ export const cancelSession = async (req, res, next) => {
         }
 
         if (session.status !== "pending_otp") {
-            throw new Error("Only pending sessions can be cancelled", { cause: 400 });
+            if (session.status === "in_progress" && session.isOfflineEntry) {
+                // Allowed to cancel offline session in-progress
+            } else {
+                throw new Error("Only pending sessions (or in-progress offline sessions) can be cancelled", { cause: 400 });
+            }
         }
 
         await sessionmodel.findByIdAndDelete(sessionId);
@@ -873,12 +1002,44 @@ export const cancelSession = async (req, res, next) => {
 export const getActiveSessions = async (req, res, next) => {
     try {
         const doctorId = req.user._id;
+        let statuses = ["pending_otp", "in_progress"];
+        if (req.query.status === "completed") {
+            statuses = ["completed"];
+        } else if (req.query.status === "all") {
+            statuses = ["pending_otp", "in_progress", "completed"];
+        }
+
+        const filterQuery = { 
+            doctorId, 
+            status: { $in: statuses }
+        };
+        
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            // Include sessions that belong to this clinic OR have no clinic set (e.g. added without clinic context)
+            filterQuery.$or = [
+                { clinicId: req.query.clinicId },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+        }
+
+        if (req.query.status === "completed" || req.query.status === "all") {
+            filterQuery.isFeesFinalized = { $ne: true };
+        }
+        
+        // If fetching completed or all, only fetch for today to limit scope
+        if (req.query.status === "completed" || req.query.status === "all") {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            filterQuery.createdAt = { $gte: startOfDay };
+        }
+
         const sessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: { $in: ["pending_otp", "in_progress"] } },
+            filter: filterQuery,
             options: {
                 populate: { path: "patientId", select: "fullName phoneNumber profileImage bloodType height weight allergies chronic surgeries" },
-                sort: { createdAt: -1 }
+                sort: { order: 1, createdAt: 1 }
             }
         });
 
@@ -900,6 +1061,23 @@ export const getActiveSessions = async (req, res, next) => {
                 if (profile) {
                     sObj.patientProfile = profile;
                 }
+
+                // Check if this session is associated with a follow-up appointment today
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date();
+                endOfDay.setHours(23, 59, 59, 999);
+                
+                const todaysAppointment = await appointmentsmodel.findOne({
+                    patientId: sObj.patientId._id,
+                    doctorId: doctorId,
+                    appointmentDate: { $gte: startOfDay, $lte: endOfDay }
+                });
+                
+                if (todaysAppointment) {
+                    sObj.appointmentId = todaysAppointment._id;
+                    sObj.isFollowUp = todaysAppointment.isFollowUp;
+                }
             }
             return sObj;
         }));
@@ -916,7 +1094,7 @@ export const getActiveSessions = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, scope } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -925,12 +1103,16 @@ export const getMedicationHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
-            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
-            filter.patientId = patientId;
-            if (sharingSetting === "own_only") {
+            if (scope === 'global') {
+                const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+                
+                filter.patientId = patientId;
+                
+                if (!hasAccess || sharingSetting === "own_only") {
+                    filter.doctorId = req.user._id;
+                }
+            } else {
+                filter.patientId = patientId;
                 filter.doctorId = req.user._id;
             }
         }
@@ -1014,7 +1196,7 @@ export const getMedicationHistory = async (req, res, next) => {
 
 export const getPatientMedicalHistory = async (req, res, next) => {
     try {
-        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate } = req.query;
+        const { patientId, isOfflinePatient, guestName, guestPhone, page = 1, limit = 10, search, startDate, endDate, sortOrder, scope } = req.query;
 
         let filter = {};
         if (isOfflinePatient === 'true') {
@@ -1023,21 +1205,52 @@ export const getPatientMedicalHistory = async (req, res, next) => {
             if (guestName) filter.guestName = guestName;
             if (guestPhone) filter.guestPhone = guestPhone;
         } else {
-            const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
-            filter.patientId = patientId;
-            if (sharingSetting === "own_only") {
+            if (scope === 'global') {
+                const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
+                
+                filter.patientId = patientId;
+                
+                // If the doctor doesn't have global access (due to OTP or strict privacy),
+                // OR if the setting is explicitly 'own_only', they can STILL see their own records.
+                if (!hasAccess || sharingSetting === "own_only") {
+                    filter.doctorId = req.user._id;
+                }
+            } else {
+                // Default to own records for safety (prevents URL manipulation IDOR)
+                filter.patientId = patientId;
                 filter.doctorId = req.user._id;
             }
         }
 
         if (search) {
+            // Scope prescription search
+            let rxFilter = { 'medications.medicineName': { $regex: search, $options: 'i' } };
+            if (isOfflinePatient === 'true') {
+                rxFilter.isOfflinePatient = true;
+                if (guestName) rxFilter.guestName = guestName;
+                if (guestPhone) rxFilter.guestPhone = guestPhone;
+                rxFilter.doctorId = req.user._id;
+            } else {
+                rxFilter.patientId = patientId;
+                if (filter.doctorId) {
+                    rxFilter.doctorId = filter.doctorId;
+                }
+            }
+
+            const matchingPrescriptions = await prescrptionmodel.find(rxFilter).select('medicalHistoryId');
+            const medicalHistoryIdsFromPrescriptions = matchingPrescriptions
+                .map(p => p.medicalHistoryId)
+                .filter(id => id);
+
             filter.$or = [
                 { diagnosis: { $regex: search, $options: 'i' } },
-                { notes: { $regex: search, $options: 'i' } }
+                { notes: { $regex: search, $options: 'i' } },
+                { prescriptionText: { $regex: search, $options: 'i' } }
             ];
+
+            if (medicalHistoryIdsFromPrescriptions.length > 0) {
+                filter.$or.push({ _id: { $in: medicalHistoryIdsFromPrescriptions } });
+            }
         }
 
         if (startDate || endDate) {
@@ -1051,20 +1264,33 @@ export const getPatientMedicalHistory = async (req, res, next) => {
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
         const history = await db_service.find({
             model: medicalhistorymodel,
             filter,
             options: {
-                sort: { createdAt: -1 },
+                sort: { createdAt: sortDirection },
                 skip,
                 limit: parseInt(limit),
+                lean: true,
                 populate: [
                     { path: "prescriptions" },
                     { path: "doctorId", select: "fullName" }
                 ]
             }
         });
+
+        for (let record of history) {
+            const patientData = await patientmodel.findOne({ userId: record.patientId }).lean();
+            if (patientData) {
+                record.patientId = {
+                    _id: record.patientId,
+                    dateOfBirth: patientData.dateOfBirth,
+                    age: patientData.age,
+                };
+            }
+        }
 
         const total = await medicalhistorymodel.countDocuments(filter);
 
@@ -1088,7 +1314,7 @@ export const getPatientMedicalHistory = async (req, res, next) => {
 
 export const getMyPatients = async (req, res, next) => {
     try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, page = 1, limit = 10, search = "", typeFilter = "All" } = req.query;
         const dateFilter = {};
         if (startDate || endDate) {
             dateFilter.createdAt = {};
@@ -1101,9 +1327,16 @@ export const getMyPatients = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.assistant && req.assistant.clinicId) {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+        }
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const parsedLimit = parseInt(limit);
 
-        const pipeline = [
+        // Build the pipeline up to the group stage to get unique patients
+        const basePipeline = [
             { $match: baseFilter },
             {
                 $group: {
@@ -1120,9 +1353,6 @@ export const getMyPatients = async (req, res, next) => {
                     lastType: { $last: { $cond: { if: "$isOfflinePatient", then: "Walk-in", else: "Online" } } }
                 }
             },
-            { $sort: { lastVisit: -1 } },
-            { $skip: skip },
-            { $limit: parseInt(limit) },
             {
                 $lookup: {
                     from: "users",
@@ -1145,7 +1375,7 @@ export const getMyPatients = async (req, res, next) => {
                     firstVisit: 1,
                     lastVisit: 1,
                     lastType: 1,
-                    fullName: "$userData.fullName",
+                    fullName: { $cond: { if: "$isOfflinePatient", then: "$guestName", else: "$userData.fullName" } },
                     email: "$userData.email",
                     phoneNumber: "$userData.phoneNumber",
                     status: { $ifNull: ["$userData.status", "active"] }
@@ -1153,47 +1383,106 @@ export const getMyPatients = async (req, res, next) => {
             }
         ];
 
-        const patients = await medicalhistorymodel.aggregate(pipeline);
+        // Apply typeFilter
+        if (typeFilter === "Online") {
+            basePipeline.push({ $match: { isOfflinePatient: false } });
+        } else if (typeFilter === "Walk-in") {
+            basePipeline.push({ $match: { isOfflinePatient: true } });
+        }
 
-        const decryptedPatients = patients.map(p => {
-            if (p.phoneNumber && !p.isOfflinePatient) {
-                try {
-                    p.phoneNumber = decrypt(p.phoneNumber);
-                } catch (e) {
-                    console.error("Failed to decrypt phone");
-                }
-            }
-            return p;
-        });
+        const isPhoneSearch = search && /^\d+$/.test(search.trim());
 
-        const countPipeline = [
-            { $match: baseFilter },
-            {
-                $group: {
-                    _id: {
-                        $cond: { if: "$isOfflinePatient", then: "$guestPhone", else: "$patientId" }
+        if (isPhoneSearch) {
+            // We must fetch all, decrypt, filter in memory, then paginate
+            basePipeline.push({ $sort: { lastVisit: -1 } });
+            const allPatients = await medicalhistorymodel.aggregate(basePipeline);
+            
+            let filtered = allPatients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
                     }
                 }
-            },
-            { $count: "total" }
-        ];
-        const countResult = await medicalhistorymodel.aggregate(countPipeline);
-        const total = countResult.length > 0 ? countResult[0].total : 0;
+                return p;
+            });
 
-        return successresponse({
-            res,
-            status: 200,
-            message: "Patients fetched successfully",
-            data: {
-                patients: decryptedPatients,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
+            const s = search.trim();
+            filtered = filtered.filter(p => 
+                (p.phoneNumber && p.phoneNumber.includes(s)) || 
+                (p.guestPhone && p.guestPhone.includes(s))
+            );
+
+            const total = filtered.length;
+            const paginated = filtered.slice(skip, skip + parsedLimit);
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: paginated,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
                 }
+            });
+        } else {
+            // Name search or no search - we can use $facet for DB pagination!
+            if (search) {
+                basePipeline.push({
+                    $match: {
+                        fullName: { $regex: search.trim(), $options: "i" }
+                    }
+                });
             }
-        });
+
+            basePipeline.push({
+                $facet: {
+                    metadata: [{ $count: "total" }],
+                    data: [
+                        { $sort: { lastVisit: -1 } },
+                        { $skip: skip },
+                        { $limit: parsedLimit }
+                    ]
+                }
+            });
+
+            const result = await medicalhistorymodel.aggregate(basePipeline);
+            const facetResult = result[0];
+            const total = facetResult.metadata.length > 0 ? facetResult.metadata[0].total : 0;
+            const patients = facetResult.data;
+
+            const decryptedPatients = patients.map(p => {
+                if (p.phoneNumber && !p.isOfflinePatient) {
+                    try {
+                        p.phoneNumber = decrypt(p.phoneNumber);
+                    } catch (e) {
+                        console.error("Failed to decrypt phone");
+                    }
+                }
+                return p;
+            });
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Patients fetched successfully",
+                data: {
+                    patients: decryptedPatients,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
+                }
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -1202,7 +1491,7 @@ export const getMyPatients = async (req, res, next) => {
 
 export const getMyPrescriptions = async (req, res, next) => {
     try {
-        const { startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, page = 1, limit = 10, search = "" } = req.query;
         const dateFilter = {};
         if (startDate || endDate) {
             dateFilter.createdAt = {};
@@ -1215,30 +1504,156 @@ export const getMyPrescriptions = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+        }
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const parsedLimit = parseInt(limit);
+        const s = search.trim();
 
-        const prescriptions = await prescrptionmodel.find(baseFilter)
-            .populate({ path: "patientId", select: "fullName email phoneNumber" })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await prescrptionmodel.countDocuments(baseFilter);
-
-        return successresponse({
-            res,
-            status: 200,
-            message: "Prescriptions fetched successfully",
-            data: {
-                prescriptions,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    totalPages: Math.ceil(total / parseInt(limit))
+        if (s) {
+            // Pipeline to join with users and filter
+            const pipeline = [
+                { $match: baseFilter },
+                {
+                    $lookup: {
+                        from: "users",
+                        localField: "patientId",
+                        foreignField: "_id",
+                        as: "patientIdData"
+                    }
+                },
+                {
+                    $unwind: { path: "$patientIdData", preserveNullAndEmptyArrays: true }
                 }
+            ];
+
+            const isPhoneSearch = /^\d+$/.test(s);
+            if (isPhoneSearch) {
+                // Must fetch all to decrypt and filter in-memory
+                pipeline.push({ $sort: { createdAt: -1 } });
+                let allPrescriptions = await prescrptionmodel.aggregate(pipeline);
+
+                allPrescriptions = allPrescriptions.map(p => {
+                    if (p.patientIdData && p.patientIdData.phoneNumber) {
+                        try {
+                            p.patientIdData.phoneNumber = decrypt(p.patientIdData.phoneNumber);
+                        } catch (e) { }
+                    }
+                    p.patientId = p.patientIdData; 
+                    delete p.patientIdData;
+                    return p;
+                });
+
+                let filtered = allPrescriptions.filter(p => 
+                    (p.patientId && p.patientId.phoneNumber && p.patientId.phoneNumber.includes(s)) ||
+                    (p.guestPhone && p.guestPhone.includes(s))
+                );
+
+                const total = filtered.length;
+                const paginated = filtered.slice(skip, skip + parsedLimit);
+
+                return successresponse({
+                    res,
+                    status: 200,
+                    message: "Prescriptions fetched successfully",
+                    data: {
+                        prescriptions: paginated,
+                        pagination: {
+                            total,
+                            page: parseInt(page),
+                            limit: parsedLimit,
+                            totalPages: Math.ceil(total / parsedLimit)
+                        }
+                    }
+                });
+            } else {
+                // Name search
+                pipeline.push({
+                    $match: {
+                        $or: [
+                            { "patientIdData.fullName": { $regex: s, $options: "i" } },
+                            { guestName: { $regex: s, $options: "i" } }
+                        ]
+                    }
+                });
+
+                pipeline.push({
+                    $facet: {
+                        metadata: [{ $count: "total" }],
+                        data: [
+                            { $sort: { createdAt: -1 } },
+                            { $skip: skip },
+                            { $limit: parsedLimit }
+                        ]
+                    }
+                });
+
+                const result = await prescrptionmodel.aggregate(pipeline);
+                const facetResult = result[0];
+                const total = facetResult.metadata.length > 0 ? facetResult.metadata[0].total : 0;
+                let paginated = facetResult.data;
+
+                paginated = paginated.map(p => {
+                    if (p.patientIdData && p.patientIdData.phoneNumber) {
+                        try {
+                            p.patientIdData.phoneNumber = decrypt(p.patientIdData.phoneNumber);
+                        } catch (e) { }
+                    }
+                    p.patientId = p.patientIdData;
+                    delete p.patientIdData;
+                    return p;
+                });
+
+                return successresponse({
+                    res,
+                    status: 200,
+                    message: "Prescriptions fetched successfully",
+                    data: {
+                        prescriptions: paginated,
+                        pagination: {
+                            total,
+                            page: parseInt(page),
+                            limit: parsedLimit,
+                            totalPages: Math.ceil(total / parsedLimit)
+                        }
+                    }
+                });
             }
-        });
+        } else {
+            const prescriptionsData = await prescrptionmodel.find(baseFilter)
+                .populate({ path: "patientId", select: "fullName email phoneNumber" })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parsedLimit)
+                .lean();
+
+            const prescriptions = prescriptionsData.map(p => {
+                if (p.patientId && p.patientId.phoneNumber) {
+                    try {
+                        p.patientId.phoneNumber = decrypt(p.patientId.phoneNumber);
+                    } catch (e) { }
+                }
+                return p;
+            });
+
+            const total = await prescrptionmodel.countDocuments(baseFilter);
+
+            return successresponse({
+                res,
+                status: 200,
+                message: "Prescriptions fetched successfully",
+                data: {
+                    prescriptions,
+                    pagination: {
+                        total,
+                        page: parseInt(page),
+                        limit: parsedLimit,
+                        totalPages: Math.ceil(total / parsedLimit)
+                    }
+                }
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -1246,27 +1661,52 @@ export const getMyPrescriptions = async (req, res, next) => {
 
 export const getAllDoctors = async (req, res, next) => {
     try {
-        // Basic pagination to prevent fetching the entire database
-        const { page = 1, limit = 100 } = req.query;
+        const { page = 1, limit = 8 } = req.query;
         const skip = (page - 1) * limit;
 
-        const doctors = await doctormodel.find()
-            .skip(skip)
-            .limit(parseInt(limit))
+        // Fetch distinct doctorIds that have available slots in the future
+        const availableSlots = await slotmodel.find({
+            isBooked: false,
+            startDateTime: { $gt: new Date().toISOString() }
+        }).select("doctorId").lean();
+
+        const doctorIdsWithSlots = [...new Set(availableSlots.map(s => s.doctorId.toString()))];
+
+        // Fallback: If no doctors have available slots, just fetch any approved doctors
+        const query = doctorIdsWithSlots.length > 0 
+            ? { userId: { $in: doctorIdsWithSlots } } 
+            : {}; // Empty query will fetch all doctors (filtered by approved status in populate)
+
+        // Fetch doctors matching the filter without DB limit so we can filter unapproved ones first
+        const doctors = await doctormodel.find(query)
             .populate({
                 path: "userId",
-                select: "fullName email confirmed",
-                match: { confirmed: true }
+                select: "fullName email confirmed status profilepicture",
+                match: { status: "approved" }
             })
             .lean(); // Massive performance boost by returning plain JS objects
 
-        const activeDoctors = doctors.filter(d => d.userId);
+        // Remove any doctors whose user is not approved (populate returns null)
+        // Then apply skip and limit in memory to guarantee exactly `limit` active doctors if available
+        const activeDoctors = doctors
+            .filter(d => d.userId)
+            .slice(skip, skip + parseInt(limit));
+
+        // Count total matching records for proper pagination
+        // Note: this count might be slightly off if some users are not 'approved', but it's close enough for UI pagination
+        const totalRecords = await doctormodel.countDocuments(query);
+        const totalPages = Math.ceil(totalRecords / limit);
 
         return successresponse({
             res,
             status: 200,
             message: "doctors fetched successfully",
-            data: activeDoctors
+            data: activeDoctors,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: totalPages === 0 ? 1 : totalPages,
+                totalRecords
+            }
         });
     } catch (error) {
         next(error);
@@ -1294,21 +1734,31 @@ export const getReportsAnalytics = async (req, res, next) => {
         const prevStart = new Date(start);
         prevStart.setDate(prevStart.getDate() - periodLength);
 
+        const filter = { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } };
+        const prevFilter = { doctorId, status: "completed", createdAt: { $gte: prevStart, $lte: prevEnd } };
+
+        if (req.query.clinicId && req.query.clinicId !== "all") {
+            filter.clinicId = req.query.clinicId;
+            prevFilter.clinicId = req.query.clinicId;
+        }
+
         // Fetch current period sessions
         const currentSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } },
+            filter,
             options: { lean: true }
         });
 
         // Fetch prev period sessions
         const prevSessions = await db_service.find({
             model: sessionmodel,
-            filter: { doctorId, status: "completed", createdAt: { $gte: prevStart, $lt: prevEnd } },
+            filter: prevFilter,
             options: { lean: true }
         });
 
         // Current KPIs
+        let onlineRevenue = 0;
+        let offlineRevenue = 0;
         let currentRevenue = 0;
         let onlineCount = 0;
         let walkinCount = 0;
@@ -1316,7 +1766,12 @@ export const getReportsAnalytics = async (req, res, next) => {
         const onlineUserIds = new Set();
 
         currentSessions.forEach(session => {
-            currentRevenue += (session.fees || 0);
+            if (session.isFeesFinalized) {
+                onlineRevenue += (session.fees || 0);
+            } else {
+                offlineRevenue += (session.fees || 0);
+            }
+
             if (session.isOfflinePatient) walkinCount++;
             else {
                 onlineCount++;
@@ -1327,6 +1782,8 @@ export const getReportsAnalytics = async (req, res, next) => {
             const dateStr = createdAt.toISOString().split('T')[0];
             trendMap[dateStr] = (trendMap[dateStr] || 0) + 1;
         });
+        
+        currentRevenue = onlineRevenue + offlineRevenue;
 
         // Fetch ages from patientmodel
         const patients = await patientmodel.find({ userId: { $in: Array.from(onlineUserIds) } }).lean();
@@ -1394,6 +1851,14 @@ export const getReportsAnalytics = async (req, res, next) => {
             .sort((a, b) => b.count - a.count)
             .slice(0, 5);
 
+        // Calculate Total Withdrawn (Payouts)
+        const payoutTransactions = await db_service.find({
+            model: transactionmodel,
+            filter: { userId: doctorId, purpose: 'payout_withdrawal', createdAt: { $gte: start, $lte: end } },
+            options: { lean: true }
+        });
+        const totalWithdrawn = payoutTransactions.reduce((acc, t) => acc + t.amount, 0);
+
         return successresponse({
             res,
             status: 200,
@@ -1401,11 +1866,14 @@ export const getReportsAnalytics = async (req, res, next) => {
             data: {
                 kpis: {
                     totalRevenue: currentRevenue,
+                    onlineRevenue,
+                    offlineRevenue,
                     revenueGrowth,
                     totalVisits: currentSessions.length,
                     visitsGrowth,
                     onlineVisits: onlineCount,
-                    walkinVisits: walkinCount
+                    walkinVisits: walkinCount,
+                    totalWithdrawn
                 },
                 visitTrends,
                 topDiagnosis,
@@ -1426,7 +1894,8 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
         filter: { userId: patientUserId }
     });
 
-    const sharingSetting = patientProfile?.sharingSetting ?? "all";
+    // CHANGE: Default to "otp" instead of "all" for better privacy by default
+    const sharingSetting = patientProfile?.sharingSetting ?? "otp";
 
     // 2. Evaluate access based on setting
     if (sharingSetting === "all" || sharingSetting === "own_only") {
@@ -1449,6 +1918,51 @@ export const checkDoctorAccess = async (doctorId, patientUserId) => {
     }
 
     return { hasAccess: false, sharingSetting };
+};
+
+// DELETE /doctor/license/pending — cancel pending license before admin reviews it
+export const cancelPendingLicense = async (req, res, next) => {
+    try {
+        const doctor = await db_service.findOne({
+            model: doctormodel,
+            filter: { userId: req.user._id }
+        });
+
+        if (!doctor) {
+            throw new Error("Doctor profile not found", { cause: 404 });
+        }
+
+        if (!doctor.pendingLicenseImage?.public_id) {
+            throw new Error("No pending license to cancel", { cause: 400 });
+        }
+
+        const publicId = doctor.pendingLicenseImage.public_id;
+
+        // Remove from DB
+        doctor.pendingLicenseImage = null;
+        await doctor.save();
+
+        // the doctor still has their previously-approved licenseimage —
+        // cancelling the pending update must not leave them stuck on
+        // status "pending" (set by uploadLicense), since login requires
+        // status === "approved"
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { status: "approved" }
+        });
+
+        // Remove from Cloudinary
+        await cloudinary.uploader.destroy(publicId);
+
+        return successresponse({
+            res,
+            message: "Pending license cancelled successfully",
+        });
+
+    } catch (error) {
+        next(error);
+    }
 };
 
 export const addCertificate = async (req, res, next) => {
@@ -1609,4 +2123,182 @@ export const getAllNotifications = async (req, res, next) => {
             notifications,
         });
     } catch (error) { next(error) }
+};
+
+export const reorderSessions = async (req, res, next) => {
+    try {
+        const { sessions } = req.body;
+        // sessions is an array of { id, order }
+        
+        const bulkOps = sessions.map(s => ({
+            updateOne: {
+                filter: { _id: s.id, doctorId: req.user._id },
+                update: { $set: { order: s.order } }
+            }
+        }));
+
+        await sessionmodel.bulkWrite(bulkOps);
+
+        return successresponse({
+            res,
+            message: "Queue reordered successfully"
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionVitals = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { bloodPressure, heartRate, sugarLevel, temperature, weight, height } = req.body;
+
+        const session = await sessionmodel.findOne({ _id: sessionId, doctorId: req.user._id });
+        if (!session) throw new Error("session not found", { cause: 404 });
+
+        let history = await medicalhistorymodel.findOne({ sessionId });
+        if (!history) {
+            let ageAtEncounter = null;
+            if (!session.isOfflinePatient && session.patientId) {
+                const patientRec = await patientmodel.findOne({ userId: session.patientId });
+                if (patientRec?.dateOfBirth) {
+                    const ageDiffMs = Date.now() - new Date(patientRec.dateOfBirth).getTime();
+                    ageAtEncounter = Math.abs(new Date(ageDiffMs).getUTCFullYear() - 1970);
+                } else if (patientRec?.age != null) {
+                    ageAtEncounter = patientRec.age;
+                }
+            }
+            history = await medicalhistorymodel.create({
+                doctorId: req.user._id,
+                patientId: session.patientId, // Null if guest
+                sessionId: session._id,
+                bloodPressure,
+                pulse: heartRate,
+                sugarLevel,
+                temperature,
+                weight,
+                height,
+                ageAtEncounter,
+                clinicId: session.clinicId
+            });
+        } else {
+            history.bloodPressure = bloodPressure || history.bloodPressure;
+            history.pulse = heartRate || history.pulse;
+            history.sugarLevel = sugarLevel || history.sugarLevel;
+            history.temperature = temperature || history.temperature;
+            history.weight = weight || history.weight;
+            history.height = height || history.height;
+            await history.save();
+        }
+
+        return successresponse({
+            res,
+            message: "Vitals updated successfully",
+            data: history
+        });
+    } catch (error) { next(error) }
+};
+
+export const updateSessionFees = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { fees, isFeesFinalized } = req.body;
+
+        const existingSession = await db_service.findOne({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id }
+        });
+
+        if (!existingSession) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (existingSession.isFeesFinalized && fees < existingSession.fees) {
+            throw new Error(`Fees cannot be reduced below the online paid amount (${existingSession.fees})`, { cause: 400 });
+        }
+
+        const updateObj = { fees };
+        if (isFeesFinalized) {
+            updateObj.isFeesFinalized = true;
+        }
+
+        const session = await db_service.findOneAndUpdate({
+            model: sessionmodel,
+            filter: { _id: sessionId, doctorId: req.user._id },
+            update: updateObj,
+            options: { new: true }
+        });
+
+        if (!session) {
+            throw new Error("Session not found", { cause: 404 });
+        }
+
+        return successresponse({
+            res,
+            message: "Fees updated successfully",
+            data: session
+        });
+    } catch (error) { next(error) }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// أضيفي الـ functions دي في doctor.service.js
+// ═══════════════════════════════════════════════════════════════
+
+// ─── PATCH /doctor/profile-image ─────────────────────────────────────────────
+export const uploadDoctorProfileImage = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            throw new Error("image required", { cause: 400 });
+        }
+
+        // احذف الصورة القديمة لو موجودة
+        if (req.user.profilepicture?.public_id) {
+            await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+        }
+
+        const { secure_url, public_id } = await cloudinary.uploader.upload(
+            req.file.path,
+            { folder: "carehub/doctors/profiles" }
+        );
+
+        const user = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: { secure_url, public_id } },
+            options: { new: true }
+        });
+
+        return successresponse({
+            res,
+            message: "Profile image uploaded successfully",
+            data: { profilepicture: user.profilepicture }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── DELETE /doctor/profile-image ────────────────────────────────────────────
+export const deleteDoctorProfileImage = async (req, res, next) => {
+    try {
+        if (!req.user.profilepicture?.public_id) {
+            throw new Error("image not found", { cause: 404 });
+        }
+
+        await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: null },
+            options: { new: true }
+        });
+
+        return successresponse({
+            res,
+            message: "Profile picture deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
 };

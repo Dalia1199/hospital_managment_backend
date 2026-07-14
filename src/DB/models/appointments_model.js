@@ -61,6 +61,37 @@ const appointmentsSchema = new mongoose.Schema(
             "paid"
         ],
         default: "unpaid"
+    },
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
+    isFollowUp: {
+        type: Boolean,
+        default: false
+    },
+    parentAppointmentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "appointments",
+        default: null
+    },
+    followUpScheduledDate: {
+        type: Date,
+        default: null
+    },
+    followUpDeadline: {
+        type: Date,
+        default: null
+    },
+    followUpStatus: {
+        type: String,
+        enum: ["none", "scheduled", "used", "expired", "overridden"],
+        default: "none"
+    },
+    followUpSetBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+        default: null
     }
     
 }, {

@@ -10,13 +10,23 @@ import cloudinary from "../../common/utilits/cloudinary.js";
 import healthtrackingmodel from "../../DB/models/healthtrackingmodel.js";
 import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
 import { parseDuration, parseFrequency } from "../../common/utilits/medicationHelper.js";
+import medicationschedulemodel from "../../DB/models/medicationschedulemodel.js";
 
 export const getMyPrescriptions = async (req, res, next) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    patientId: req.user._id,
+  };
+
+  const totalCount = await db_service.count({ model: prescriptionmodel, filter });
+  const totalPages = Math.ceil(totalCount / limit);
+
   const prescriptions = await db_service.find({
     model: prescriptionmodel,
-    filter: {
-      patientId: req.user._id,
-    },
+    filter,
     options: {
       populate: [
         {
@@ -27,6 +37,9 @@ export const getMyPrescriptions = async (req, res, next) => {
           path: "medicalHistoryId",
         },
       ],
+      skip,
+      limit,
+      sort: { createdAt: -1 },
       lean: true
     }
   });
@@ -34,6 +47,7 @@ export const getMyPrescriptions = async (req, res, next) => {
   successresponse({
     res,
     data: prescriptions,
+    pagination: { totalPages, currentPage: page, totalRecords: totalCount }
   });
 };
 export const getSinglePrescription = async (req, res, next) => {
@@ -315,7 +329,9 @@ export const getMyProfile = async (req, res, next) => {
         address: userData.address,
         profilepicture: userData.profilepicture,
         // patient model fields
-        age: patient?.age ?? null,
+        dateOfBirth: patient?.dateOfBirth ?? null,
+        age: patient?.calculatedAge ?? patient?.age ?? null,
+        governorate: patient?.governorate ?? null,
         gender: patient?.gender ?? null,
         bloodType: patient?.bloodType ?? null,
         height: patient?.height ?? null,
@@ -340,7 +356,9 @@ export const updatePatientProfile = async (req, res, next) => {
       fullName,
       phoneNumber,
       address,
+      dateOfBirth,
       age,
+      governorate,
       gender,
       bloodType,
       allergies,
@@ -370,7 +388,9 @@ export const updatePatientProfile = async (req, res, next) => {
 
     // 2. Update patient model
     const patientUpdate = {};
+    if (dateOfBirth !== undefined) patientUpdate.dateOfBirth = dateOfBirth;
     if (age !== undefined) patientUpdate.age = age;
+    if (governorate !== undefined) patientUpdate.governorate = governorate;
     if (gender !== undefined) patientUpdate.gender = gender;
     if (bloodType !== undefined) patientUpdate.bloodType = bloodType;
     if (allergies !== undefined) patientUpdate.allergies = allergies;
@@ -764,6 +784,44 @@ export const getMedicationSummary = async (req, res, next) => {
             totalMissed,
             currentStreak
         }});
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const setMedicationSchedule = async (req, res, next) => {
+    try {
+        const { prescriptionId, medicationId, medicineName, scheduleType, times, intervalData } = req.body;
+        
+        // Find existing schedule or create new one
+        const schedule = await db_service.findOneAndUpdate({
+            model: medicationschedulemodel,
+            filter: { patientId: req.user._id, medicationId },
+            update: {
+                prescriptionId,
+                medicineName,
+                scheduleType,
+                times: times || [],
+                intervalData: intervalData || { hours: 0, startTime: "" },
+                isActive: true
+            },
+            options: { upsert: true, new: true }
+        });
+
+        return successresponse({ res, message: "Medication schedule updated successfully", data: schedule });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getMedicationSchedules = async (req, res, next) => {
+    try {
+        const schedules = await db_service.find({
+            model: medicationschedulemodel,
+            filter: { patientId: req.user._id, isActive: true }
+        });
+
+        return successresponse({ res, data: schedules });
     } catch (error) {
         next(error);
     }

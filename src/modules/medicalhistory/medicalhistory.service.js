@@ -4,6 +4,7 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import { checkDoctorAccess } from "../doctor/doctor.service.js";
+import patientmodel from "../../DB/models/patientmodel.js";
 
 export const createMedicalHistory = async (req, res, next) => {
     const { isOfflinePatient, patientId, guestName, guestPhone, diagnosis, notes } = req.body;
@@ -47,10 +48,7 @@ export const getMedicalHistory = async (req, res, next) => {
 
         if (req.user.role === "doctor") {
             const { hasAccess, sharingSetting } = await checkDoctorAccess(req.user._id, patientId);
-            if (!hasAccess) {
-                throw new Error("Access denied. Patient's medical history is protected.", { cause: 403 });
-            }
-            if (sharingSetting === "own_only") {
+            if (!hasAccess || sharingSetting === "own_only") {
                 filter.doctorId = req.user._id;
             }
         }
@@ -60,7 +58,20 @@ export const getMedicalHistory = async (req, res, next) => {
             .sort({ createdAt: -1 })
             .populate("answers")
             .populate("doctorId")
-            .populate("prescriptions");
+            .populate("prescriptions")
+            .lean();
+
+        for (let record of history) {
+            const patientData = await patientmodel.findOne({ userId: record.patientId }).lean();
+            if (patientData) {
+                record.patientId = {
+                    _id: record.patientId,
+                    dateOfBirth: patientData.dateOfBirth,
+                    age: patientData.age,
+                };
+            }
+        }
+
         successresponse({
             res,
             data: history

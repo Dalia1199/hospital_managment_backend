@@ -4,6 +4,8 @@ import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import { validation } from "../../common/middleware/validation.js";
+import { multer_host } from "../../common/middleware/multer.js";
+import { multerenum } from "../../common/enum/multerenum.js";
 
 import * as AV from "./admin.validation.js";
 const adminrouter = Router()
@@ -137,6 +139,13 @@ adminrouter.get(
 );
 
 adminrouter.get(
+    "/stats/payments",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getPaymentAnalytics
+);
+
+adminrouter.get(
     "/stats/daily",
     authentication,
     authorization([roleenum.admin]),
@@ -148,6 +157,30 @@ adminrouter.get(
     authentication,
     authorization([roleenum.admin]),
     AS.getAnalyticsStats
+);
+
+// ─── Profile Image Routes ─────────────────────────────────────
+adminrouter.patch(
+    "/profile-image",
+    authentication,
+    authorization([roleenum.admin]),
+    multer_host(multerenum.image).single("profilepicture"),
+    AS.uploadAdminProfileImage
+);
+ 
+adminrouter.delete(
+    "/profile-image",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.deleteAdminProfileImage
+);
+
+// get top doctors in case of appointments
+adminrouter.get(
+    "/doctors/appointments-ranking",
+    authentication,
+    authorization([roleenum.admin]),
+    AS.getDoctorsAppointmentsRanking
 );
 
 export default adminrouter;

@@ -4,6 +4,9 @@ import doctormodel from "../../DB/models/doctormodel.js";
 import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import appointments_model from "../../DB/models/appointments_model.js";
+import subscriptionmodel from "../../DB/models/subscriptionmodel.js";
+import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
+import paymentmodel from "../../DB/models/paymentmodel.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
@@ -99,6 +102,24 @@ export const approveDoctor = async (req, res, next) => {
             });
         });
 
+        // ─── Auto-create Free Subscription ─────────────────────────────────
+        const freePlan = await db_service.findOne({
+            model: subscriptionmodel,
+            filter: { name: "Free" }
+        });
+
+        if (freePlan) {
+            await db_service.create({
+                model: doctorSubscriptionModel,
+                data: {
+                    doctorId: doctor._id,
+                    subscriptionId: freePlan._id,
+                    status: "active"
+                }
+            });
+        }
+        // ───────────────────────────────────────────────────────────────────
+
         return successresponse({ res, message: "Doctor approved successfully", data: updatedDoctor });
     } catch (error) {
         next(error);
@@ -148,19 +169,52 @@ export const rejectDoctor = async (req, res, next) => {
 
 export const getAllDoctors = async (req, res, next) => {
     try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search;
+        const skip = (page - 1) * limit;
+
         const { status, startDate, endDate } = req.query;
-        const filter = { role: roleenum.doctor };
-        if (status) filter.status = status;
         
+        const baseFilter = { role: roleenum.doctor };
+        if (search) {
+            baseFilter.$or = [
+                { fullName: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } }
+            ];
+        }
+
         if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
+            baseFilter.createdAt = {};
+            if (startDate) baseFilter.createdAt.$gte = new Date(startDate);
             if (endDate) {
                 const end = new Date(endDate);
                 end.setHours(23, 59, 59, 999);
-                filter.createdAt.$lte = end;
+                baseFilter.createdAt.$lte = end;
             }
         }
+
+        const filter = { ...baseFilter };
+        if (status) filter.status = status;
+
+        const totalCount = await db_service.count({ model: usermodel, filter });
+        const totalPages = Math.ceil(totalCount / limit);
+
+        const statusCountsAgg = await usermodel.aggregate([
+            { $match: baseFilter },
+            { $group: { _id: "$status", count: { $sum: 1 } } }
+        ]);
+
+        const statusCounts = {
+            approved: 0,
+            pending: 0,
+            rejected: 0,
+        };
+        statusCountsAgg.forEach(item => {
+            if (item._id) {
+                statusCounts[item._id] = item.count;
+            }
+        });
 
         const doctors = await db_service.find({
             model: usermodel,
@@ -168,6 +222,8 @@ export const getAllDoctors = async (req, res, next) => {
             options: {
                 select: "-password",
                 sort: { createdAt: -1 },
+                skip,
+                limit,
                 lean: true
             }
         });
@@ -200,7 +256,7 @@ export const getAllDoctors = async (req, res, next) => {
 
         const data = visible.map(({ _hasPendingLicenseUpdate, ...rest }) => rest);
 
-        return successresponse({ res, data });
+        return successresponse({ res, data, pagination: { totalPages, currentPage: page, totalRecords: totalCount }, statusCounts });
     } catch (error) {
         next(error);
     }
@@ -257,38 +313,58 @@ export const getDashboard = async (req, res, next) => {
 
 export const getallusers = async (req, res, next) => {
     try {
-        const { page = 1, limit = 20, role } = req.query;
+        const { page = 1, limit = 20, role, status, search } = req.query;
 
         const currentPage = parseInt(page);
         const itemsPerPage = parseInt(limit);
-        const skip = (currentPage - 1) * itemsPerPage;
 
-        const filter = role ? { role } : {};
+        const filter = {};
+        if (role) filter.role = role;
+        if (status) filter.status = status;
 
-        const users = await db_service.find({
+        // Fetch all matching basic filters to do in-memory search and decryption
+        let users = await db_service.find({
             model: usermodel,
             filter: filter,
             options: {
-                skip: skip,
-                limit: itemsPerPage,
                 select: "-password",
                 lean: true
             }
         });
 
-        const totalCount = await db_service.count({
-            model: usermodel,
-            filter: filter
+        // Decrypt phone numbers
+        users = users.map(user => {
+            if (user.phoneNumber) {
+                try {
+                    user.phoneNumber = decrypt(user.phoneNumber);
+                } catch (e) { /* ignore invalid decryption */ }
+            }
+            return user;
         });
 
-        const totalPages = Math.ceil(totalCount / itemsPerPage);
+        // Apply search filter in-memory so we can search by decrypted phone number
+        if (search) {
+            const lowerSearch = search.toLowerCase();
+            users = users.filter(u => {
+                const matchName = u.fullName?.toLowerCase().includes(lowerSearch);
+                const matchEmail = u.email?.toLowerCase().includes(lowerSearch);
+                const matchPhone = u.phoneNumber?.toLowerCase().includes(lowerSearch);
+                return matchName || matchEmail || matchPhone;
+            });
+        }
+
+        const totalCount = users.length;
+        const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
+        
+        const skip = (currentPage - 1) * itemsPerPage;
+        const paginatedUsers = users.slice(skip, skip + itemsPerPage);
 
         return successresponse({
             res,
             status: 200,
             message: "Users fetched successfully",
             data: {
-                users,
+                users: paginatedUsers,
                 pagination: {
                     totalCount,
                     totalPages,
@@ -442,11 +518,7 @@ export const approveDoctorLicense = async (req, res, next) => {
         // confirming the decision (instead of the request just vanishing
         // from the pending list with no trace)
         await notify.licenseReviewed(req.user._id, updatedUser?.fullName, "approved");
-        await notify.licenseApproved(doctor.userId);
-        
-        if (oldPublicId) {
-            await cloudinary.uploader.destroy(oldPublicId);
-        }
+
 
         return successresponse({
             res,
@@ -620,6 +692,98 @@ export const getMonthlyStats = async (req, res, next) => {
         next(error);
     }
 };
+
+// ─── GET /admin/stats/payments ───────────────────────────────────────────────
+export const getPaymentAnalytics = async (req, res, next) => {
+    try {
+        const { startDate: startDateStr, endDate: endDateStr } = req.query;
+
+        // Build optional date filter
+        const dateFilter = {};
+        if (startDateStr || endDateStr) {
+            dateFilter.createdAt = {};
+            if (startDateStr) dateFilter.createdAt.$gte = new Date(startDateStr);
+            if (endDateStr) {
+                const end = new Date(endDateStr);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        const baseMatch = { paymentStatus: "paid", ...dateFilter };
+
+        // Total revenue
+        const totalRevenueAggr = await paymentmodel.aggregate([
+            { $match: baseMatch },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+        const totalRevenue = totalRevenueAggr[0]?.total || 0;
+
+        // Revenue by purpose
+        const revenueByPurposeAggr = await paymentmodel.aggregate([
+            { $match: baseMatch },
+            { $group: { _id: "$purpose", total: { $sum: "$amount" }, count: { $sum: 1 } } }
+        ]);
+
+        const revenueByPurpose = revenueByPurposeAggr.map(item => ({
+            purpose: item._id,
+            total: item.total,
+            count: item.count
+        }));
+
+        // Revenue over the last 6 months (or within given range)
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+        sixMonthsAgo.setDate(1);
+        sixMonthsAgo.setHours(0, 0, 0, 0);
+
+        const monthlyMatchFilter = startDateStr || endDateStr
+            ? baseMatch
+            : { paymentStatus: "paid", createdAt: { $gte: sixMonthsAgo } };
+
+        const monthlyRevenueAggr = await paymentmodel.aggregate([
+            { $match: monthlyMatchFilter },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" }
+                    },
+                    total: { $sum: "$amount" }
+                }
+            },
+            { $sort: { "_id.year": 1, "_id.month": 1 } }
+        ]);
+
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthlyRevenue = monthlyRevenueAggr.map(item => ({
+            month: `${months[item._id.month - 1]} ${item._id.year}`,
+            total: item.total
+        }));
+
+        // Recent transactions (filtered by date if specified)
+        const recentTransactionsQuery = paymentmodel.find(dateFilter)
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .populate("userId", "fullName email");
+        const recentTransactions = await recentTransactionsQuery.lean();
+
+        return successresponse({
+            res,
+            status: 200,
+            message: "Payment analytics fetched successfully",
+            data: {
+                totalRevenue,
+                revenueByPurpose,
+                monthlyRevenue,
+                recentTransactions
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 
 // ─── GET /admin/stats/daily ──────────────────────────────────────────────────
 export const getDailyStats = async (req, res, next) => {
@@ -887,3 +1051,136 @@ export const getAnalyticsStats = async (req, res, next) => {
         next(error);
     }
 };
+
+
+
+// ─── PATCH /admin/profile-image ──────────────────────────────────────────────
+export const uploadAdminProfileImage = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            throw new Error("image required", { cause: 400 });
+        }
+ 
+        // احذف الصورة القديمة لو موجودة
+        if (req.user.profilepicture?.public_id) {
+            await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+        }
+ 
+        const { secure_url, public_id } = await cloudinary.uploader.upload(
+            req.file.path,
+            { folder: "carehub/admins" }
+        );
+ 
+        const user = await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: { secure_url, public_id } },
+            options: { new: true }
+        });
+ 
+        return successresponse({
+            res,
+            message: "Profile image uploaded successfully",
+            data: { profilepicture: user.profilepicture }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+ 
+// ─── DELETE /admin/profile-image ─────────────────────────────────────────────
+export const deleteAdminProfileImage = async (req, res, next) => {
+    try {
+        if (!req.user.profilepicture?.public_id) {
+            throw new Error("image not found", { cause: 404 });
+        }
+ 
+        await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+ 
+        await db_service.findOneAndUpdate({
+            model: usermodel,
+            filter: { _id: req.user._id },
+            update: { profilepicture: null },
+            options: { new: true }
+        });
+ 
+        return successresponse({
+            res,
+            message: "Profile picture deleted successfully",
+            data: null
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── GET /admin/doctors/appointments-ranking ─────────────────────────────
+export const getDoctorsAppointmentsRanking = async (req, res, next) => {
+    try {
+
+        const topDoctors = await appointments_model.aggregate([
+            {
+                $match: {status: "completed"}
+            },
+            {
+                $group: {
+                    _id: "$doctorId",
+                    totalAppointments: {
+                        $sum: 1
+                    }
+                }
+            },
+            {
+                $sort: {
+                    totalAppointments: -1
+                }
+            },
+
+            // lookup like join in sql , return array
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "_id", // the result of the previous aggregation
+                    foreignField: "_id", // the field of the previous collection (user ==> _id)
+                    as: "user"
+                }
+            },
+            // $unwind ==> to convert array to object
+            {
+                $unwind: "$user"
+            },
+            {
+                $lookup: {
+                    from: "doctors",
+                    localField: "_id",
+                    foreignField: "userId",
+                    as: "doctor"
+                }
+            },
+            {
+                $unwind: "$doctor"
+            },
+            // $project ==> final output
+            {
+                $project: {
+                    _id: 0,
+                    doctorId: "$_id",
+                    doctorName: "$user.fullName",
+                    specialization: "$doctor.specialization",
+                    experience: "$doctor.experience",
+                    totalAppointments: 1
+                }
+            }
+
+        ]);
+
+        return successresponse({
+            res,
+            message: "Doctors appointments ranking retrieved successfully",
+            data: topDoctors
+        });
+    }
+    catch(error) {
+        next(error);
+    }
+}

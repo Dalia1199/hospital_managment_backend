@@ -14,7 +14,9 @@ export const featureEnum = {
 
     queuePriority: "queue_priority",
 
-    customBranding: "custom_branding"
+    customBranding: "custom_branding",
+
+    assistants: "assistants"
 
 };
 
@@ -28,7 +30,9 @@ export const limitEnum = {
 
     doctors: "doctors",
 
-    appointmentsPerMonth: "appointmentsPerMonth"
+    appointmentsPerMonth: "appointmentsPerMonth",
+
+    clinics: "clinics"
 
 };
 

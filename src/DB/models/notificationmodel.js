@@ -7,6 +7,11 @@ const notificationSchema = new mongoose.Schema(
             ref: "user",
             required: true
         },
+        clinicId: {
+            type: mongoose.Types.ObjectId,
+            ref: "clinic",
+            required: false
+        },
         message: {
             type: String,
             required: true,
@@ -16,12 +21,12 @@ const notificationSchema = new mongoose.Schema(
             type: String,
             enum: [
                 "appointment", "prescription", "medical_history", "session", 
-                "doctor_registration", "license_update", // admin
+                "doctor_registration", "license_update", "doctor_renew_plan" , "doctor_pay_plan", // admin
                 "doctor_under_review", "doctor_approved", "doctor_rejected", "license_under_review", // doctor
                 "license_approved", "license_rejected", "patient_booked_appointment", "patient_cancelled_appointment", // doctor 
                 "patient_completed_appointment" , "patient_rescheduled_appointment", // doctor
-                "certificate_added", "certificate_updated", "certificate_deleted", // doctor
-                "medication"
+                "certificate_added", "certificate_updated", "certificate_deleted",  // doctor
+                "medication", "payout_approved", "payout_rejected", "wallet_setup_approved", "wallet_setup_rejected", "wallet_suspended", "wallet_update"
             ],
             required: true
         },

@@ -73,7 +73,10 @@ export const createSessionSchema = {
             otherwise: Joi.optional()
         }),
         guestPhone: Joi.string().trim().min(10).max(15).optional(),
-        guestAge: Joi.number().min(0).max(120).optional()
+        guestAge: Joi.number().min(0).max(120).optional(),
+        clinicId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional(),
+        appointmentId: Joi.string().pattern(/^[a-f\d]{24}$/i).optional(),
+        skipQueue: Joi.boolean().optional()
     })
 };
 
@@ -95,6 +98,7 @@ export const endSessionSchema = {
     }).required(),
     body: Joi.object({
         fees: Joi.number().min(0).optional(),
+        isFeesFinalized: Joi.boolean().optional(),
         diagnosis: Joi.string().allow("").optional(),
         notes: Joi.string().allow("").optional(),
         prescriptionText: Joi.string().allow("").optional(),
@@ -181,4 +185,37 @@ export const deleteCertificateSchema = {
     params: Joi.object({
         certificateId: generalrules.id.required()
     })
+};
+
+export const reorderSessionSchema = {
+    body: Joi.object({
+        sessions: Joi.array().items(Joi.object({
+            id: Joi.string().pattern(/^[a-f\d]{24}$/i).required(),
+            order: Joi.number().required()
+        })).min(1).required()
+    }).required()
+};
+
+export const updateSessionVitalsSchema = {
+    params: Joi.object({
+        sessionId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
+    }).required(),
+    body: Joi.object({
+        bloodPressure: Joi.string().allow("").optional(),
+        heartRate: Joi.string().allow("").optional(),
+        sugarLevel: Joi.string().allow("").optional(),
+        temperature: Joi.string().allow("").optional(),
+        weight: Joi.string().allow("").optional(),
+        height: Joi.string().allow("").optional()
+    }).required()
+};
+
+export const updateSessionFeesSchema = {
+    params: Joi.object({
+        sessionId: Joi.string().pattern(/^[a-f\d]{24}$/i).required()
+    }).required(),
+    body: Joi.object({
+        fees: Joi.number().min(0).required(),
+        isFeesFinalized: Joi.boolean().optional()
+    }).required()
 };

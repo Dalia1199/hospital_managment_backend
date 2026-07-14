@@ -4,7 +4,9 @@ import * as CV from "./clinic.validation.js";
 import { authentication } from "../../common/middleware/authenticataiaon.js";
 import { authorization } from "../../common/middleware/authorization.js";
 import { roleenum } from "../../common/enum/user.enum.js";
+import { spoofAssistantToDoctor, requirePermission, auditLogger } from "../../common/middleware/assistant.middleware.js";
 import { validation } from "../../common/middleware/validation.js";
+import { requireClinicSlot } from "../../common/middleware/subscriptionGuard.js";
 
 const clinicrouter = Router();
 
@@ -12,8 +14,11 @@ const clinicrouter = Router();
 clinicrouter.post(
     "/",
     authentication,
+    requirePermission("canManageClinics"),
     authorization([roleenum.doctor]),
+    requireClinicSlot(),
     validation(CV.addClinicSchema),
+    auditLogger("ADD_CLINIC"),
     CS.addClinic
 );
 
@@ -21,6 +26,7 @@ clinicrouter.post(
 clinicrouter.get(
     "/",
     authentication,
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     CS.getMyClinics
 );
@@ -29,8 +35,11 @@ clinicrouter.get(
 clinicrouter.patch(
     "/:clinicId",
     authentication,
+    requirePermission("canManageClinics"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(CV.updateClinicSchema),
+    auditLogger("UPDATE_CLINIC"),
     CS.updateClinic
 );
 
@@ -38,8 +47,11 @@ clinicrouter.patch(
 clinicrouter.delete(
     "/:clinicId",
     authentication,
+    requirePermission("canManageClinics"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(CV.clinicIdSchema),
+    auditLogger("DELETE_CLINIC"),
     CS.deleteClinic
 );
 
@@ -66,24 +78,33 @@ clinicrouter.get(
 clinicrouter.post(
     "/:clinicId/services",
     authentication,
+    requirePermission("canManageClinics"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(CV.addServiceSchema),
+    auditLogger("ADD_CLINIC_SERVICE"),
     CS.addService
 );
 
 clinicrouter.patch(
     "/:clinicId/services/:serviceId",
     authentication,
+    requirePermission("canManageClinics"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(CV.updateServiceSchema),
+    auditLogger("UPDATE_CLINIC_SERVICE"),
     CS.updateService
 );
 
 clinicrouter.delete(
     "/:clinicId/services/:serviceId",
     authentication,
+    requirePermission("canManageClinics"),
+    spoofAssistantToDoctor,
     authorization([roleenum.doctor]),
     validation(CV.serviceIdSchema),
+    auditLogger("DELETE_CLINIC_SERVICE"),
     CS.deleteService
 );
 

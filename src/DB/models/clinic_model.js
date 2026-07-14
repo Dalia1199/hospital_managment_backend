@@ -50,6 +50,8 @@ const clinicSchema = new mongoose.Schema(
         },
         whatsapp: { type: String, trim: true },
         landline: { type: String, trim: true },
+        consultationFee: { type: Number, required: true, min: 0 },
+        followUpFee: { type: Number, required: true, min: 0 },
         services: { type: [serviceSchema], default: [] },
                
         isActive: {

@@ -6,6 +6,9 @@ export const paymentPurposeEnum = {
     subscription:
         "subscription",
 
+    followup:
+        "followup",
+
     lab:
         "lab",
 

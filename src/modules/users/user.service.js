@@ -1,4 +1,5 @@
 import usermodel from "../../DB/models/usermodel.js";
+import { AssistantModel } from "../../DB/models/assistant_model.js";
 import { hash, compare } from "../../common/utilits/security/hash.js";
 import * as db_service from "../../DB/db.service.js";
 import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
@@ -39,6 +40,13 @@ import { eventemitter } from "../../common/utilits/email/email.events.js";
 import { emailenum } from "../../common/enum/emailenum.js";
 import { emailtemplete } from "../../common/utilits/email/emai.templete.js";
 import doctormodel from "../../DB/models/doctormodel.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
+import notificationmodel from "../../DB/models/notificationmodel.js";
+import reviewmodel from "../../DB/models/reviewmodel.js";
+import slotmodel from "../../DB/models/slot_model.js";
+import availabilitymodel from "../../DB/models/avalibility_model.js";
+import clinicmodel from "../../DB/models/clinic_model.js";
+import DoctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
 import { notify } from "../notifications/notification.service.js";
 
 const sendemailotp = async ({ email, subject } = {}) => {
@@ -311,7 +319,7 @@ export const signin = async (req, res, next) => {
 
   const uuid = uuidv4();
   const access_token = generatetoken({
-    payload: { id: user._id, email: user.email },
+    payload: { id: user._id, email: user.email, role: user.role },
     secret_key: access_secret_key,
     options: {
       expiresIn: "25h",
@@ -323,6 +331,7 @@ export const signin = async (req, res, next) => {
     payload: {
       id: user._id,
       email: user.email,
+      role: user.role
     },
     secret_key: refreshsecretkey,
     options: {
@@ -332,15 +341,48 @@ export const signin = async (req, res, next) => {
   });
   console.log("REFRESH:", refreshtoken);
 
+  let assistantData = null;
+  let subscriptionPlan = "Free";
+  let subscriptionFeatures = [];
+  let clinicLimit = 0;
+
+  if (user.role === roleenum.assistant) {
+    assistantData = await AssistantModel.findOne({ userId: user._id })
+      .populate('doctorId', 'fullName')
+      .populate('clinicId', 'name');
+  } else if (user.role === roleenum.doctor) {
+    const doctor = await doctormodel.findOne({ userId: user._id }).lean();
+    if (doctor) {
+      subscriptionPlan = await getPlanName(user._id);
+      subscriptionFeatures = await getActiveFeatures(user._id);
+      clinicLimit = await getClinicLimit(user._id);
+    }
+  }
+
   successresponse({
     res,
     message: "success signin",
     data: {
       access_token,
       refreshtoken,
+      email: user.email,
       role: user.role,
       id: user._id,
       fullName: user.fullName,
+      profilepicture: user.profilepicture,
+      ...(user.role === roleenum.doctor && {
+        subscriptionPlan,
+        subscriptionFeatures,
+        clinicLimit
+      }),
+      ...(assistantData && {
+        permissions: assistantData.permissions,
+        doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+        jobTitle: assistantData.jobTitle,
+        doctorName: assistantData.doctorId?.fullName,
+        clinicId: assistantData.clinicId?._id || assistantData.clinicId,
+        clinicName: assistantData.clinicId?.name
+      })
     },
   });
 };
@@ -353,8 +395,9 @@ export const signup = async (req, res, next) => {
     confirmPassword,
     phoneNumber,
     role,
-    age,
+    dateOfBirth,
     gender,
+    governorate,
     address,
     bloodType,
     specialty,
@@ -363,13 +406,30 @@ export const signup = async (req, res, next) => {
     experience,
   } = req.body;
 
-  if (
-    await db_service.findOne({
-      model: usermodel,
-      filter: { email },
-    })
-  ) {
-    throw new Error("email already exists", { cause: 409 });
+  const existingUser = await db_service.findOne({
+    model: usermodel,
+    filter: { email },
+  });
+
+  if (existingUser) {
+    if (existingUser.role === "doctor" && existingUser.status === "rejected") {
+      const oldDoctor = await db_service.findOne({
+        model: doctormodel,
+        filter: { userId: existingUser._id },
+      });
+      if (oldDoctor) {
+        if (oldDoctor.licenseimage?.public_id) {
+          await cloudinary.uploader.destroy(oldDoctor.licenseimage.public_id).catch(() => null);
+        }
+        if (oldDoctor.nationalId?.public_id) {
+          await cloudinary.uploader.destroy(oldDoctor.nationalId.public_id).catch(() => null);
+        }
+        await doctormodel.deleteOne({ _id: oldDoctor._id });
+      }
+      await usermodel.deleteOne({ _id: existingUser._id });
+    } else {
+      throw new Error("email already exists", { cause: 409 });
+    }
   }
 
   if (password !== confirmPassword) {
@@ -448,8 +508,9 @@ export const signup = async (req, res, next) => {
         model: patientmodel,
         data: {
           userId: user._id,
-          age,
+          dateOfBirth,
           gender,
+          governorate,
           bloodType,
           address
         }
@@ -493,5 +554,120 @@ export const signup = async (req, res, next) => {
       await cloudinary.uploader.destroy(nationalIdImage.public_id);
     }
     throw error;
+  }
+};
+import { getPlanName, getActiveFeatures, getClinicLimit } from "../../common/utilits/subscription.guard.js";
+
+export const getprofile = async (req, res, next) => {
+  const user = req.user;
+  if (!user) {
+    return next(new Error("User not found", { cause: 404 }));
+  }
+
+  let assistantData = null;
+  let subscriptionPlan = "Free";
+  let subscriptionFeatures = [];
+  let clinicLimit = 0;
+
+  if (user.role === roleenum.assistant) {
+    assistantData = await AssistantModel.findOne({ userId: user._id })
+      .populate('doctorId', 'fullName')
+      .populate('clinicId', 'name');
+
+    console.log("[getprofile] populated assistantData:", assistantData);
+
+    if (assistantData && assistantData.isActive === false) {
+      return next(new Error("Account suspended. Please contact your doctor.", { cause: 403 }));
+    }
+  } else if (user.role === roleenum.doctor) {
+    const doctor = await doctormodel.findOne({ userId: user._id }).lean();
+    if (doctor) {
+      subscriptionPlan = await getPlanName(user._id);
+      subscriptionFeatures = await getActiveFeatures(user._id);
+      clinicLimit = await getClinicLimit(user._id);
+    }
+  }
+
+  successresponse({
+    res,
+    message: "Profile fetched successfully",
+    data: {
+      email: user.email,
+      role: user.role,
+      id: user._id,
+      fullName: user.fullName,
+      profilepicture: user.profilepicture,
+      ...(user.role === roleenum.doctor && {
+        subscriptionPlan,
+        subscriptionFeatures,
+        clinicLimit
+      }),
+      ...(assistantData && {
+        permissions: assistantData.permissions,
+        doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+        jobTitle: assistantData.jobTitle,
+        doctorName: assistantData.doctorId?.fullName,
+        clinicId: assistantData.clinicId?._id || assistantData.clinicId,
+        clinicName: assistantData.clinicId?.name
+      })
+    }
+  });
+};
+
+
+
+export const deleteProfile = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const role = req.user.role;
+
+    if (role === roleenum.doctor) {
+      // 1. get doctor record
+      const doctor = await db_service.findOne({
+        model: doctormodel,
+        filter: { userId }
+      });
+
+      if (doctor) {
+        // 2. delete cloudinary images
+        if (doctor.licenseimage?.public_id) {
+          await cloudinary.uploader.destroy(doctor.licenseimage.public_id);
+        }
+        if (doctor.nationalId?.public_id) {
+          await cloudinary.uploader.destroy(doctor.nationalId.public_id);
+        }
+
+        // 3. delete doctor-related data
+        await Promise.all([
+          db_service.deleteMany({ model: availabilitymodel, filter: { doctorId: userId } }),
+          db_service.deleteMany({ model: slotmodel, filter: { doctorId: userId } }),
+          db_service.deleteMany({ model: appointmentsmodel, filter: { doctorId: userId } }),
+          db_service.deleteMany({ model: clinicmodel, filter: { doctorId: userId } }),
+          db_service.deleteMany({ model: reviewmodel, filter: { doctorId: userId } }),
+          db_service.deleteOne({ model: doctormodel, filter: { userId } })
+        ]);
+      }
+
+    } else if (role === roleenum.patient) {
+      // 1. delete patient-related data
+      await Promise.all([
+        db_service.deleteMany({ model: appointmentsmodel, filter: { patientId: userId } }),
+        db_service.deleteMany({ model: notificationmodel, filter: { userId } }),
+        db_service.deleteMany({ model: reviewmodel, filter: { patientId: userId } }),
+        db_service.deleteOne({ model: patientmodel, filter: { userId } })
+      ]);
+    }
+
+    // 4. delete profile picture from cloudinary
+    if (req.user.profilepicture?.public_id) {
+      await cloudinary.uploader.destroy(req.user.profilepicture.public_id);
+    }
+
+    // 5. delete user
+    await db_service.deleteOne({ model: usermodel, filter: { _id: userId } });
+
+    return successresponse({ res, status: 200, message: "profile deleted successfully" });
+  } catch (error) {
+    next(error);
   }
 };

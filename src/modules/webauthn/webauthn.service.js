@@ -49,7 +49,7 @@ function getClientOrigin(req) {
       console.error("Error parsing referer in getClientOrigin:", e.message);
     }
   }
-  return "http://localhost:3001";
+  return "https://carehub-two.vercel.app";
 }
 
 export const registerOptions = async (req, res, next) => {
@@ -75,7 +75,7 @@ export const registerOptions = async (req, res, next) => {
       authenticatorSelection: {
         residentKey: "preferred",
         userVerification: "preferred",
-        authenticatorAttachment: "platform", // forces TouchID/FaceID platform authenticator
+        // No attachment restriction — supports TouchID, FaceID, Windows Hello, Android fingerprint, and hardware keys
       },
     });
 

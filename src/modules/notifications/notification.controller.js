@@ -10,7 +10,7 @@ const notificationrouter = Router();
 notificationrouter.get(
     "/",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor, roleenum.assistant]),
     NS.getNotifications
 );
 
@@ -18,15 +18,23 @@ notificationrouter.get(
 notificationrouter.post(
     "/push-permission",
     authentication,
-    authorization([roleenum.patient, roleenum.doctor, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin, roleenum.assistant]),
     NS.savePushPermission
+);
+
+// DELETE /notifications/push-permission
+notificationrouter.delete(
+    "/push-permission",
+    authentication,
+    authorization([roleenum.patient, roleenum.doctor, roleenum.admin, roleenum.assistant]),
+    NS.removePushPermission
 );
 
 // PATCH /notifications/read-all
 notificationrouter.patch(
     "/read-all",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor, roleenum.assistant]),
     NS.markAllAsRead
 );
 
@@ -34,7 +42,7 @@ notificationrouter.patch(
 notificationrouter.patch(
     "/:id/read",
     authentication,
-    authorization([roleenum.patient, roleenum.admin]),
+    authorization([roleenum.patient, roleenum.admin, roleenum.doctor, roleenum.assistant]),
     NS.markAsRead
 );
 

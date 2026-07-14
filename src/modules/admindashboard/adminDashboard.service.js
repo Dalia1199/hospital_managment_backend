@@ -5,6 +5,9 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import doctorSubscriptionModel from "../../DB/models/doctor.subscription.js";
 import { subscriptionStatusEnum } from "../../common/enum/subscription.enum.js";
 import { getDateFilter, getNextSevenDays } from "../admin/adminhelper.js";
+import transactionmodel from "../../DB/models/transactionmodel.js";
+import platformledgermodel from "../../DB/models/platform_ledger_model.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
 // /done
  export const getSubscriptionSummary = async () => {
 
@@ -1327,4 +1330,85 @@ export const getTopSubscriptionPlans = async (req, res, next) => {
 
     }
 
+};
+
+export const getFinancialStats = async (req, res, next) => {
+    try {
+        const { startDate: startDateStr, endDate: endDateStr } = req.query;
+
+        // Build optional date filter
+        const dateFilter = {};
+        if (startDateStr || endDateStr) {
+            dateFilter.createdAt = {};
+            if (startDateStr) dateFilter.createdAt.$gte = new Date(startDateStr);
+            if (endDateStr) {
+                const end = new Date(endDateStr);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.createdAt.$lte = end;
+            }
+        }
+
+        // 1. Total Doctors Earnings (online_booking_revenue)
+        const [doctorEarnings] = await transactionmodel.aggregate([
+            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' }, ...dateFilter } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+
+        // 2. Platform Profits
+        const [transactionProfits] = await transactionmodel.aggregate([
+            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' }, ...dateFilter } },
+            { $group: { _id: null, totalPlatformFee: { $sum: '$metadata.platformFee' } } }
+        ]);
+
+        const platformProfits = await platformledgermodel.aggregate([
+            { $match: { status: { $ne: 'cancelled' }, ...dateFilter } },
+            { $group: { _id: "$source", total: { $sum: "$amount" } } }
+        ]);
+
+        let bookingProfits = transactionProfits?.totalPlatformFee || 0;
+        let subscriptionProfits = 0;
+        let cancellationProfits = 0;
+        
+        platformProfits.forEach(p => {
+            // We ignore p._id === 'appointment' from ledger since we calculate it from transactions now
+            if (p._id === 'subscription') subscriptionProfits = p.total;
+            if (p._id === 'cancellation') cancellationProfits = p.total;
+        });
+
+        // 3. Cancellation Rate
+        const cancellationMatchStage = Object.keys(dateFilter).length > 0
+            ? { $match: dateFilter }
+            : { $match: {} };
+
+        const [appointmentStats] = await appointmentsmodel.aggregate([
+            cancellationMatchStage,
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    cancelled: {
+                        $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] }
+                    }
+                }
+            }
+        ]);
+
+        const totalAppointments = appointmentStats?.total || 0;
+        const cancelledAppointments = appointmentStats?.cancelled || 0;
+        const cancellationRate = totalAppointments > 0 ? (cancelledAppointments / totalAppointments) * 100 : 0;
+
+        return successresponse({
+            res,
+            message: "Financial Statistics",
+            data: {
+                totalDoctorsEarnings: doctorEarnings?.total || 0,
+                platformBookingProfits: bookingProfits,
+                platformSubscriptionProfits: subscriptionProfits,
+                platformCancellationProfits: cancellationProfits,
+                cancellationRate: parseFloat(cancellationRate.toFixed(2))
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
 };

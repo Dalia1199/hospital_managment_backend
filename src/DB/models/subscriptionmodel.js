@@ -108,19 +108,20 @@ const subscriptionSchema =
         },
 
         features: [
-
             featureSchema
-
         ],
 
-        
+        limits: [
+            limitSchema
+        ],
 
+        status: {
+            type: String,
+            default: "active"
+        },
         isActive: {
-
             type: Boolean,
-
             default: true
-
         }
 
     },

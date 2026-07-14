@@ -19,9 +19,11 @@ export const addAvailabilitySchema = {
             .required(),
 
         startTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'startTime must be in HH:MM 24-hour format, e.g. 09:00' })
             .required(),
 
         endTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'endTime must be in HH:MM 24-hour format, e.g. 17:00' })
             .required(),
 
         appointmentDuration: Joi.number()
@@ -50,6 +52,11 @@ export const updateAvailabilitySchema = {
  
     }).required(),
  
+    // fetchClient auto-appends clinicId from localStorage — allow it to pass through
+    query: Joi.object({
+        clinicId: generalrules.id
+    }),
+ 
     body: Joi.object({
  
         day: Joi.string()
@@ -63,12 +70,16 @@ export const updateAvailabilitySchema = {
                 "saturday"
             ),
  
-        startTime: Joi.string(),
+        startTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'startTime must be in HH:MM 24-hour format, e.g. 09:00' }),
  
-        endTime: Joi.string(),
+        endTime: Joi.string()
+            .pattern(/^([01]\d|2[0-3]):[0-5]\d$/).messages({ 'string.pattern.base': 'endTime must be in HH:MM 24-hour format, e.g. 17:00' }),
  
         appointmentDuration: Joi.number()
-            .valid(15, 20, 30, 45, 60)
+            .valid(15, 20, 30, 45, 60),
+
+        force: Joi.boolean()
  
     }).min(1).required()
  
@@ -80,49 +91,35 @@ export const deleteAvailabilitySchema = {
  
         availabilityId: generalrules.id.required()
  
-    }).required()
+    }).required(),
+ 
+    query: Joi.object({
+        force: Joi.boolean(),
+        clinicId: generalrules.id
+    })
  
 };
 
 export const generateSlotsSchema = {
-
     body: Joi.object({
-        clinicId: generalrules.id.required(),
-        startDate: Joi.date().required(),
-
-        endDate: Joi.date()
-            .greater(Joi.ref("startDate"))
-            .required()
-
-    }).custom((value, helpers) => {
-
-        const start = new Date(value.startDate);
-        const end = new Date(value.endDate);
-
-        const diffDays =
-            Math.ceil(
-                (end - start) /
-                (1000 * 60 * 60 * 24)
-            );
-
-        if (diffDays > 90) {
-
-            return helpers.error(
-                "any.invalid"
-            );
-
-        }
-
-        return value;
-
-    }).messages({
-
-        "any.invalid":
-            "maximum generation period is 90 days"
-
-    })
-
+        clinicId: generalrules.id,
+        dates: Joi.array().items(
+            Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/)
+        ).min(1).required()
+    }).required()
 };
+
+export const getAvailableSlotsMeSchema = {
+    query: Joi.object({
+         clinicId: generalrules.id,
+         startDate: Joi.date().iso().optional(),
+         endDate: Joi.date().iso().optional(),
+         includeBooked: Joi.string().valid("true", "false").optional(),
+         page: Joi.number().min(1).optional(),
+         limit: Joi.number().min(1).optional()
+    }).unknown(true)
+};
+
 export const getAvailableSlotsSchema = {
 
     params: Joi.object({
@@ -140,9 +137,13 @@ export const getAvailableSlotsSchema = {
     }).required(),
 
     query: Joi.object({
-        
-         clinicId: generalrules.id
-    }).required()
+         clinicId: generalrules.id,
+         startDate: Joi.date().iso().optional(),
+         endDate: Joi.date().iso().optional(),
+         includeBooked: Joi.string().valid("true", "false").optional(),
+         page: Joi.number().min(1).optional(),
+         limit: Joi.number().min(1).optional()
+    }).unknown(true)
 
 };
 export const bookAppointmentSchema = {
@@ -257,6 +258,42 @@ export const getPatientAppointmentsSchema = {
 
         page: Joi.number().min(1).default(1),
 
-        limit: Joi.number().min(1).max(50).default(10)
+    limit: Joi.number().min(1).max(50).default(10)
     })
+};
+
+export const confirmAppointmentSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+    reason: Joi.string().optional(),
+    paymentId: generalrules.id.required().messages({
+      "string.hex": "invalid payment id",
+      "string.length": "payment id must be 24 characters",
+      "any.required": "payment id is required",
+    }),
+  }).required(),
+};
+
+export const releaseReservationSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+  }).required(),
+};
+
+export const holdSlotSchema = {
+  body: Joi.object({
+    slotId: generalrules.id.required().messages({
+      "string.hex": "invalid slot id",
+      "string.length": "slot id must be 24 characters",
+      "any.required": "slot id is required",
+    }),
+  }).required(),
 };

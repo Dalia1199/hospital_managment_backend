@@ -11,7 +11,16 @@ const sessionSchema = new mongoose.Schema({
         ref: "user",
         required: function() { return !this.isOfflinePatient; }
     },
+    clinicId: {
+        type: mongoose.Types.ObjectId,
+        ref: "clinic",
+        required: false
+    },
     isOfflinePatient: {
+        type: Boolean,
+        default: false
+    },
+    isOfflineEntry: {
         type: Boolean,
         default: false
     },
@@ -40,6 +49,14 @@ const sessionSchema = new mongoose.Schema({
         type: Date
     },
     fees: {
+        type: Number,
+        default: 0
+    },
+    isFeesFinalized: {
+        type: Boolean,
+        default: false
+    },
+    order: {
         type: Number,
         default: 0
     }

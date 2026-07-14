@@ -26,6 +26,17 @@ const medicalHistorySchema = new mongoose.Schema(
             ref: "user",
             required: true
         },
+        clinicId: {
+            type: mongoose.Types.ObjectId,
+            ref: "clinic",
+            required: false
+        },
+
+        sessionId: {
+            type: mongoose.Types.ObjectId,
+            ref: "session",
+            required: false // Optional, populated if vitals are recorded before/during session
+        },
 
         diagnosis: {
             type: String,
@@ -51,6 +62,7 @@ const medicalHistorySchema = new mongoose.Schema(
         sugarLevel: { type: String, trim: true },
         pulse: { type: String, trim: true },
         temperature: { type: String, trim: true },
+        ageAtEncounter: { type: Number },
         allergies: { type: [String], default: [] },
         chronic: { type: [String], default: [] },
         surgeries: { 

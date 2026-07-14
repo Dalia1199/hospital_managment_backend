@@ -1,11 +1,25 @@
 import clinicmodel from "../../DB/models/clinic_model.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
+import { getClinicLimit } from "../../common/utilits/subscription.guard.js";
 
 // POST /clinics — doctor adds a clinic
 export const addClinic = async (req, res, next) => {
     try {
         const { name, address, phone , governorate, whatsapp, landline } = req.body;
+
+        const maxClinics = await getClinicLimit(req.user._id);
+        
+        if (maxClinics === 0) {
+            throw new Error("Clinic management requires Silver or higher plan.", { cause: 403 });
+        }
+
+        if (maxClinics !== -1) {
+            const activeClinics = await db_service.find({ model: clinicmodel, filter: { doctorId: req.user._id, isActive: true } });
+            if (activeClinics.length >= maxClinics) {
+                throw new Error("clinic limit exceeded. Please upgrade your subscription.", { cause: 403 });
+            }
+        }
 
         const clinic = await db_service.create({
             model: clinicmodel,
@@ -21,13 +35,26 @@ export const addClinic = async (req, res, next) => {
 // GET /clinics — doctor gets their own clinics
 export const getMyClinics = async (req, res, next) => {
     try {
+        const maxClinics = await getClinicLimit(req.user._id);
+
+        // Remove early exit for maxClinics === 0 so we can show locked clinics
+        const filter = { doctorId: req.user._id };
+
+        // If accessed by an assistant, restrict to their assigned clinic only
+        if (req.assistant && req.assistant.clinicId) {
+            filter._id = req.assistant.clinicId;
+        }
+
         const clinics = await db_service.find({
             model: clinicmodel,
-            filter: { doctorId: req.user._id, isActive: true },
-            sort: { createdAt: -1 }
+            filter,
+            sort: { createdAt: 1 } // oldest first
         });
 
-        return successresponse({ res, status: 200, message: "clinics fetched successfully", data: clinics });
+        const activeClinicsCount = clinics.filter(c => c.isActive).length;
+        const limitExceeded = maxClinics !== -1 && activeClinicsCount > maxClinics;
+
+        return successresponse({ res, status: 200, message: "clinics fetched successfully", data: { clinics, limitExceeded, maxClinics } });
     } catch (error) {
         next(error);
     }
@@ -44,6 +71,20 @@ export const updateClinic = async (req, res, next) => {
         });
 
         if (!clinic) throw new Error("clinic not found", { cause: 404 });
+
+        // If trying to reactivate a clinic, ensure we don't exceed the subscription limit
+        if (req.body.isActive === true && !clinic.isActive) {
+            const maxClinics = await getClinicLimit(req.user._id);
+            if (maxClinics === 0) {
+                throw new Error("Clinic management requires Silver or higher plan.", { cause: 403 });
+            }
+            if (maxClinics !== -1) {
+                const activeClinics = await db_service.find({ model: clinicmodel, filter: { doctorId: req.user._id, isActive: true } });
+                if (activeClinics.length >= maxClinics) {
+                    throw new Error("clinic limit exceeded. Please upgrade your subscription.", { cause: 403 });
+                }
+            }
+        }
 
         const updated = await db_service.findOneAndUpdate({
             model: clinicmodel,
@@ -91,10 +132,16 @@ export const getDoctorClinics = async (req, res, next) => {
          const filter = { doctorId, isActive: true };
         if (governorate) filter.governorate = governorate;
 
-        const clinics = await db_service.find({
+        let clinics = await db_service.find({
             model: clinicmodel,
             filter,
+            sort: { createdAt: 1 }
         });
+
+        const maxClinics = await getClinicLimit(doctorId);
+        if (maxClinics !== -1 && clinics.length > maxClinics) {
+            clinics = clinics.slice(0, maxClinics);
+        }
 
         return successresponse({ res, status: 200, message: "clinics fetched successfully", data: clinics });
     } catch (error) {
