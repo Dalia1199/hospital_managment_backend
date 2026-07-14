@@ -57,7 +57,13 @@ const bootstrap = () => {
         }
     });
     app.use(limiter)
-    app.use(mongoSanitize());
+    app.use((req, res, next) => {
+        if (req.body) mongoSanitize.sanitize(req.body);
+        if (req.params) mongoSanitize.sanitize(req.params);
+        if (req.headers) mongoSanitize.sanitize(req.headers);
+        if (req.query) mongoSanitize.sanitize(req.query);
+        next();
+    });
 
     app.use(express.json());
    app.use( helmet())
