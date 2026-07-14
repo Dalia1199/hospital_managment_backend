@@ -55,16 +55,10 @@ const bootstrap = () => {
     app.use(express.json());
     
     app.use(cors({
-        origin: [
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "https://carehub-two.vercel.app",
-            "https://carehub-6h22jtqs8-honda4codings-projects.vercel.app",
-            "http://192.168.1.2:3001"
-        ],
+        origin: true,
         credentials: true,
         allowedHeaders: ["Content-Type", "Authorization"],
-        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     }));
    app.use( helmet())
    app.use (hpp())
