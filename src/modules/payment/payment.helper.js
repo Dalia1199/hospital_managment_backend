@@ -87,8 +87,8 @@ export const verifyKashierSignature = (data) => {
             return process.env.NODE_ENV !== "production";
         }
 
-        // Build path identical to Kashier standard signature format (matching generation)
-        const path = `/?payment=${KASHIER_MERCHANT_ID}.${orderId}.${amount}.${currency}`;
+        // Build path identical to Kashier standard signature format
+        const path = `/?payment=${KASHIER_MERCHANT_ID}.${orderId}.${amount}.${currency}&status=${paymentStatus}`;
         
         const computedSignature = crypto
             .createHmac("sha256", KASHIER_API_KEY)
