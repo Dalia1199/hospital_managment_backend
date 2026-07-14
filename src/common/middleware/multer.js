@@ -15,7 +15,8 @@ export const multer_host = (custom_types = []) => {
 
     const upload= multer({
         storage,
-        fileFilter
+        fileFilter,
+        limits: { fileSize: 5 * 1024 * 1024}
     });
     return upload
 };

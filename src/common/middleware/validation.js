@@ -3,7 +3,7 @@ export const validation = (schema) => {
     return async (req, res, next) => {
         let errorresult = []
         for (const key of Object.keys(schema)) {
-            const { error } = schema[key].validate(req[key], { abortEarly: false })
+            const { error } = schema[key].validate(req[key], { abortEarly: false, stripUnknown:true })
             if (error) {
                 error.details.forEach(element => {
                     errorresult.push({
