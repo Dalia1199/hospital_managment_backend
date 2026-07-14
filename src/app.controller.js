@@ -101,7 +101,7 @@ const bootstrap = () => {
     app.use("/payout", payoutRouter);
     app.use("/appconfig", appConfigRouter);
 
-    app.use("*", (req, res, next) => {
+    app.use((req, res, next) => {
         throw new Error(`url ${req.originalUrl} is not found😒😒`, { cause: 404 });
     });
 
