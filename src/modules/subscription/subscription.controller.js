@@ -47,7 +47,7 @@ subscriptionRouter.get(
     "/",
     authentication,
 
-    authorization([roleenum.doctor,roleenum.admin ]),
+    authorization([roleenum.doctor, roleenum.admin]),
     SS.getPlans
 
 );
@@ -77,23 +77,10 @@ subscriptionRouter.get(
 // =========================
 
 subscriptionRouter.patch(
-
     "/:planId",
-
     authentication,
-
-    authorization([
-
-        roleenum.admin
-
-    ]),
-
-    validation(
-
-        SV.updatePlanSchema
-
-    ),
-
+    authorization([roleenum.admin]),
+    validation(SV.updatePlanSchema),
     SS.updatePlan
 
 );

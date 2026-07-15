@@ -323,15 +323,8 @@ export const updatePlan = async (req, res, next) => {
         }
 
         if (req.body.features) {
-
-            validateFeatures(
-
-                req.body.features
-
-            );
-
+            validateFeatures(req.body.features);
         }
-
        
 
         const updatedPlan =
