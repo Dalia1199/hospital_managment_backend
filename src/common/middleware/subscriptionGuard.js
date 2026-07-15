@@ -62,7 +62,7 @@ export const requireClinicSlot = () => {
             const plan = await getDoctorActiveSubscription(req.user._id);
             const limits = buildLimitsMap(plan.limits || []);
             
-            const clinicLimit = limits["clinics"] !== undefined ? limits["clinics"] : 1;
+            const clinicLimit = limits["clinics"] !== undefined ? limits["clinics"] : (limits["maxClinics"] !== undefined ? limits["maxClinics"] : 1);
 
             if (clinicLimit === -1) {
                 return next(); // Unlimited
