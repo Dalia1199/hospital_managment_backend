@@ -16,7 +16,7 @@ export async function getActivePlanForUser(doctorId) {
     
     // Check if subscription has expired
     const endDate = new Date(sub.endDate);
-    if (endDate < new Date()) return null;
+    // if (endDate < new Date()) return null;
 
     return sub;
 }
@@ -30,16 +30,13 @@ export async function getClinicLimit(doctorId) {
     const sub = await getActivePlanForUser(doctorId);
     if (!sub) return 1; // Free Plan default
 
-    const limitObj = sub.subscriptionId?.limits?.find(l => l.code === 'maxClinics');
-    let limitValue = limitObj !== undefined ? limitObj.value : undefined;
-
-    // Fallback if maxClinics is missing or explicitly 0 but plan is paid
     const planName = sub.subscriptionId?.name?.toLowerCase() || '';
-    if (planName.includes('premium')) return limitValue === undefined || limitValue === 0 ? -1 : limitValue;
-    if (planName.includes('gold')) return limitValue === undefined || limitValue === 0 ? 2 : limitValue;
-    if (planName.includes('silver')) return limitValue === undefined || limitValue === 0 ? 1 : limitValue;
-    
-    return limitValue !== undefined ? limitValue : 0;
+    if (planName.includes('premium')) return -1;
+    if (planName.includes('gold')) return 2;
+    if (planName.includes('silver')) return 1;
+
+    const limitObj = sub.subscriptionId?.limits?.find(l => l.code === 'clinics' || l.code === 'maxClinics');
+    return limitObj !== undefined ? limitObj.value : 1;
 }
 
 /**
