@@ -6,7 +6,7 @@ import { getClinicLimit } from "../../common/utilits/subscription.guard.js";
 // POST /clinics — doctor adds a clinic
 export const addClinic = async (req, res, next) => {
     try {
-        const { name, address, phone , governorate, whatsapp, landline } = req.body;
+        const { name, address, phone , governorate, whatsapp, landline, consultationFee, followUpFee } = req.body;
 
         const maxClinics = await getClinicLimit(req.user._id);
         
@@ -23,7 +23,7 @@ export const addClinic = async (req, res, next) => {
 
         const clinic = await db_service.create({
             model: clinicmodel,
-            data: { doctorId: req.user._id, name, address, phone , governorate, whatsapp, landline}
+            data: { doctorId: req.user._id, name, address, phone , governorate, whatsapp, landline, consultationFee, followUpFee }
         });
 
         return successresponse({ res, status: 201, message: "clinic added successfully", data: clinic });
