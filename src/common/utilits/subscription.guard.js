@@ -30,8 +30,8 @@ export async function getClinicLimit(doctorId) {
     const sub = await getActivePlanForUser(doctorId);
     if (!sub) return 1; // Free Plan default
 
-    const limitObj = sub.subscriptionId.limits?.find(l => l.code === 'maxClinics');
-    return limitObj !== undefined ? limitObj.value : 0;
+    const limitObj = sub.subscriptionId.limits?.find(l => l.code === 'clinics' || l.code === 'maxClinics');
+    return limitObj !== undefined ? limitObj.value : 1;
 }
 
 /**
