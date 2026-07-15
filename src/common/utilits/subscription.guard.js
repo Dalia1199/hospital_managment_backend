@@ -30,7 +30,7 @@ export async function getClinicLimit(doctorId) {
     const sub = await getActivePlanForUser(doctorId);
     if (!sub) return 1; // Free Plan default
 
-    const limitObj = sub.subscriptionId?.limits?.find(l => l.code === 'maxClinics');
+    const limitObj = sub.subscriptionId?.limits?.find(l => l.code === 'clinics' || l.code === 'maxClinics');
     let limitValue = limitObj !== undefined ? limitObj.value : undefined;
 
     // Fallback if maxClinics is missing or explicitly 0 but plan is paid
@@ -39,7 +39,7 @@ export async function getClinicLimit(doctorId) {
     if (planName.includes('gold')) return limitValue === undefined || limitValue === 0 ? 2 : limitValue;
     if (planName.includes('silver')) return limitValue === undefined || limitValue === 0 ? 1 : limitValue;
     
-    return limitValue !== undefined ? limitValue : 0;
+    return limitValue !== undefined ? limitValue : 1;
 }
 
 /**
