@@ -213,6 +213,15 @@ appointmensrouter.patch(
     AS.cancelAppointment
 
 );
+
+appointmensrouter.patch(
+    "/cancel-by-doctor/:appointmentId",
+    authentication,
+    requirePermission("canManageAppointments"),
+    authorization([roleenum.doctor]),
+    validation(AV.cancelAppointmentSchema),
+    AS.cancelAppointmentByDoctor
+);
 //done
 appointmensrouter.patch(
 
