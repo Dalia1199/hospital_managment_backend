@@ -47,7 +47,7 @@ export const getDashboard = async (req, res, next) => {
                 { clinicId: { $exists: false } },
                 { clinicId: null }
             ];
-        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+        } else if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
             baseFilter.$or = [
                 { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
                 { clinicId: { $exists: false } },
@@ -1348,7 +1348,7 @@ export const getMyPatients = async (req, res, next) => {
                 { clinicId: { $exists: false } },
                 { clinicId: null }
             ];
-        } else if (req.query.clinicId && req.query.clinicId !== "all") {
+        } else if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
             baseFilter.$or = [
                 { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
                 { clinicId: { $exists: false } },
@@ -1527,7 +1527,7 @@ export const getMyPrescriptions = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
-        if (req.query.clinicId && req.query.clinicId !== "all") {
+        if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
             baseFilter.$or = [
                 { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
                 { clinicId: { $exists: false } },
@@ -1764,7 +1764,7 @@ export const getReportsAnalytics = async (req, res, next) => {
         const filter = { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } };
         const prevFilter = { doctorId, status: "completed", createdAt: { $gte: prevStart, $lte: prevEnd } };
 
-        if (req.query.clinicId && req.query.clinicId !== "all") {
+        if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
             filter.$or = [
                 { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
                 { clinicId: { $exists: false } },

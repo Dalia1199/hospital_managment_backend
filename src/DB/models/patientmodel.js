@@ -43,10 +43,10 @@ const patientSchema = new mongoose.Schema({
         default: [] 
     },
     pulse: { type: String, trim: true },
-     sharingSetting: {
+    sharingSetting: {
         type: String,
         enum: ["all", "own_only", "otp"],
-        default: "all"
+        default: "own_only"
     },
 });
 
