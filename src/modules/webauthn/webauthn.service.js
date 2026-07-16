@@ -14,6 +14,10 @@ import {
 } from "../../../config/config.service.js";
 import { generatetoken } from "../../common/utilits/token.service.js";
 import { v4 as uuidv4 } from "uuid";
+import { getPlanName, getActiveFeatures, getClinicLimit } from "../../common/utilits/subscription.guard.js";
+import { AssistantModel } from "../../DB/models/assistant_model.js";
+import doctormodel from "../../DB/models/doctormodel.js";
+import { roleenum } from "../../common/enum/user.enum.js";
 
 const rpName = "CareHub Hospital";
 
@@ -344,15 +348,48 @@ export const loginVerification = async (req, res, next) => {
         },
       });
 
+      let assistantData = null;
+      let subscriptionPlan = "Free";
+      let subscriptionFeatures = [];
+      let clinicLimit = 0;
+
+      if (user.role === roleenum.assistant) {
+        assistantData = await AssistantModel.findOne({ userId: user._id })
+          .populate('doctorId', 'fullName')
+          .populate('clinicId', 'name');
+      } else if (user.role === roleenum.doctor) {
+        const doctor = await doctormodel.findOne({ userId: user._id }).lean();
+        if (doctor) {
+          subscriptionPlan = await getPlanName(user._id);
+          subscriptionFeatures = await getActiveFeatures(user._id);
+          clinicLimit = await getClinicLimit(user._id);
+        }
+      }
+
       return successresponse({
         res,
         message: "success signin via biometrics",
         data: {
           access_token,
           refreshtoken,
+          email: user.email,
           role: user.role,
           id: user._id,
           fullName: user.fullName,
+          profilepicture: user.profilepicture,
+          ...(user.role === roleenum.doctor && {
+            subscriptionPlan,
+            subscriptionFeatures,
+            clinicLimit
+          }),
+          ...(assistantData && {
+            permissions: assistantData.permissions,
+            doctorId: assistantData.doctorId?._id || assistantData.doctorId,
+            jobTitle: assistantData.jobTitle,
+            doctorName: assistantData.doctorId?.fullName,
+            clinicId: assistantData.clinicId?._id || assistantData.clinicId,
+            clinicName: assistantData.clinicId?.name
+          })
         },
       });
     } else {
