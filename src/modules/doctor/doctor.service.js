@@ -42,9 +42,17 @@ export const getDashboard = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.assistant && req.assistant.clinicId) {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.assistant.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         } else if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
 
         const onlinePatientsCount = await sessionmodel.distinct("patientId", { ...baseFilter, isOfflinePatient: false }).then(r => r.length);
@@ -1335,9 +1343,17 @@ export const getMyPatients = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.assistant && req.assistant.clinicId) {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.assistant.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         } else if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);
@@ -1512,7 +1528,11 @@ export const getMyPrescriptions = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);
@@ -1745,8 +1765,16 @@ export const getReportsAnalytics = async (req, res, next) => {
         const prevFilter = { doctorId, status: "completed", createdAt: { $gte: prevStart, $lte: prevEnd } };
 
         if (req.query.clinicId && req.query.clinicId !== "all") {
-            filter.clinicId = req.query.clinicId;
-            prevFilter.clinicId = req.query.clinicId;
+            filter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+            prevFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
 
         // Fetch current period sessions
