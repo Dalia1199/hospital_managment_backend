@@ -719,6 +719,10 @@ export const endSession = async (req, res, next) => {
             throw new Error("Session not found", { cause: 404 });
         }
 
+        if (existingSession.status === "completed" || existingSession.status === "cancelled") {
+            throw new Error("Session is already completed or cancelled", { cause: 400 });
+        }
+
         if (fees !== undefined && existingSession.isFeesFinalized) {
             throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
         }
@@ -2156,6 +2160,10 @@ export const updateSessionVitals = async (req, res, next) => {
 
         const session = await sessionmodel.findOne({ _id: sessionId, doctorId: req.user._id });
         if (!session) throw new Error("session not found", { cause: 404 });
+        
+        if (session.status === "completed" || session.status === "cancelled") {
+            throw new Error("Cannot update vitals for a completed or cancelled session", { cause: 400 });
+        }
 
         let history = await medicalhistorymodel.findOne({ sessionId });
         if (!history) {
@@ -2212,6 +2220,10 @@ export const updateSessionFees = async (req, res, next) => {
 
         if (!existingSession) {
             throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (existingSession.status === "completed" || existingSession.status === "cancelled") {
+            throw new Error("Cannot update fees for a completed or cancelled session", { cause: 400 });
         }
 
         if (existingSession.isFeesFinalized && fees < existingSession.fees) {
