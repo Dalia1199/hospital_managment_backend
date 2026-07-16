@@ -2,6 +2,12 @@ import clinicmodel from "../../DB/models/clinic_model.js";
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { getClinicLimit } from "../../common/utilits/subscription.guard.js";
+import avalibilitymodel from "../../DB/models/avalibility_model.js";
+import slotmodel from "../../DB/models/slot_model.js";
+import appointmentsmodel from "../../DB/models/appointments_model.js";
+import { AssistantModel } from "../../DB/models/assistant_model.js";
+import usermodel from "../../DB/models/usermodel.js";
+import sessionmodel from "../../DB/models/sessionmodel.js";
 
 // POST /clinics — doctor adds a clinic
 export const addClinic = async (req, res, next) => {
@@ -111,11 +117,29 @@ export const deleteClinic = async (req, res, next) => {
 
         if (!clinic) throw new Error("clinic not found", { cause: 404 });
 
-        await db_service.findOneAndUpdate({
-            model: clinicmodel,
-            filter: { _id: clinicId },
-            update: { isActive: false }
-        });
+        // Hard Delete Logic
+        // 1. Delete the clinic
+        await clinicmodel.findByIdAndDelete(clinicId);
+
+        // 2. Delete availability and slots
+        await avalibilitymodel.deleteMany({ clinicId });
+        await slotmodel.deleteMany({ clinicId });
+
+        // 3. Cancel upcoming appointments
+        await appointmentsmodel.updateMany(
+            { clinicId, status: { $in: ['booked', 'pending'] } },
+            { status: 'cancelled' }
+        );
+
+        // 4. Delete queue sessions for this clinic
+        await sessionmodel.deleteMany({ clinicId });
+
+        // 5. Delete assistants and their user accounts
+        const assistants = await AssistantModel.find({ clinicId });
+        for (const assistant of assistants) {
+            await usermodel.findByIdAndDelete(assistant.userId);
+            await assistant.deleteOne();
+        }
 
         return successresponse({ res, status: 200, message: "clinic deleted successfully" });
     } catch (error) {
