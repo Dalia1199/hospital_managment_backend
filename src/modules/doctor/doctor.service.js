@@ -42,13 +42,24 @@ export const getDashboard = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.assistant && req.assistant.clinicId) {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
-        } else if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.assistant.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+        } else if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
 
-        const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
-            prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
+        const onlinePatientsCount = await sessionmodel.distinct("patientId", { ...baseFilter, isOfflinePatient: false }).then(r => r.length);
+        const offlinePatientsCount = await db_service.count({ model: sessionmodel, filter: { ...baseFilter, isOfflinePatient: true } });
+        const totalPatients = onlinePatientsCount + offlinePatientsCount;
+
+        const [totalPrescriptions, totalMedicalHistories] = await Promise.all([
             db_service.count({ model: prescrptionmodel, filter: baseFilter }),
             db_service.count({ model: medicalhistorymodel, filter: baseFilter })
         ]);
@@ -716,6 +727,10 @@ export const endSession = async (req, res, next) => {
             throw new Error("Session not found", { cause: 404 });
         }
 
+        if (existingSession.status === "completed" || existingSession.status === "cancelled") {
+            throw new Error("Session is already completed or cancelled", { cause: 400 });
+        }
+
         if (fees !== undefined && existingSession.isFeesFinalized) {
             throw new Error("Fees are already finalized and cannot be modified.", { cause: 403 });
         }
@@ -1328,9 +1343,17 @@ export const getMyPatients = async (req, res, next) => {
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
         if (req.assistant && req.assistant.clinicId) {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.assistant.clinicId);
-        } else if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.assistant.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+        } else if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);
@@ -1504,8 +1527,12 @@ export const getMyPrescriptions = async (req, res, next) => {
         }
 
         const baseFilter = { doctorId: req.user._id, ...dateFilter };
-        if (req.query.clinicId && req.query.clinicId !== "all") {
-            baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
+        if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
+            baseFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const parsedLimit = parseInt(limit);
@@ -1670,38 +1697,72 @@ export const getAllDoctors = async (req, res, next) => {
             startDateTime: { $gt: new Date().toISOString() }
         }).select("doctorId").lean();
 
-        const doctorIdsWithSlots = [...new Set(availableSlots.map(s => s.doctorId.toString()))];
+        const doctorIdsWithSlots = new Set(availableSlots.map(s => s.doctorId.toString()));
 
-        // Fallback: If no doctors have available slots, just fetch any approved doctors
-        const query = doctorIdsWithSlots.length > 0 
-            ? { userId: { $in: doctorIdsWithSlots } } 
-            : {}; // Empty query will fetch all doctors (filtered by approved status in populate)
+        // Fetch Patient Governorate if user is logged in as patient
+        let patientGovernorate = null;
+        if (req.user && req.user.role === 'patient') {
+            const patient = await patientmodel.findOne({ userId: req.user._id }).lean();
+            if (patient) patientGovernorate = patient.governorate;
+        }
 
-        // Fetch doctors matching the filter without DB limit so we can filter unapproved ones first
-        const doctors = await doctormodel.find(query)
+        // Fetch all clinics to map doctors to governorates
+        const allClinics = await clinicmodel.find({ isactive: true }).select('doctorId governorate').lean();
+        const doctorGovernorates = {};
+        allClinics.forEach(c => {
+            const dId = c.doctorId.toString();
+            if (!doctorGovernorates[dId]) doctorGovernorates[dId] = new Set();
+            if (c.governorate) doctorGovernorates[dId].add(c.governorate);
+        });
+
+        // Fetch all approved doctors
+        const doctors = await doctormodel.find({})
             .populate({
                 path: "userId",
                 select: "fullName email confirmed status profilepicture",
                 match: { status: "approved" }
             })
-            .lean(); // Massive performance boost by returning plain JS objects
+            .lean();
 
-        // Remove any doctors whose user is not approved (populate returns null)
-        // Then apply skip and limit in memory to guarantee exactly `limit` active doctors if available
-        const activeDoctors = doctors
-            .filter(d => d.userId)
-            .slice(skip, skip + parseInt(limit));
+        let activeDoctors = doctors.filter(d => d.userId);
 
-        // Count total matching records for proper pagination
-        // Note: this count might be slightly off if some users are not 'approved', but it's close enough for UI pagination
-        const totalRecords = await doctormodel.countDocuments(query);
-        const totalPages = Math.ceil(totalRecords / limit);
+        // Sort doctors: Slots (+10), Patient Governorate (+5)
+        activeDoctors.sort((a, b) => {
+            const aId = a.userId._id.toString();
+            const bId = b.userId._id.toString();
+            
+            let scoreA = 0;
+            let scoreB = 0;
+
+            if (doctorIdsWithSlots.has(aId)) scoreA += 10;
+            if (doctorIdsWithSlots.has(bId)) scoreB += 10;
+
+            if (patientGovernorate) {
+                const aGovs = doctorGovernorates[aId] || new Set();
+                const bGovs = doctorGovernorates[bId] || new Set();
+                if (aGovs.has(patientGovernorate)) scoreA += 5;
+                if (bGovs.has(patientGovernorate)) scoreB += 5;
+            }
+
+            return scoreB - scoreA;
+        });
+
+        const totalRecords = activeDoctors.length;
+        
+        let paginatedDoctors = activeDoctors;
+        let totalPages = 1;
+        
+        if (limit !== 'all') {
+            const parsedLimit = parseInt(limit);
+            paginatedDoctors = activeDoctors.slice(skip, skip + parsedLimit);
+            totalPages = Math.ceil(totalRecords / parsedLimit);
+        }
 
         return successresponse({
             res,
             status: 200,
             message: "doctors fetched successfully",
-            data: activeDoctors,
+            data: paginatedDoctors,
             pagination: {
                 currentPage: parseInt(page),
                 totalPages: totalPages === 0 ? 1 : totalPages,
@@ -1737,9 +1798,17 @@ export const getReportsAnalytics = async (req, res, next) => {
         const filter = { doctorId, status: "completed", createdAt: { $gte: start, $lte: end } };
         const prevFilter = { doctorId, status: "completed", createdAt: { $gte: prevStart, $lte: prevEnd } };
 
-        if (req.query.clinicId && req.query.clinicId !== "all") {
-            filter.clinicId = req.query.clinicId;
-            prevFilter.clinicId = req.query.clinicId;
+        if (req.query.clinicId && req.query.clinicId !== "all" && req.query.clinicId !== "undefined") {
+            filter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
+            prevFilter.$or = [
+                { clinicId: new mongoose.Types.ObjectId(req.query.clinicId) },
+                { clinicId: { $exists: false } },
+                { clinicId: null }
+            ];
         }
 
         // Fetch current period sessions
@@ -2153,6 +2222,10 @@ export const updateSessionVitals = async (req, res, next) => {
 
         const session = await sessionmodel.findOne({ _id: sessionId, doctorId: req.user._id });
         if (!session) throw new Error("session not found", { cause: 404 });
+        
+        if (session.status === "completed" || session.status === "cancelled") {
+            throw new Error("Cannot update vitals for a completed or cancelled session", { cause: 400 });
+        }
 
         let history = await medicalhistorymodel.findOne({ sessionId });
         if (!history) {
@@ -2209,6 +2282,10 @@ export const updateSessionFees = async (req, res, next) => {
 
         if (!existingSession) {
             throw new Error("Session not found", { cause: 404 });
+        }
+
+        if (existingSession.status === "completed" || existingSession.status === "cancelled") {
+            throw new Error("Cannot update fees for a completed or cancelled session", { cause: 400 });
         }
 
         if (existingSession.isFeesFinalized && fees < existingSession.fees) {

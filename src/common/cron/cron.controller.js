@@ -26,7 +26,7 @@ router.get("/process-no-shows", async (req, res, next) => {
         let processedCount = 0;
 
         for (const appointment of pastBookedAppointments) {
-            appointment.status = "missed"; // Mark as missed
+            appointment.status = "completed"; // Mark as completed (was missed before)
             await appointment.save();
 
             if (appointment.paymentStatus === "paid") {

@@ -278,15 +278,16 @@ export async function regenerateSlotsForRange({
 
         if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
-        if (currentSlot.isAfter(dayjs())) {
-          slots.push({
-            doctorId,
-            clinicId: availability.clinicId,
-            startDateTime: currentSlot.toDate(),
-            endDateTime: nextSlot.toDate(),
-            isBooked: false,
-          });
-        }
+        // Generate the slot regardless of current time. 
+        // Past slots are safely filtered out by getAvailableSlots ($gte: new Date()) later,
+        // and this prevents server timezone differences from skipping valid slots.
+        slots.push({
+          doctorId,
+          clinicId: availability.clinicId,
+          startDateTime: currentSlot.toDate(),
+          endDateTime: nextSlot.toDate(),
+          isBooked: false,
+        });
 
         currentSlot = nextSlot;
       }
@@ -1041,13 +1042,31 @@ export const cancelAppointment = async (req, res, next) => {
           const totalPaid = docRevenueTx.metadata.totalPaid;
           const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
           
-          const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
-          
-          await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
-          await removePendingBalance(appointment.doctorId, originalDoctorShare);
-          
-          if (doctorCompensation > 0) {
-              await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+          const now = new Date();
+          const apptStart = new Date(appointment.startDateTime);
+          const hoursUntilAppointment = (apptStart - now) / (1000 * 60 * 60);
+
+          if (hoursUntilAppointment >= 24) {
+              // Early cancellation: 100% refund to patient
+              await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
+              if (originalDoctorShare > 0) {
+                  await removePendingBalance(appointment.doctorId, originalDoctorShare);
+              }
+              docRevenueTx.status = 'cancelled';
+              await docRevenueTx.save();
+          } else {
+              // Late cancellation (< 24h): Partial refund based on config
+              const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
+              
+              if (patientRefund > 0) {
+                  await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
+              }
+              if (originalDoctorShare > 0) {
+                  await removePendingBalance(appointment.doctorId, originalDoctorShare);
+              }
+              if (doctorCompensation > 0) {
+                  await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+              }
           }
       }
     }
@@ -1058,6 +1077,43 @@ export const cancelAppointment = async (req, res, next) => {
       res,
       message: "cancelled successfully",
       data: appointment,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const cancelAppointmentByDoctor = async (req, res, next) => {
+  try {
+    const { appointmentId } = req.params;
+    const doctorId = req.user._id;
+
+    const appointment = await appointmentsmodel.findOne({
+      _id: appointmentId,
+      doctorId,
+    });
+
+    if (!appointment) {
+      throw new Error("appointment not found", { cause: 404 });
+    }
+
+    if (appointment.status === "cancelled") {
+      throw new Error("appointment already cancelled", { cause: 409 });
+    }
+
+    if (appointment.status === "completed") {
+      throw new Error("cannot cancel a completed appointment", { cause: 400 });
+    }
+
+    // Since this is doctor-initiated, use the central logic which applies 100% refund
+    await cancelAppointmentLogic(appointment._id, doctorId, "Cancelled by doctor via UI", true);
+
+    const updatedAppointment = await appointmentsmodel.findById(appointmentId);
+
+    return successresponse({
+      res,
+      message: "cancelled successfully by doctor",
+      data: updatedAppointment,
     });
   } catch (error) {
     next(error);
@@ -1712,15 +1768,16 @@ export const generateCustomSlots = async (req, res, next) => {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
           if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
-          if (currentSlot.isAfter(dayjs())) {
-            allDesiredSlots.push({
-              doctorId,
-              clinicId: availability.clinicId,
-              startDateTime: currentSlot.toDate(),
-              endDateTime: nextSlot.toDate(),
-              isBooked: false,
-            });
-          }
+          // Generate the slot regardless of current time.
+          // Past slots are safely filtered out by getAvailableSlots ($gte: new Date()) later,
+          // and this prevents server timezone differences from skipping valid slots.
+          allDesiredSlots.push({
+            doctorId,
+            clinicId: availability.clinicId,
+            startDateTime: currentSlot.toDate(),
+            endDateTime: nextSlot.toDate(),
+            isBooked: false,
+          });
           currentSlot = nextSlot;
         }
       }

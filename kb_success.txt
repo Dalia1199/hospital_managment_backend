@@ -1,1 +1,1 @@
-{"files":[],"sizeMB":"N/A (Pinecone Index)","activeDb":"Default_DB","databases":["Default_DB"]}
+{"files":[],"sizeMB":"N/A (Pinecone Index)","activeDb":"Mydatabase","databases":["Default_DB","test","Mydatabase"]}
