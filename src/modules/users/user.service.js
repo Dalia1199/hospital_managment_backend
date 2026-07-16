@@ -2,7 +2,7 @@ import usermodel from "../../DB/models/usermodel.js";
 import { AssistantModel } from "../../DB/models/assistant_model.js";
 import { hash, compare } from "../../common/utilits/security/hash.js";
 import * as db_service from "../../DB/db.service.js";
-import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt, encrypt, hashPhone } from "../../common/utilits/security/encrypt.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { providerenum, roleenum } from "../../common/enum/user.enum.js";
 import jwt from "jsonwebtoken";
@@ -432,6 +432,17 @@ export const signup = async (req, res, next) => {
     }
   }
 
+  // Check phone number uniqueness using phoneHash
+  const newPhoneHash = hashPhone(phoneNumber);
+  const existingPhone = await db_service.findOne({
+    model: usermodel,
+    filter: { phoneHash: newPhoneHash },
+  });
+
+  if (existingPhone) {
+    throw new Error("phone number already exists", { cause: 409 });
+  }
+
   if (password !== confirmPassword) {
     throw new Error("password mismatch");
   }
@@ -478,6 +489,7 @@ export const signup = async (req, res, next) => {
         email,
         password: hash({ plain_text: password }),
         phoneNumber: encrypt(phoneNumber),
+        phoneHash: newPhoneHash,
         role,
         address,
       },

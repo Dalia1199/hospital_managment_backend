@@ -12,8 +12,8 @@ import { sendemail, generateotp } from "../../common/utilits/email/send email.js
 import * as db_service from "../../DB/db.service.js";
 import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
+import { decrypt, encrypt, hashPhone } from "../../common/utilits/security/encrypt.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
-import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
 import { notify } from "../notifications/notification.service.js";
 import mongoose from "mongoose";
 import medicationtrackingmodel from "../../DB/models/medicationtrackingmodel.js";
@@ -133,7 +133,24 @@ export const updatedoctorprofile = async (req, res, next) => {
         // Update user model fields (fullName, address)
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
-        if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
+        if (phoneNumber !== undefined) {
+            const newPhoneHash = hashPhone(phoneNumber);
+            const existingPhone = await db_service.findOne({
+                model: usermodel,
+                filter: { 
+                    phoneHash: newPhoneHash,
+                    _id: { $ne: req.user._id }
+                },
+                session
+            });
+
+            if (existingPhone) {
+                throw new Error("Phone number already in use", { cause: 409 });
+            }
+
+            req.user.phoneNumber = encrypt(phoneNumber);
+            req.user.phoneHash = newPhoneHash;
+        }
         await req.user.save({ session });
 
 
@@ -268,6 +285,19 @@ export const searchPatient = async (req, res, next) => {
         if (/^\d+$/.test(searchTerm)) {
             decryptedPatients = decryptedPatients.filter(p => p.phoneNumber && p.phoneNumber.includes(searchTerm));
         }
+
+        // Deduplicate by phone number to handle duplicate test accounts
+        const uniquePatientsMap = new Map();
+        for (const p of decryptedPatients) {
+            if (p.phoneNumber) {
+                if (!uniquePatientsMap.has(p.phoneNumber)) {
+                    uniquePatientsMap.set(p.phoneNumber, p);
+                }
+            } else {
+                uniquePatientsMap.set(p._id.toString(), p);
+            }
+        }
+        decryptedPatients = Array.from(uniquePatientsMap.values());
 
         return successresponse({
             res,
