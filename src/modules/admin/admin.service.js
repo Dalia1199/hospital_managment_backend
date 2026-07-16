@@ -15,7 +15,7 @@ import { emailenum } from "../../common/enum/emailenum.js";
 import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
 import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
 import { hash } from "../../common/utilits/security/hash.js";
-import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt, encrypt, hashPhone } from "../../common/utilits/security/encrypt.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import { notify } from "../notifications/notification.service.js";
 
@@ -499,7 +499,23 @@ export const updateAdminProfile = async (req, res, next) => {
 
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
-        if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
+        if (phoneNumber !== undefined) {
+            const newPhoneHash = hashPhone(phoneNumber);
+            const existingPhone = await db_service.findOne({
+                model: usermodel,
+                filter: { 
+                    phoneHash: newPhoneHash,
+                    _id: { $ne: req.user._id }
+                }
+            });
+
+            if (existingPhone) {
+                throw new Error("Phone number already in use", { cause: 409 });
+            }
+
+            req.user.phoneNumber = encrypt(phoneNumber);
+            req.user.phoneHash = newPhoneHash;
+        }
         await req.user.save();
 
         return successresponse({

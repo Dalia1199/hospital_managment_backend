@@ -47,3 +47,13 @@ export function decrypt(text) {
         return text;
     }
 }
+
+export function hashPhone(phone) {
+    if (!phone) return phone;
+    // We use a deterministic HMAC with the same encryption_key
+    // This allows us to search and index phone numbers without exposing the plaintext
+    return crypto
+        .createHmac("sha256", encryption_key)
+        .update(phone.toString())
+        .digest("hex");
+}
