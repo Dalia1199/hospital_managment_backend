@@ -278,15 +278,16 @@ export async function regenerateSlotsForRange({
 
         if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
-        if (currentSlot.isAfter(dayjs())) {
-          slots.push({
-            doctorId,
-            clinicId: availability.clinicId,
-            startDateTime: currentSlot.toDate(),
-            endDateTime: nextSlot.toDate(),
-            isBooked: false,
-          });
-        }
+        // Generate the slot regardless of current time. 
+        // Past slots are safely filtered out by getAvailableSlots ($gte: new Date()) later,
+        // and this prevents server timezone differences from skipping valid slots.
+        slots.push({
+          doctorId,
+          clinicId: availability.clinicId,
+          startDateTime: currentSlot.toDate(),
+          endDateTime: nextSlot.toDate(),
+          isBooked: false,
+        });
 
         currentSlot = nextSlot;
       }
@@ -1712,15 +1713,16 @@ export const generateCustomSlots = async (req, res, next) => {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
           if (nextSlot.isAfter(endSlot.add(1, 'minute'))) break;
 
-          if (currentSlot.isAfter(dayjs())) {
-            allDesiredSlots.push({
-              doctorId,
-              clinicId: availability.clinicId,
-              startDateTime: currentSlot.toDate(),
-              endDateTime: nextSlot.toDate(),
-              isBooked: false,
-            });
-          }
+          // Generate the slot regardless of current time.
+          // Past slots are safely filtered out by getAvailableSlots ($gte: new Date()) later,
+          // and this prevents server timezone differences from skipping valid slots.
+          allDesiredSlots.push({
+            doctorId,
+            clinicId: availability.clinicId,
+            startDateTime: currentSlot.toDate(),
+            endDateTime: nextSlot.toDate(),
+            isBooked: false,
+          });
           currentSlot = nextSlot;
         }
       }
