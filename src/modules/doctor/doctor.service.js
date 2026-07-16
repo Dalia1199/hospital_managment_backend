@@ -47,8 +47,11 @@ export const getDashboard = async (req, res, next) => {
             baseFilter.clinicId = new mongoose.Types.ObjectId(req.query.clinicId);
         }
 
-        const [totalPatients, totalPrescriptions, totalMedicalHistories] = await Promise.all([
-            prescrptionmodel.distinct("patientId", baseFilter).then(r => r.length),
+        const onlinePatientsCount = await sessionmodel.distinct("patientId", { ...baseFilter, isOfflinePatient: false }).then(r => r.length);
+        const offlinePatientsCount = await db_service.count({ model: sessionmodel, filter: { ...baseFilter, isOfflinePatient: true } });
+        const totalPatients = onlinePatientsCount + offlinePatientsCount;
+
+        const [totalPrescriptions, totalMedicalHistories] = await Promise.all([
             db_service.count({ model: prescrptionmodel, filter: baseFilter }),
             db_service.count({ model: medicalhistorymodel, filter: baseFilter })
         ]);
