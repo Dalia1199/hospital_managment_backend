@@ -232,6 +232,20 @@ export const getAllPayoutRequests = async (req, res, next) => {
 };
 
 // Admin only
+export const getPendingPayoutsCount = async (req, res, next) => {
+    try {
+        const count = await payoutrequestmodel.countDocuments({ status: 'pending' });
+        return successresponse({
+            res,
+            message: "Pending payouts count retrieved successfully",
+            data: count
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin only
 export const updatePayoutStatus = async (req, res, next) => {
     try {
         const { requestId } = req.params;

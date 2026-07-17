@@ -75,6 +75,14 @@ payoutRouter.get(
     PS.getAllPayoutRequests
 );
 
+// Admin gets count of pending payout requests
+payoutRouter.get(
+    "/admin/pending-count",
+    authentication,
+    authorization([roleenum.admin]),
+    PS.getPendingPayoutsCount
+);
+
 // Admin updates payout request status
 payoutRouter.patch(
     "/:requestId/status",

@@ -596,10 +596,10 @@ export const updateTrackingRecord = async (req, res, next) => {
     const record = await healthtrackingmodel.findOne({ _id: id, patientId: patient._id });
     if (!record) throw new Error("Tracking record not found", { cause: 404 });
 
-    const updatedRecord = await db_service.updateOne({
+    const updatedRecord = await db_service.findOneAndUpdate({
       model: healthtrackingmodel,
       filter: { _id: id, patientId: patient._id },
-      data: req.body,
+      update: req.body,
       options: { new: true }
     });
 
@@ -748,7 +748,7 @@ async function _getActiveMedicationsList(patientId) {
     });
     const todaysTrackingCounts = {};
     for (const t of todaysTracking) {
-        if (t.status === 'taken') {
+        if (t.status === 'taken' || t.status === 'missed') {
             todaysTrackingCounts[t.medicationId] = (todaysTrackingCounts[t.medicationId] || 0) + 1;
         }
     }
@@ -973,6 +973,36 @@ export const untrackMedicationDose = async (req, res, next) => {
     }
 };
 
+export const updateMedicationDose = async (req, res, next) => {
+    try {
+        const { recordId } = req.params;
+        const { status, scheduledDoseDateTime } = req.body;
+        
+        if (!['taken', 'missed'].includes(status)) {
+            throw new Error("Invalid status", { cause: 400 });
+        }
+
+        const updateData = { status };
+        if (scheduledDoseDateTime) {
+            updateData.scheduledDoseDateTime = new Date(scheduledDoseDateTime);
+        }
+
+        const record = await medicationtrackingmodel.findOneAndUpdate(
+            { _id: recordId, patientId: req.user._id },
+            updateData,
+            { new: true }
+        );
+        
+        if (!record) {
+            throw new Error("Tracking record not found", { cause: 404 });
+        }
+        
+        return successresponse({ res, message: "Dose updated successfully", data: record });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const getMedicationSummary = async (req, res, next) => {
     try {
         const activeMeds = await _getActiveMedicationsList(req.user._id);
@@ -1005,7 +1035,8 @@ export const getMedicationSummary = async (req, res, next) => {
         let currentStreak = 0;
         const recordsByDay = {};
         trackingRecords.forEach(r => {
-            const dayStr = r.scheduledDoseDateTime.toISOString().split('T')[0];
+            const d = r.scheduledDoseDateTime;
+            const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             if (!recordsByDay[dayStr]) recordsByDay[dayStr] = { taken: 0, missed: 0 };
             if (r.status === 'taken') recordsByDay[dayStr].taken++;
             else if (r.status === 'missed') recordsByDay[dayStr].missed++;
