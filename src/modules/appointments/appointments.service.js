@@ -31,6 +31,12 @@ const toMinutes = (time) => {
   return hours * 60 + minutes;
 };
 
+// When used as an endTime, 00:00 means "end of day" (1440 minutes)
+const toMinutesAsEnd = (time) => {
+  const mins = toMinutes(time);
+  return mins === 0 ? 1440 : mins;
+};
+
 // Normalize a stored time string like "9:00" or "09:00" to always be "09:00"
 // so that dayjs("YYYY-MM-DD HH:mm") parses it correctly.
 const normalizeTime = (time) => {
@@ -104,7 +110,7 @@ export const addAvailability = async (req, res, next) => {
     });
 
     const newStart = toMinutes(startTime);
-    const newEnd = toMinutes(endTime);
+    const newEnd = toMinutesAsEnd(endTime);
 
     if (newStart >= newEnd) {
       throw new Error("end time must be greater than start time", {
@@ -264,11 +270,14 @@ export async function regenerateSlotsForRange({
         "Africa/Cairo"
       );
 
-      const endSlot = dayjs.tz(
-        `${currentDate.format("YYYY-MM-DD")} ${normalizeTime(availability.endTime)}`,
-        "YYYY-MM-DD HH:mm",
-        "Africa/Cairo"
-      );
+      const endTimeStr = normalizeTime(availability.endTime);
+      const endSlot = endTimeStr === "00:00"
+        ? dayjs.tz(`${currentDate.format("YYYY-MM-DD")}`, "YYYY-MM-DD", "Africa/Cairo").add(1, "day")
+        : dayjs.tz(
+            `${currentDate.format("YYYY-MM-DD")} ${endTimeStr}`,
+            "YYYY-MM-DD HH:mm",
+            "Africa/Cairo"
+          );
 
       while (currentSlot.isBefore(endSlot.add(1, 'minute'))) {
         const nextSlot = currentSlot.add(
@@ -332,7 +341,7 @@ export const updateAvailability = async (req, res, next) => {
       appointmentDuration || availability.appointmentDuration;
 
     const newStart = toMinutes(nextStart);
-    const newEnd = toMinutes(nextEnd);
+    const newEnd = toMinutesAsEnd(nextEnd);
 
     if (newStart >= newEnd) {
       throw new Error("end time must be greater than start time", {
@@ -353,7 +362,7 @@ export const updateAvailability = async (req, res, next) => {
 
     const overlap = siblings.find((a) => {
       const existingStart = toMinutes(a.startTime);
-      const existingEnd = toMinutes(a.endTime);
+      const existingEnd = toMinutesAsEnd(a.endTime);
       return newStart < existingEnd && newEnd > existingStart;
     });
 
@@ -412,21 +421,8 @@ export const deleteAvailability = async (req, res, next) => {
       filter: { _id: availabilityId },
     });
 
-    // Automatically clean up future unbooked slots for this day/clinic
-    const futureUnbookedSlots = await slotmodel.find({
-      doctorId: req.user._id,
-      clinicId: availability.clinicId,
-      isBooked: false,
-      startDateTime: { $gte: new Date() },
-    });
-
-    const slotsToDelete = futureUnbookedSlots
-      .filter(s => dayjs(s.startDateTime).format("dddd").toLowerCase() === availability.day.toLowerCase())
-      .map(s => s._id);
-
-    if (slotsToDelete.length > 0) {
-      await slotmodel.deleteMany({ _id: { $in: slotsToDelete } });
-    }
+    // We no longer automatically delete slots here.
+    // The weekly schedule is just a template. Generating slots is handled independently.
 
     return successresponse({
       res,
@@ -451,7 +447,7 @@ export const getAvailableSlots = async (req, res, next) => {
     const limitNum = parseInt(limit) || 100;
     const skip = (pageNum - 1) * limitNum;
 
-    const start = startDate ? new Date(startDate) : new Date();
+    const start = startDate ? dayjs(startDate).toDate() : new Date();
     const filter = {
       doctorId,
       startDateTime: { $gte: start },
@@ -462,7 +458,7 @@ export const getAvailableSlots = async (req, res, next) => {
     }
 
     if (endDate) {
-      filter.startDateTime.$lte = new Date(endDate);
+      filter.startDateTime.$lte = dayjs(endDate).toDate();
     }
     if (clinicId) filter.clinicId = clinicId;
 
@@ -1762,7 +1758,11 @@ export const generateCustomSlots = async (req, res, next) => {
 
       for (const availability of availabilities) {
         let currentSlot = dayjs.tz(`${dateStr} ${normalizeTime(availability.startTime)}`, "YYYY-MM-DD HH:mm", "Africa/Cairo");
-        const endSlot = dayjs.tz(`${dateStr} ${normalizeTime(availability.endTime)}`, "YYYY-MM-DD HH:mm", "Africa/Cairo");
+        
+        const endTimeStr = normalizeTime(availability.endTime);
+        const endSlot = endTimeStr === "00:00"
+          ? dayjs.tz(`${dateStr}`, "YYYY-MM-DD", "Africa/Cairo").add(1, "day")
+          : dayjs.tz(`${dateStr} ${endTimeStr}`, "YYYY-MM-DD HH:mm", "Africa/Cairo");
 
         while (currentSlot.isBefore(endSlot.add(1, 'minute'))) {
           const nextSlot = currentSlot.add(availability.appointmentDuration, "minute");
