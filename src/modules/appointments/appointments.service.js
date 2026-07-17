@@ -447,7 +447,7 @@ export const getAvailableSlots = async (req, res, next) => {
     const limitNum = parseInt(limit) || 100;
     const skip = (pageNum - 1) * limitNum;
 
-    const start = startDate ? dayjs.tz(startDate, "Africa/Cairo").toDate() : new Date();
+    const start = startDate ? dayjs(startDate).toDate() : new Date();
     const filter = {
       doctorId,
       startDateTime: { $gte: start },
@@ -458,7 +458,7 @@ export const getAvailableSlots = async (req, res, next) => {
     }
 
     if (endDate) {
-      filter.startDateTime.$lte = dayjs.tz(endDate, "Africa/Cairo").toDate();
+      filter.startDateTime.$lte = dayjs(endDate).toDate();
     }
     if (clinicId) filter.clinicId = clinicId;
 
