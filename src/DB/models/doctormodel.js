@@ -38,6 +38,17 @@ const doctorSchema = new mongoose.Schema({
         maxlength: 200,
         minlength: 20,
     },
+    tagline: { type: String, maxlength: 100, default: null },
+    languages: { type: [String], default: [] },
+    socialLinks: {
+        facebook: { type: String, default: null },
+        instagram: { type: String, default: null },
+        linkedin: { type: String, default: null },
+    },
+    patientsTreated: { type: Number, min: 0, default: null },
+    university: { type: String, maxlength: 100, default: null },
+    graduationYear: { type: Number, min: 1960, max: 2040, default: null },
+
     vectorDbPath: String,
 
     //CERTIFICATIONS

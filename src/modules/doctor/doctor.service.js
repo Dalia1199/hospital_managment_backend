@@ -118,7 +118,10 @@ export const updatedoctorprofile = async (req, res, next) => {
     session.startTransaction();
 
     try {
-        const { fullName, address, phoneNumber, bio, specialization, experience } = req.body;
+        const { 
+            fullName, address, phoneNumber, bio, specialization, experience,
+            tagline, languages, socialLinks, patientsTreated, university, graduationYear
+        } = req.body;
 
         const doctor = await db_service.findOne({
             model: doctormodel,
@@ -158,6 +161,12 @@ export const updatedoctorprofile = async (req, res, next) => {
         if (bio !== undefined) doctor.bio = bio;
         if (specialization !== undefined) doctor.specialization = specialization;
         if (experience !== undefined) doctor.experience = experience;
+        if (tagline !== undefined) doctor.tagline = tagline;
+        if (languages !== undefined) doctor.languages = languages;
+        if (socialLinks !== undefined) doctor.socialLinks = socialLinks;
+        if (patientsTreated !== undefined) doctor.patientsTreated = patientsTreated;
+        if (university !== undefined) doctor.university = university;
+        if (graduationYear !== undefined) doctor.graduationYear = graduationYear;
         await doctor.save({ session });
 
         // if all work (user and doctor --> commit session)
@@ -172,7 +181,13 @@ export const updatedoctorprofile = async (req, res, next) => {
                 phoneNumber: decrypt(req.user.phoneNumber),
                 bio: doctor.bio,
                 specialization: doctor.specialization,
-                experience: doctor.experience
+                experience: doctor.experience,
+                tagline: doctor.tagline,
+                languages: doctor.languages,
+                socialLinks: doctor.socialLinks,
+                patientsTreated: doctor.patientsTreated,
+                university: doctor.university,
+                graduationYear: doctor.graduationYear
             }
         });
     } catch (error) {

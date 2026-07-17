@@ -11,6 +11,16 @@ export const updatedoctorprofileschema = {
         bio: Joi.string().min(20).max(200).optional(),
         specialization: Joi.string().optional(),
         experience: Joi.number().optional(),
+        tagline: Joi.string().max(100).allow(null, "").optional(),
+        languages: Joi.array().items(Joi.string()).optional(),
+        socialLinks: Joi.object({
+            facebook: Joi.string().uri().allow(null, "").optional(),
+            instagram: Joi.string().uri().allow(null, "").optional(),
+            linkedin: Joi.string().uri().allow(null, "").optional(),
+        }).optional(),
+        patientsTreated: Joi.number().min(0).allow(null).optional(),
+        university: Joi.string().max(100).allow(null, "").optional(),
+        graduationYear: Joi.number().min(1960).max(2040).allow(null).optional(),
     }).required(),
 }
 
