@@ -529,6 +529,10 @@ export const createSession = async (req, res, next) => {
                     order: finalOrder
                 }
             });
+            req.body.patientPhone = guestPhone;
+            delete req.body.appointmentId;
+            delete req.body.patientId;
+
             return successresponse({
                 res,
                 message: "Offline session created and activated successfully",
@@ -636,6 +640,10 @@ export const createSession = async (req, res, next) => {
                 // Notify patient
                 await notify.profileViewed(patientId, req.user.fullName);
 
+                req.body.patientPhone = patient.phoneNumber ? decrypt(patient.phoneNumber) : "Unknown";
+                delete req.body.appointmentId;
+                delete req.body.patientId;
+
                 return successresponse({
                     res,
                     message: "Session activated successfully without OTP due to privacy setting",
@@ -662,6 +670,10 @@ export const createSession = async (req, res, next) => {
             });
             // Notify patient with the OTP
             await notify.accessRequested(patientId, req.user.fullName, otp);
+
+            req.body.patientPhone = patient.phoneNumber ? decrypt(patient.phoneNumber) : "Unknown";
+            delete req.body.appointmentId;
+            delete req.body.patientId;
 
             return successresponse({
                 res,
