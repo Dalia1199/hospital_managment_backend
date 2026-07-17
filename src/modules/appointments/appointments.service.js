@@ -1063,7 +1063,11 @@ export const cancelAppointment = async (req, res, next) => {
       }
     }
 
-    await notify.appointmentCancelled(appointment.patientId);
+    try {
+      await notify.appointmentCancelled(appointment.patientId);
+    } catch (notifyErr) {
+      console.error("[cancelAppointment] Failed to send cancellation notification:", notifyErr);
+    }
 
     return successresponse({
       res,
