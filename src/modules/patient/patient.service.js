@@ -713,7 +713,12 @@ async function _syncMissedDoses(patientId) {
             }
 
             if (recordsToInsert.length > 0) {
-                await medicationtrackingmodel.insertMany(recordsToInsert);
+                await medicationtrackingmodel.insertMany(recordsToInsert, { ordered: false }).catch(err => {
+                    // Ignore duplicate key errors silently
+                    if (err.code !== 11000) {
+                        console.error("Error inserting missed doses:", err);
+                    }
+                });
             }
         }
     }
@@ -743,7 +748,9 @@ async function _getActiveMedicationsList(patientId) {
     });
     const todaysTrackingCounts = {};
     for (const t of todaysTracking) {
-        todaysTrackingCounts[t.medicationId] = (todaysTrackingCounts[t.medicationId] || 0) + 1;
+        if (t.status === 'taken') {
+            todaysTrackingCounts[t.medicationId] = (todaysTrackingCounts[t.medicationId] || 0) + 1;
+        }
     }
 
     const allTracking = await db_service.find({
@@ -807,6 +814,8 @@ async function _getActiveMedicationsList(patientId) {
                 const trackedToday = todaysTrackingCounts[med._id] || 0;
                 const hasTrackedToday = trackedToday >= frequency;
 
+                const todaysRecords = todaysTracking.filter(t => t.medicationId.toString() === med._id.toString());
+
                 activeMeds.push({
                     prescriptionId: rx._id,
                     medicationId: med._id,
@@ -821,7 +830,8 @@ async function _getActiveMedicationsList(patientId) {
                     daysCompleted,
                     daysRemaining,
                     progress,
-                    hasTrackedToday
+                    hasTrackedToday,
+                    todaysRecords
                 });
             }
         }
@@ -841,7 +851,6 @@ export const getActiveMedications = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
-        await _syncMissedDoses(req.user._id);
         const { page = 1, limit = 5, filter = 'all' } = req.query;
         
         let queryFilter = { patientId: req.user._id };
@@ -966,7 +975,6 @@ export const untrackMedicationDose = async (req, res, next) => {
 
 export const getMedicationSummary = async (req, res, next) => {
     try {
-        await _syncMissedDoses(req.user._id);
         const activeMeds = await _getActiveMedicationsList(req.user._id);
         
         const trackingRecords = await db_service.find({
