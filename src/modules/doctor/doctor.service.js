@@ -1916,10 +1916,14 @@ export const getReportsAnalytics = async (req, res, next) => {
 
         const ageGroups = { "0-18": 0, "19-30": 0, "31-50": 0, "51+": 0 };
         patients.forEach(p => {
-            if (p.age !== undefined) {
-                if (p.age <= 18) ageGroups["0-18"]++;
-                else if (p.age <= 30) ageGroups["19-30"]++;
-                else if (p.age <= 50) ageGroups["31-50"]++;
+            let patientAge = p.age;
+            if (patientAge === undefined && p.dateOfBirth) {
+                patientAge = Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            }
+            if (patientAge !== undefined) {
+                if (patientAge <= 18) ageGroups["0-18"]++;
+                else if (patientAge <= 30) ageGroups["19-30"]++;
+                else if (patientAge <= 50) ageGroups["31-50"]++;
                 else ageGroups["51+"]++;
             }
         });
