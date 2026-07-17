@@ -461,8 +461,6 @@ export const getAvailableSlots = async (req, res, next) => {
       filter.startDateTime.$lte = dayjs(endDate).toDate();
     }
     if (clinicId) filter.clinicId = clinicId;
-
-    console.log(`[getAvailableSlots] filter:`, JSON.stringify(filter));
     
     const totalCount = await slotmodel.countDocuments(filter);
     const slots = await slotmodel.find(filter)
@@ -470,8 +468,6 @@ export const getAvailableSlots = async (req, res, next) => {
         .skip(skip)
         .limit(limitNum)
         .lean();
-    
-    console.log(`[getAvailableSlots] found ${slots.length} slots`);
 
     if (req.user?.role === 'doctor' && includeBooked === 'true') {
         const slotIds = slots.map(s => s._id);
