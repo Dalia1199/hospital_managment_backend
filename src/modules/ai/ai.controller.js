@@ -631,6 +631,10 @@ export const patientChatbot = async (req, res, next) => {
             - "Pulmonology" (صدرية / رئة)
             - "Internal Medicine" (باطنة)
 
+            CRITICAL LOCATION MAPPING RULE:
+            For the "address" field, if the user mentions an Egyptian governorate in Arabic (e.g., "القاهرة", "الجيزة", "الاسكندرية"), you MUST map it to its exact English equivalent (e.g., "Cairo", "Giza", "Alexandria"). 
+            If they mention a specific neighborhood or street (e.g., "مدينة نصر", "المعادي"), keep it exactly as they said it.
+
             If the user's specialty matches one of the above (even approximately), use the exact English string.
             If you cannot determine a specialty, leave it as empty string "".
 
@@ -684,7 +688,11 @@ export const patientChatbot = async (req, res, next) => {
 
         let clinicQuery = { isActive: true };
         if (governorateToSearch) {
-            clinicQuery.governorate = { $regex: governorateToSearch, $options: "i" };
+            clinicQuery.$or = [
+                { governorate: { $regex: governorateToSearch, $options: "i" } },
+                { address: { $regex: governorateToSearch, $options: "i" } },
+                { name: { $regex: governorateToSearch, $options: "i" } }
+            ];
         }
 
         const clinics = await clinicmodel.find(clinicQuery).lean();
