@@ -310,10 +310,13 @@ export const signin = async (req, res, next) => {
     throw new Error("please confirm your email first", { cause: 403 });
   }
 
-  // لو doctor لازم يكون approved
+  // لو doctor لازم يكون approved وكمان أكد إيميله بالـ OTP
   if (user.role === "doctor") {
     if (user.status !== "approved") {
-      throw new Error("doctor not approved yet");
+      throw new Error("doctor not approved yet", { cause: 403 });
+    }
+    if (!user.confirmed) {
+      throw new Error("please confirm your email first", { cause: 403 });
     }
   }
 
