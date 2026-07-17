@@ -10,6 +10,7 @@ import prescrptionmodel from "../../DB/models/prescriptionmodel.js";
 import availabilitymodel from "../../DB/models/avalibility_model.js";
 import appointmentsmodel from "../../DB/models/appointments_model.js";
 import clinicmodel from "../../DB/models/clinic_model.js";
+import slotmodel from "../../DB/models/slot_model.js";
 import { checkDoctorAccess } from "../doctor/doctor.service.js";
 
 const SYSTEM_PROTECTION_GUARD = `
@@ -705,17 +706,40 @@ export const patientChatbot = async (req, res, next) => {
         // Filter out null userIds (doctors who aren't approved)
         const availableDoctors = doctors.filter(doc => !!doc.userId).slice(0, 5);
 
-        // Fetch their schedules
+        // Fetch their schedules for the next 7 days
         const doctorIds = availableDoctors.map(doc => doc.userId._id);
-        const availabilities = await availabilitymodel.find({ doctorId: { $in: doctorIds } }).lean();
+        const now = new Date();
+        const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const slots = await slotmodel.find({ 
+            doctorId: { $in: doctorIds },
+            isBooked: false,
+            startDateTime: { $gte: now, $lte: nextWeek }
+        }).lean();
 
         // --- 5. Formulate final response ---
         const doctorsContext = availableDoctors.map(doc => {
-            const schedule = availabilities.filter(a => a.doctorId.toString() === doc.userId._id.toString());
-            const days = schedule.length > 0 ? [...new Set(schedule.map(s => s.day))].join(", ") : "Not specified";
+            const docSlots = slots.filter(s => s.doctorId.toString() === doc.userId._id.toString());
+            
+            // Format slots grouped by date
+            const slotsByDate = {};
+            docSlots.forEach(s => {
+                const d = new Date(s.startDateTime);
+                const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                if (!slotsByDate[dateStr]) slotsByDate[dateStr] = [];
+                slotsByDate[dateStr].push(timeStr);
+            });
+            
+            let availableSlotsText = "No available slots in the next 7 days";
+            const dateKeys = Object.keys(slotsByDate);
+            if (dateKeys.length > 0) {
+                availableSlotsText = dateKeys.map(date => `${date} (${slotsByDate[date].join(", ")})`).join(" | ");
+            }
+
             const docClinics = clinics.filter(c => c.doctorId.toString() === doc.userId._id.toString());
-            const clinicAddresses = docClinics.map(c => c.governorate).join(", ") || doc.userId?.address || "N/A";
-            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Governorate: ${clinicAddresses}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Schedule Days: ${days}`;
+            const clinicAddresses = docClinics.map(c => `${c.name} - ${c.address}, ${c.governorate}`).join(" | ") || doc.userId?.address || "N/A";
+            
+            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Clinics: ${clinicAddresses}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Available Slots Next 7 Days: ${availableSlotsText}`;
         }).join("\n");
 
         const finalSystemPrompt = `
