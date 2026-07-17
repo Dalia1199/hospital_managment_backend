@@ -650,6 +650,8 @@ export const patientChatbot = async (req, res, next) => {
         let filters = { specialty: "", address: "", medicalCategory: "" };
         try {
             filters = JSON.parse(extractedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim());
+            console.log("=== AI Chatbot Debug ===");
+            console.log("Extracted Filters:", filters);
         } catch (e) {
             console.error("AI JSON Parse Error:", e);
         }
@@ -695,13 +697,19 @@ export const patientChatbot = async (req, res, next) => {
             ];
         }
 
+        console.log("Clinic Query:", JSON.stringify(clinicQuery));
         const clinics = await clinicmodel.find(clinicQuery).lean();
+        console.log("Found Clinics count:", clinics.length);
+
         const doctorIdsInArea = [...new Set(clinics.map(c => c.doctorId.toString()))];
 
         const matchQuery = { userId: { $in: doctorIdsInArea } };
         if (filters.specialty) {
-            matchQuery.specialization = { $regex: filters.specialty, $options: "i" };
+            // Normalize specialty string from AI (e.g. "General Practice" -> "general_practice")
+            const normalizedSpecialty = filters.specialty.toLowerCase().replace(/\s+/g, '_');
+            matchQuery.specialization = { $regex: normalizedSpecialty, $options: "i" };
         }
+        console.log("Doctor Match Query:", JSON.stringify(matchQuery));
 
         const doctors = await doctormodel.find(matchQuery)
             .populate({
@@ -711,8 +719,11 @@ export const patientChatbot = async (req, res, next) => {
             })
             .lean();
 
+        console.log("Found Doctors count:", doctors.length);
+
         // Filter out null userIds (doctors who aren't approved)
         const availableDoctors = doctors.filter(doc => !!doc.userId).slice(0, 5);
+        console.log("Available Approved Doctors count:", availableDoctors.length);
 
         // Fetch their schedules for the next 7 days
         const doctorIds = availableDoctors.map(doc => doc.userId._id);
@@ -724,30 +735,23 @@ export const patientChatbot = async (req, res, next) => {
             startDateTime: { $gte: now, $lte: nextWeek }
         }).lean();
 
+        // Fetch ALL clinics for these doctors so the AI knows all their locations
+        const allDocClinics = await clinicmodel.find({ doctorId: { $in: doctorIds }, isActive: true }).lean();
+
         // --- 5. Formulate final response ---
         const doctorsContext = availableDoctors.map(doc => {
             const docSlots = slots.filter(s => s.doctorId.toString() === doc.userId._id.toString());
             
-            // Format slots grouped by date
-            const slotsByDate = {};
-            docSlots.forEach(s => {
+            // Format unique dates only to avoid server overhead
+            const availableDates = [...new Set(docSlots.map(s => {
                 const d = new Date(s.startDateTime);
-                const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                if (!slotsByDate[dateStr]) slotsByDate[dateStr] = [];
-                slotsByDate[dateStr].push(timeStr);
-            });
-            
-            let availableSlotsText = "No available slots in the next 7 days";
-            const dateKeys = Object.keys(slotsByDate);
-            if (dateKeys.length > 0) {
-                availableSlotsText = dateKeys.map(date => `${date} (${slotsByDate[date].join(", ")})`).join(" | ");
-            }
+                return `${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`;
+            }))].join(", ") || "No available dates in the next 7 days";
 
-            const docClinics = clinics.filter(c => c.doctorId.toString() === doc.userId._id.toString());
-            const clinicAddresses = docClinics.map(c => `${c.name} - ${c.address}, ${c.governorate}`).join(" | ") || doc.userId?.address || "N/A";
+            const doctorClinics = allDocClinics.filter(c => c.doctorId.toString() === doc.userId._id.toString());
+            const clinicAddresses = doctorClinics.map(c => `${c.name} - ${c.address}, ${c.governorate}`).join(" | ") || doc.userId?.address || "N/A";
             
-            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Clinics: ${clinicAddresses}. Phone: ${doc.userId?.phoneNumber || "N/A"}. Available Slots Next 7 Days: ${availableSlotsText}`;
+            return `- Dr. ${doc.userId?.fullName} (${doc.specialization}). Clinics: ${clinicAddresses}. Available Next 7 Days: ${availableDates}`;
         }).join("\n");
 
         const finalSystemPrompt = `
