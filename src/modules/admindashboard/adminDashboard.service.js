@@ -119,6 +119,68 @@ import appointmentsmodel from "../../DB/models/appointments_model.js";
 
                     }
 
+                ],
+
+                byPlan: [
+
+                    {
+
+                        $match: {
+
+                            status: subscriptionStatusEnum.active
+
+                        }
+
+                    },
+
+                    {
+
+                        $lookup: {
+
+                            from: "subscriptionplans",
+
+                            localField: "subscriptionId",
+
+                            foreignField: "_id",
+
+                            as: "plan"
+
+                        }
+
+                    },
+
+                    {
+
+                        $unwind: "$plan"
+
+                    },
+
+                    {
+
+                        $group: {
+
+                            _id: "$plan.name",
+
+                            count: { $sum: 1 }
+
+                        }
+
+                    },
+
+                    {
+
+                        $project: {
+
+                            _id: 0,
+
+                            planName: "$_id",
+
+                            count: 1
+
+                        }
+
+                    }
+
                 ]
 
             }
@@ -145,7 +207,9 @@ import appointmentsmodel from "../../DB/models/appointments_model.js";
 
         expiringSoon:
 
-            summary.expiringSoon[0]?.count || 0
+            summary.expiringSoon[0]?.count || 0,
+
+        byPlan: summary.byPlan || []
 
     };
 
@@ -1397,6 +1461,8 @@ export const getFinancialStats = async (req, res, next) => {
         const cancelledAppointments = appointmentStats?.cancelled || 0;
         const cancellationRate = totalAppointments > 0 ? (cancelledAppointments / totalAppointments) * 100 : 0;
 
+        const subscriptions = await getSubscriptionSummary();
+
         return successresponse({
             res,
             message: "Financial Statistics",
@@ -1405,7 +1471,8 @@ export const getFinancialStats = async (req, res, next) => {
                 platformBookingProfits: bookingProfits,
                 platformSubscriptionProfits: subscriptionProfits,
                 platformCancellationProfits: cancellationProfits,
-                cancellationRate: parseFloat(cancellationRate.toFixed(2))
+                cancellationRate: parseFloat(cancellationRate.toFixed(2)),
+                subscriptions
             }
         });
     } catch (error) {
