@@ -313,18 +313,37 @@ export const getPatientInsights = async (req, res, next) => {
 
 export const checkDrugInteractions = async (req, res, next) => {
     try {
-        const { currentDrugs, newDrugs, newComplaint, patientId } = req.body;
+        // Accept real-time allergies/chronic/surgeries from the encounter screen (priority)
+        // as well as the standard drug lists and patientId for DB fallback
+        const { currentDrugs, newDrugs, newComplaint, patientId, allergies: rtAllergies, chronic: rtChronic, surgeries: rtSurgeries } = req.body;
 
         if (!currentDrugs && !newDrugs && !newComplaint) {
             throw new Error("Please provide current drugs, new drugs, or a new complaint to check.", { cause: 400 });
         }
 
-        // Fetch patient's existing active medications and medical profile from DB
+        // Fetch patient's existing active medications from DB
         let activeMedications = [];
+        // Start with real-time values if provided by the doctor on-screen
+        // These always take priority over stale DB values
+        let allergiesText = "None reported";
+        let chronicText = "None reported";
+        let surgeriesText = "None reported";
         let patientProfileText = "Patient Profile: Not available or not registered.";
         
+        // Use real-time values passed from the encounter form first
+        if (rtAllergies && Array.isArray(rtAllergies) && rtAllergies.length > 0) {
+            allergiesText = rtAllergies.join(", ");
+        }
+        if (rtChronic && Array.isArray(rtChronic) && rtChronic.length > 0) {
+            chronicText = rtChronic.join(", ");
+        }
+        if (rtSurgeries && Array.isArray(rtSurgeries) && rtSurgeries.length > 0) {
+            // rtSurgeries can be an array of strings or objects
+            surgeriesText = rtSurgeries.map(s => (typeof s === 'string' ? s : s.operationName)).filter(Boolean).join(", ");
+        }
+        
         if (patientId) {
-            // Fetch active prescriptions
+            // Fetch active prescriptions from DB
             const activePrescriptions = await prescrptionmodel.find({ 
                 patientId, 
                 status: "active" 
@@ -338,22 +357,29 @@ export const checkDrugInteractions = async (req, res, next) => {
                 }
             });
 
-            // Fetch patient profile for allergies, chronic diseases, and surgeries
-            const patient = await patientmodel.findOne({ userId: patientId }).lean();
-            if (patient) {
-                const allergies = patient.allergies && patient.allergies.length > 0 ? patient.allergies.join(", ") : "None reported";
-                const chronic = patient.chronic && patient.chronic.length > 0 ? patient.chronic.join(", ") : "None reported";
-                const surgeries = patient.surgeries && patient.surgeries.length > 0 
-                    ? patient.surgeries.map(s => s.operationName).join(", ") 
-                    : "None reported";
-                
-                patientProfileText = `
-                    Allergies: ${allergies}
-                    Chronic Diseases: ${chronic}
-                    Previous Surgeries: ${surgeries}
-                `;
+            // Only fall back to DB profile data if real-time values were NOT provided
+            const hasRealTimeProfile = 
+                (rtAllergies && rtAllergies.length > 0) ||
+                (rtChronic && rtChronic.length > 0) ||
+                (rtSurgeries && rtSurgeries.length > 0);
+            
+            if (!hasRealTimeProfile) {
+                const patient = await patientmodel.findOne({ userId: patientId }).lean();
+                if (patient) {
+                    if (patient.allergies && patient.allergies.length > 0) allergiesText = patient.allergies.join(", ");
+                    if (patient.chronic && patient.chronic.length > 0) chronicText = patient.chronic.join(", ");
+                    if (patient.surgeries && patient.surgeries.length > 0) surgeriesText = patient.surgeries.map(s => s.operationName).join(", ");
+                }
             }
         }
+
+        // Build the patient profile text for the AI
+        patientProfileText = `
+            Allergies: ${allergiesText}
+            Chronic Diseases: ${chronicText}
+            Previous Surgeries: ${surgeriesText}
+        `;
+
         const allCurrentDrugs = [...new Set([...(currentDrugs || []), ...activeMedications])];
 
         const systemInstruction = `
@@ -389,11 +415,9 @@ export const checkDrugInteractions = async (req, res, next) => {
 
         let parsedResult;
         try {
-            // Strip any markdown json blocks if the LLM ignores instructions
             const cleaned = aiResponse.replace(/```json/gi, '').replace(/```/gi, '').trim();
             parsedResult = JSON.parse(cleaned);
         } catch (e) {
-            // Fallback if not pure JSON
             parsedResult = {
                 severity: "WARNING",
                 analysis: aiResponse
@@ -580,11 +604,37 @@ export const patientChatbot = async (req, res, next) => {
         }
 
         // --- 2. Step 1: Extract filters using AI ---
+        // IMPORTANT: specialty must be mapped to the exact English DB values we use
         const extractionPrompt = `
             Analyze the following user message and the chat history to determine the patient's current medical need.
-            Extract the requested doctor "specialty" (in Arabic, e.g., "باطنة", "مخ وأعصاب", "قلب", "عظام", "أطفال", etc.), location "address", and a broad "medicalCategory".
-            Return ONLY a valid JSON object with keys "specialty", "address", and "medicalCategory". 
-            If a field is not mentioned or cannot be inferred from the context, leave it empty string "". Do not include markdown code blocks.
+            Extract the requested doctor specialty, location/address, and a broad medical category.
+
+            CRITICAL SPECIALTY MAPPING RULE:
+            You MUST map the user's specialty request (in any language) to EXACTLY one of these English values that exist in our database:
+            - "General Practice" (طب عام / ممارسات عامة / دكتور عام)
+            - "Cardiology" (قلب)
+            - "Dermatology" (جلدية)
+            - "Orthopedics" (عظام)
+            - "Neurology" (مخ وأعصاب / نيورولوجي)
+            - "Pediatrics" (أطفال)
+            - "Ophthalmology" (عيون)
+            - "ENT" (أنف وأذن وحنجرة)
+            - "Gynecology" (نساء وتوليد)
+            - "Urology" (مسالك بولية)
+            - "Gastroenterology" (جهاز هضمي / باطنة)
+            - "Psychiatry" (نفسية)
+            - "Endocrinology" (غدد صماء / سكر وسمنة)
+            - "Oncology" (أورام)
+            - "Rheumatology" (روماتيزم)
+            - "Nephrology" (كلى)
+            - "Pulmonology" (صدرية / رئة)
+            - "Internal Medicine" (باطنة)
+
+            If the user's specialty matches one of the above (even approximately), use the exact English string.
+            If you cannot determine a specialty, leave it as empty string "".
+
+            Return ONLY a valid JSON object: { "specialty": "...", "address": "...", "medicalCategory": "..." }
+            Do not include markdown code blocks.
             Chat History: ${JSON.stringify(chatHistory.slice(-3))}
             Current Message: "${message}"
             
@@ -672,6 +722,10 @@ export const patientChatbot = async (req, res, next) => {
             You are a polite, highly skilled Medical AI Assistant for CareHub assisting a patient.
             The patient's name is "${patientName}" and their gender is "${patientGender}".
             
+            CRITICAL NAME RULE: You MUST address the patient using EXACTLY the name "${patientName}" as written above.
+            Do NOT translate, alter, replace, or substitute this name with any similar-sounding name in any language.
+            For example, if the name is "Mohanad", do NOT write "Mohammed" or "محمد". Use the exact name provided.
+
             --- PATIENT CONTEXT ---
             Vitals & Profile:
             ${vitalsText}
@@ -686,10 +740,10 @@ export const patientChatbot = async (req, res, next) => {
             A patient asked: "${message}"
 
             INSTRUCTIONS:
-            1. Respond in a friendly, empathetic tone in Arabic. Address the patient directly by their name.
+            1. Respond in a friendly, empathetic tone in Arabic. Address the patient by their exact name "${patientName}" — never change it.
             2. Answer their question or address their symptoms using their Vitals, Medical History, and Chat History context.
             3. Provide general health advice relevant to their situation.
-            4. CRITICAL RULE: If doctors are listed above, evaluate if their specialty exactly matches the patient's symptoms (e.g. Headache needs Neurology or Internal Medicine). If the specialty is WRONG (e.g., Cardiologist for a headache, Orthopedics for a headache), DO NOT recommend them. Instead, state clearly that you don't have doctors in the required specialty right now, and advise them to visit the nearest hospital or emergency room (الطوارئ).
+            4. CRITICAL DOCTOR RULE: If doctors are listed above, their specialty has already been pre-matched to the patient's request. Present them as available options. Only exclude a doctor if their specialty is clearly unrelated (e.g., Cardiologist for a broken bone). Do NOT say no doctors were found if the list above has doctors.
             5. PREPARATION SUGGESTION: Optionally suggest 1-2 basic lab tests or X-rays the patient could prepare before their visit to save the doctor's time, but ONLY if clearly relevant to the symptoms.
             6. CRITICAL RULE: You MUST conclude your response by explicitly advising the patient to consult a specialized doctor for a final diagnosis. (يجب استشارة طبيب متخصص).
             
