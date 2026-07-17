@@ -26,8 +26,12 @@ const userschema = new mongoose.Schema({
     },
     phoneNumber: {
         type: String,
-        required: true,
-        unique: true
+        required: true
+    },
+    phoneHash: {
+        type: String,
+        unique: true,
+        sparse: true
     },
 
     role: {

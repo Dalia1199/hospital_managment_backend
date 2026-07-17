@@ -4,7 +4,7 @@ import { successresponse } from "../../common/utilits/responce.success.js";
 import { roleenum } from "../../common/enum/user.enum.js";
 import medicalhistorymodel from "../../DB/models/medicalhistorymodel.js";
 import usermodel from "../../DB/models/usermodel.js";
-import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt, encrypt, hashPhone } from "../../common/utilits/security/encrypt.js";
 import prescriptionmodel from "../../DB/models/prescriptionmodel.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import healthtrackingmodel from "../../DB/models/healthtrackingmodel.js";
@@ -374,8 +374,25 @@ export const updatePatientProfile = async (req, res, next) => {
     const userUpdate = {};
     if (fullName !== undefined) userUpdate.fullName = fullName;
     if (address !== undefined) userUpdate.address = address;
-    if (phoneNumber !== undefined)
+    if (phoneNumber !== undefined) {
+      const newPhoneHash = hashPhone(phoneNumber);
+      
+      // Check if another user already has this phone number
+      const existingPhone = await db_service.findOne({
+        model: usermodel,
+        filter: { 
+          phoneHash: newPhoneHash,
+          _id: { $ne: req.user._id }
+        },
+      });
+
+      if (existingPhone) {
+        throw new Error("phone number already in use", { cause: 409 });
+      }
+
       userUpdate.phoneNumber = encrypt(phoneNumber);
+      userUpdate.phoneHash = newPhoneHash;
+    }
 
     if (Object.keys(userUpdate).length > 0) {
       await db_service.findOneAndUpdate({

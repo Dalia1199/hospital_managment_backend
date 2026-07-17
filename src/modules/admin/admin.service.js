@@ -15,7 +15,7 @@ import { emailenum } from "../../common/enum/emailenum.js";
 import { generateotp, sendemail } from "../../common/utilits/email/send email.js";
 import { otp_key, max_otp_key, setvalue } from "../../DB/redis/redis.service.js";
 import { hash } from "../../common/utilits/security/hash.js";
-import { decrypt, encrypt } from "../../common/utilits/security/encrypt.js";
+import { decrypt, encrypt, hashPhone } from "../../common/utilits/security/encrypt.js";
 import cloudinary from "../../common/utilits/cloudinary.js";
 import { notify } from "../notifications/notification.service.js";
 
@@ -194,14 +194,38 @@ export const getAllDoctors = async (req, res, next) => {
             }
         }
 
-        const filter = { ...baseFilter };
-        if (status) filter.status = status;
-
-        const totalCount = await db_service.count({ model: usermodel, filter });
-        const totalPages = Math.ceil(totalCount / limit);
-
-        const statusCountsAgg = await usermodel.aggregate([
+        // We use aggregation to join doctors collection and filter out 
+        // pending doctors who have a pendingLicenseImage (as they belong in licenses tab).
+        const pipeline = [
             { $match: baseFilter },
+            {
+                $lookup: {
+                    from: "doctors",
+                    localField: "_id",
+                    foreignField: "userId",
+                    as: "doctorDetails"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$doctorDetails",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $match: {
+                    $or: [
+                        { status: { $ne: "pending" } },
+                        { "doctorDetails.pendingLicenseImage.public_id": { $exists: false } },
+                        { "doctorDetails.pendingLicenseImage.public_id": null }
+                    ]
+                }
+            }
+        ];
+
+        // 1. Calculate statusCounts
+        const statusCountsAgg = await usermodel.aggregate([
+            ...pipeline,
             { $group: { _id: "$status", count: { $sum: 1 } } }
         ]);
 
@@ -216,45 +240,35 @@ export const getAllDoctors = async (req, res, next) => {
             }
         });
 
-        const doctors = await db_service.find({
-            model: usermodel,
-            filter,
-            options: {
-                select: "-password",
-                sort: { createdAt: -1 },
-                skip,
-                limit,
-                lean: true
+        // 2. Fetch paginated data
+        const matchStatus = status ? { status } : {};
+        
+        const result = await usermodel.aggregate([
+            ...pipeline,
+            { $match: matchStatus },
+            { $sort: { createdAt: -1 } },
+            {
+                $facet: {
+                    metadata: [{ $count: "totalCount" }],
+                    data: [{ $skip: skip }, { $limit: limit }]
+                }
             }
+        ]);
+
+        const totalCount = result[0].metadata[0]?.totalCount || 0;
+        const totalPages = Math.ceil(totalCount / limit) || 1;
+        const doctors = result[0].data;
+
+        // Map data to match the expected format
+        const data = doctors.map(doctor => {
+            const { password, doctorDetails, ...rest } = doctor;
+            return {
+                ...rest,
+                licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
+                nationalIdUrl: doctorDetails?.nationalId?.secure_url ?? null,
+                specialty: doctorDetails?.specialization ?? null
+            };
         });
-
-        const doctorsWithDetails = await Promise.all(
-            doctors.map(async (doctor) => {
-                const doctorDetails = await db_service.findOne({
-                    model: doctormodel,
-                    filter: { userId: doctor._id }
-                });
-                return {
-                    ...doctor,
-                    licenseUrl: doctorDetails?.licenseimage?.secure_url ?? null,
-                    nationalIdUrl: doctorDetails?.nationalId?.secure_url ?? null,
-                    specialty: doctorDetails?.specialization ?? null,
-                    _hasPendingLicenseUpdate: !!doctorDetails?.pendingLicenseImage?.public_id,
-                };
-            })
-        );
-
-        // "pending" here means "first-time signup awaiting initial review".
-        // An already-approved doctor whose status got bumped to "pending"
-        // by a license *update* is a different thing entirely — they
-        // belong exclusively on /admin/doctors/licenses, with their NEW
-        // image, not mixed in here showing their old/irrelevant license.
-        const visible =
-            status === "pending"
-                ? doctorsWithDetails.filter((d) => !d._hasPendingLicenseUpdate)
-                : doctorsWithDetails;
-
-        const data = visible.map(({ _hasPendingLicenseUpdate, ...rest }) => rest);
 
         return successresponse({ res, data, pagination: { totalPages, currentPage: page, totalRecords: totalCount }, statusCounts });
     } catch (error) {
@@ -317,23 +331,52 @@ export const getallusers = async (req, res, next) => {
 
         const currentPage = parseInt(page);
         const itemsPerPage = parseInt(limit);
+        const skip = (currentPage - 1) * itemsPerPage;
 
-        const filter = {};
-        if (role) filter.role = role;
-        if (status) filter.status = status;
+        const baseFilter = {};
+        if (search) {
+            baseFilter.$or = [
+                { fullName: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } }
+            ];
+        }
 
-        // Fetch all matching basic filters to do in-memory search and decryption
-        let users = await db_service.find({
-            model: usermodel,
-            filter: filter,
-            options: {
-                select: "-password",
-                lean: true
+        const matchFilter = { ...baseFilter };
+        if (role) matchFilter.role = role;
+        if (status) matchFilter.status = status;
+
+        // Run aggregation to get roleCounts, statusCounts, and paginated data
+        const result = await usermodel.aggregate([
+            { $match: baseFilter },
+            {
+                $facet: {
+                    metadata: [
+                        { $match: matchFilter },
+                        { $count: "totalCount" }
+                    ],
+                    data: [
+                        { $match: matchFilter },
+                        { $sort: { createdAt: -1 } },
+                        { $skip: skip },
+                        { $limit: itemsPerPage },
+                        { $project: { password: 0 } }
+                    ],
+                    roleCountsAgg: [
+                        { $group: { _id: "$role", count: { $sum: 1 } } }
+                    ],
+                    statusCountsAgg: [
+                        { $group: { _id: "$status", count: { $sum: 1 } } }
+                    ]
+                }
             }
-        });
+        ]);
 
-        // Decrypt phone numbers
-        users = users.map(user => {
+        const totalCount = result[0].metadata[0]?.totalCount || 0;
+        const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
+        let paginatedUsers = result[0].data;
+
+        // Decrypt phone numbers for the current page only
+        paginatedUsers = paginatedUsers.map(user => {
             if (user.phoneNumber) {
                 try {
                     user.phoneNumber = decrypt(user.phoneNumber);
@@ -342,22 +385,16 @@ export const getallusers = async (req, res, next) => {
             return user;
         });
 
-        // Apply search filter in-memory so we can search by decrypted phone number
-        if (search) {
-            const lowerSearch = search.toLowerCase();
-            users = users.filter(u => {
-                const matchName = u.fullName?.toLowerCase().includes(lowerSearch);
-                const matchEmail = u.email?.toLowerCase().includes(lowerSearch);
-                const matchPhone = u.phoneNumber?.toLowerCase().includes(lowerSearch);
-                return matchName || matchEmail || matchPhone;
-            });
-        }
+        // Format counts
+        const roleCounts = { doctor: 0, patient: 0, admin: 0 };
+        result[0].roleCountsAgg.forEach(item => {
+            if (item._id) roleCounts[item._id] = item.count;
+        });
 
-        const totalCount = users.length;
-        const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
-        
-        const skip = (currentPage - 1) * itemsPerPage;
-        const paginatedUsers = users.slice(skip, skip + itemsPerPage);
+        const statusCounts = { active: 0, pending: 0, blocked: 0, rejected: 0 };
+        result[0].statusCountsAgg.forEach(item => {
+            if (item._id) statusCounts[item._id] = item.count;
+        });
 
         return successresponse({
             res,
@@ -370,7 +407,9 @@ export const getallusers = async (req, res, next) => {
                     totalPages,
                     currentPage,
                     itemsPerPage
-                }
+                },
+                roleCounts,
+                statusCounts
             }
         });
     } catch (error) {
@@ -460,7 +499,23 @@ export const updateAdminProfile = async (req, res, next) => {
 
         if (fullName !== undefined) req.user.fullName = fullName;
         if (address !== undefined) req.user.address = address;
-        if (phoneNumber !== undefined) req.user.phoneNumber = encrypt(phoneNumber);
+        if (phoneNumber !== undefined) {
+            const newPhoneHash = hashPhone(phoneNumber);
+            const existingPhone = await db_service.findOne({
+                model: usermodel,
+                filter: { 
+                    phoneHash: newPhoneHash,
+                    _id: { $ne: req.user._id }
+                }
+            });
+
+            if (existingPhone) {
+                throw new Error("Phone number already in use", { cause: 409 });
+            }
+
+            req.user.phoneNumber = encrypt(phoneNumber);
+            req.user.phoneHash = newPhoneHash;
+        }
         await req.user.save();
 
         return successresponse({
