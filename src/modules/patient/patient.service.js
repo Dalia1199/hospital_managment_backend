@@ -744,6 +744,25 @@ export const trackMedicationDose = async (req, res, next) => {
     }
 };
 
+export const untrackMedicationDose = async (req, res, next) => {
+    try {
+        const { recordId } = req.params;
+
+        const record = await medicationtrackingmodel.findOneAndDelete({
+            _id: recordId,
+            patientId: req.user._id
+        });
+
+        if (!record) {
+            return next(new Error("Tracking record not found", { cause: 404 }));
+        }
+
+        return successresponse({ res, message: "Dose untracked successfully", data: record });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const getMedicationSummary = async (req, res, next) => {
     try {
         const activeMeds = await _getActiveMedicationsList(req.user._id);

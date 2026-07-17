@@ -97,6 +97,13 @@ patientrouter.post(
     PS.trackMedicationDose
 )
 
+patientrouter.delete(
+    "/medications/track/:recordId",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.untrackMedicationDose
+)
+
 patientrouter.get(
     "/medications/summary",
     authentication,
