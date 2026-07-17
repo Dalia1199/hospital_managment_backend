@@ -75,6 +75,20 @@ patientrouter.get(
     PS.getTrackingRecords
 )
 
+patientrouter.put(
+    "/tracking/:id",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.updateTrackingRecord
+)
+
+patientrouter.delete(
+    "/tracking/:id",
+    authentication,
+    authorization([roleenum.patient]),
+    PS.deleteTrackingRecord
+)
+
 // Medication Tracking endpoints
 patientrouter.get(
     "/medications/active",

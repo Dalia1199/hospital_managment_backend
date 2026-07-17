@@ -536,20 +536,188 @@ export const addTrackingRecord = async (req, res, next) => {
 
 export const getTrackingRecords = async (req, res, next) => {
   try {
+    const { page = 1, limit = 10, startDate, endDate, getAll = "false" } = req.query;
+
     const patient = await db_service.findOne({
       model: patientmodel,
       filter: { userId: req.user._id },
     });
     if (!patient) throw new Error("Patient not found", { cause: 404 });
 
-    const records = await healthtrackingmodel.find({ patientId: patient._id }).sort({ date: -1 });
+    let filter = { patientId: patient._id };
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.date.$lte = end;
+      }
+    }
 
-    return successresponse({ res, data: records });
+    if (getAll === "true") {
+      const records = await healthtrackingmodel.find(filter).sort({ date: -1 });
+      return successresponse({ res, data: records });
+    }
+
+    const pageNumber = parseInt(page, 10);
+    const pageSize = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * pageSize;
+
+    const [records, totalRecords] = await Promise.all([
+      healthtrackingmodel.find(filter).sort({ date: -1 }).skip(skip).limit(pageSize),
+      healthtrackingmodel.countDocuments(filter)
+    ]);
+
+    return successresponse({ 
+      res, 
+      data: records,
+      pagination: {
+        total: totalRecords,
+        page: pageNumber,
+        pages: Math.ceil(totalRecords / pageSize),
+        limit: pageSize
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateTrackingRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const patient = await db_service.findOne({
+      model: patientmodel,
+      filter: { userId: req.user._id },
+    });
+    if (!patient) throw new Error("Patient not found", { cause: 404 });
+
+    const record = await healthtrackingmodel.findOne({ _id: id, patientId: patient._id });
+    if (!record) throw new Error("Tracking record not found", { cause: 404 });
+
+    const updatedRecord = await db_service.updateOne({
+      model: healthtrackingmodel,
+      filter: { _id: id, patientId: patient._id },
+      data: req.body,
+      options: { new: true }
+    });
+
+    return successresponse({ res, message: "Tracking record updated successfully", data: updatedRecord });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteTrackingRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const patient = await db_service.findOne({
+      model: patientmodel,
+      filter: { userId: req.user._id },
+    });
+    if (!patient) throw new Error("Patient not found", { cause: 404 });
+
+    const record = await healthtrackingmodel.findOne({ _id: id, patientId: patient._id });
+    if (!record) throw new Error("Tracking record not found", { cause: 404 });
+
+    await db_service.deleteOne({
+      model: healthtrackingmodel,
+      filter: { _id: id, patientId: patient._id }
+    });
+
+    return successresponse({ res, message: "Tracking record deleted successfully" });
   } catch (error) {
     next(error);
   }
 };
 // ─── MEDICATION TRACKING ───────────────────────────────────────────────────────
+
+// Helper to calculate and insert explicitly missed doses for past days
+async function _syncMissedDoses(patientId) {
+    const prescriptions = await db_service.find({
+        model: prescriptionmodel,
+        filter: { patientId } 
+    });
+
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    for (const rx of prescriptions) {
+        const rxDate = new Date(rx.createdAt);
+        rxDate.setHours(0, 0, 0, 0);
+        
+        for (const med of rx.medications) {
+            const frequency = parseFrequency(med.frequency);
+            const durationInfo = parseDuration(med.duration);
+            let totalDays = durationInfo.days;
+            
+            let endDate = new Date(rxDate);
+            if (!durationInfo.isLifelong) {
+                endDate.setDate(endDate.getDate() + totalDays - 1); 
+            } else {
+                endDate = new Date(todayStart);
+                endDate.setDate(endDate.getDate() - 1); 
+            }
+            
+            let checkEndDate = new Date(todayStart);
+            checkEndDate.setDate(checkEndDate.getDate() - 1); // Only check up to yesterday
+
+            if (!durationInfo.isLifelong && endDate < checkEndDate) {
+                checkEndDate = endDate;
+            }
+
+            if (rxDate > checkEndDate) {
+                continue; // Prescription started today or in the future
+            }
+
+            const trackingRecords = await db_service.find({
+                model: medicationtrackingmodel,
+                filter: {
+                    patientId,
+                    medicationId: med._id,
+                    scheduledDoseDateTime: { $gte: rxDate, $lte: new Date(checkEndDate.getTime() + 86399999) }
+                }
+            });
+
+            const recordsByDay = {};
+            for (const r of trackingRecords) {
+                const dayStr = r.scheduledDoseDateTime.toISOString().split('T')[0];
+                if (!recordsByDay[dayStr]) recordsByDay[dayStr] = 0;
+                recordsByDay[dayStr]++;
+            }
+
+            let loopDate = new Date(rxDate);
+            const recordsToInsert = [];
+            while (loopDate <= checkEndDate) {
+                const dayStr = loopDate.toISOString().split('T')[0];
+                const count = recordsByDay[dayStr] || 0;
+                
+                if (count < frequency) {
+                    const missedCount = frequency - count;
+                    for (let i = 0; i < missedCount; i++) {
+                        const missedDate = new Date(loopDate);
+                        missedDate.setHours(12 + i, 0, 0, 0); // Arbitrary time
+                        recordsToInsert.push({
+                            patientId,
+                            prescriptionId: rx._id,
+                            medicationId: med._id,
+                            scheduledDoseDateTime: missedDate,
+                            status: 'missed',
+                            completedAt: missedDate
+                        });
+                    }
+                }
+                loopDate.setDate(loopDate.getDate() + 1);
+            }
+
+            if (recordsToInsert.length > 0) {
+                await medicationtrackingmodel.insertMany(recordsToInsert);
+            }
+        }
+    }
+}
 
 // Helper to get all active medications from all prescriptions of the patient
 async function _getActiveMedicationsList(patientId) {
@@ -663,6 +831,7 @@ async function _getActiveMedicationsList(patientId) {
 
 export const getActiveMedications = async (req, res, next) => {
     try {
+        await _syncMissedDoses(req.user._id);
         const activeMeds = await _getActiveMedicationsList(req.user._id);
         return successresponse({ res, data: activeMeds });
     } catch (error) {
@@ -672,13 +841,45 @@ export const getActiveMedications = async (req, res, next) => {
 
 export const getMedicationHistory = async (req, res, next) => {
     try {
-        const limit = parseInt(req.query.limit) || 5;
-        const history = await db_service.find({
-            model: medicationtrackingmodel,
-            filter: { patientId: req.user._id },
-            options: { sort: { scheduledDoseDateTime: -1 }, limit }
+        await _syncMissedDoses(req.user._id);
+        const { page = 1, limit = 5, filter = 'all' } = req.query;
+        
+        let queryFilter = { patientId: req.user._id };
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+
+        if (filter === 'today') {
+            queryFilter.scheduledDoseDateTime = { $gte: todayStart };
+        } else if (filter === 'week') {
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - 7);
+            queryFilter.scheduledDoseDateTime = { $gte: weekStart };
+        } else if (filter === 'month') {
+            const monthStart = new Date(now);
+            monthStart.setMonth(monthStart.getMonth() - 1);
+            queryFilter.scheduledDoseDateTime = { $gte: monthStart };
+        }
+
+        const pageNumber = parseInt(page, 10);
+        const pageSize = parseInt(limit, 10);
+        const skip = (pageNumber - 1) * pageSize;
+
+        const [history, totalRecords] = await Promise.all([
+            medicationtrackingmodel.find(queryFilter).sort({ scheduledDoseDateTime: -1 }).skip(skip).limit(pageSize),
+            medicationtrackingmodel.countDocuments(queryFilter)
+        ]);
+
+        return successresponse({ 
+            res, 
+            data: history,
+            pagination: {
+                total: totalRecords,
+                page: pageNumber,
+                pages: Math.ceil(totalRecords / pageSize),
+                limit: pageSize
+            }
         });
-        return successresponse({ res, data: history });
     } catch (error) {
         next(error);
     }
@@ -765,6 +966,7 @@ export const untrackMedicationDose = async (req, res, next) => {
 
 export const getMedicationSummary = async (req, res, next) => {
     try {
+        await _syncMissedDoses(req.user._id);
         const activeMeds = await _getActiveMedicationsList(req.user._id);
         
         const trackingRecords = await db_service.find({
