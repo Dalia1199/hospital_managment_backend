@@ -787,6 +787,9 @@ export const getMyAppointments = async (req, res, next) => {
           {
             path: "slotId",
           },
+          {
+            path: "clinicId",
+          },
         ],
         sort: {
           createdAt: -1,
@@ -922,11 +925,20 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
 
   await slotmodel.findByIdAndUpdate(appointment.slotId, {
     isBooked: false,
+    isReserved: false,
+    reservedAt: null,
+    reservedBy: null,
   });
 
-  if (appointment.paymentStatus === "paid") {
+    if (appointment.paymentStatus === "paid") {
     const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
     const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
+    const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+
+    await paymentmodel.updateMany(
+      { referenceId: appointment.slotId, purpose: "appointment" },
+      { paymentStatus: "cancelled" }
+    );
     
     const docRevenueTx = await transactionmodel.findOne({
         userId: appointment.doctorId,
@@ -958,11 +970,21 @@ export const cancelAppointmentLogic = async (appointmentId, actionByUserId, reas
             docRevenueTx.status = 'cancelled';
             await docRevenueTx.save();
         } else {
-            // Late cancellation (< 24h): No refund. Doctor gets paid as if completed.
-            const { releasePendingToAvailable } = await import('../wallet/wallet.service.js');
-            if (originalDoctorShare > 0) {
-                await releasePendingToAvailable(appointment.doctorId, originalDoctorShare);
+            // Late cancellation (< 24h): Partial refund based on config
+            const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
+            const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
+            
+            if (patientRefund > 0) {
+                await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
             }
+            if (originalDoctorShare > 0) {
+                await removePendingBalance(appointment.doctorId, originalDoctorShare);
+            }
+            if (doctorCompensation > 0) {
+                await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+            }
+            docRevenueTx.status = 'partial_refunded';
+            await docRevenueTx.save();
         }
     }
   }
@@ -1017,12 +1039,21 @@ export const cancelAppointment = async (req, res, next) => {
 
     await slotmodel.findByIdAndUpdate(appointment.slotId, {
       isBooked: false,
+      isReserved: false,
+      reservedAt: null,
+      reservedBy: null,
     });
 
     if (appointment.paymentStatus === "paid") {
       const { calculateRefundSplit } = await import('../appconfig/appconfig.service.js');
       const { addAvailableBalance, removePendingBalance } = await import('../wallet/wallet.service.js');
       const transactionmodel = (await import('../../DB/models/transactionmodel.js')).default;
+      const paymentmodel = (await import('../../DB/models/paymentmodel.js')).default;
+
+      await paymentmodel.updateMany(
+        { referenceId: appointment.slotId, purpose: "appointment" },
+        { paymentStatus: "cancelled" }
+      );
       
       const docRevenueTx = await transactionmodel.findOne({
           userId: appointment.doctorId,
@@ -1030,34 +1061,38 @@ export const cancelAppointment = async (req, res, next) => {
           $or: [{ referenceId: appointment._id }, { referenceId: appointment.slotId }]
       });
 
-      if (docRevenueTx && docRevenueTx.metadata && docRevenueTx.metadata.totalPaid) {
-          const totalPaid = docRevenueTx.metadata.totalPaid;
-          const originalDoctorShare = docRevenueTx.metadata.doctorShare || docRevenueTx.amount;
-          
-          const now = new Date();
-          const apptStart = new Date(appointment.startDateTime);
-          const hoursUntilAppointment = (apptStart - now) / (1000 * 60 * 60);
-
-          if (hoursUntilAppointment >= 24) {
-              // Early cancellation: 100% refund to patient
-              await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
-              if (originalDoctorShare > 0) {
-                  await removePendingBalance(appointment.doctorId, originalDoctorShare);
-              }
-              docRevenueTx.status = 'cancelled';
-              await docRevenueTx.save();
-          } else {
-              // Late cancellation (< 24h): Partial refund based on config
-              const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
+      if (docRevenueTx) {
+          const totalPaid = docRevenueTx.metadata?.totalPaid || appointment.paidAmount || 0;
+          if (totalPaid > 0) {
+              const originalDoctorShare = docRevenueTx.metadata?.doctorShare || docRevenueTx.amount;
               
-              if (patientRefund > 0) {
-                  await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
-              }
-              if (originalDoctorShare > 0) {
-                  await removePendingBalance(appointment.doctorId, originalDoctorShare);
-              }
-              if (doctorCompensation > 0) {
-                  await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+              const now = new Date();
+              const apptStart = new Date(appointment.startDateTime);
+              const hoursUntilAppointment = (apptStart - now) / (1000 * 60 * 60);
+
+              if (hoursUntilAppointment >= 24) {
+                  // Early cancellation: 100% refund to patient
+                  await addAvailableBalance(appointment.patientId, totalPaid, 'refund', appointment._id, { totalPaid });
+                  if (originalDoctorShare > 0) {
+                      await removePendingBalance(appointment.doctorId, originalDoctorShare);
+                  }
+                  docRevenueTx.status = 'cancelled';
+                  await docRevenueTx.save();
+              } else {
+                  // Late cancellation (< 24h): Partial refund based on config
+                  const { patientRefund, doctorCompensation } = await calculateRefundSplit(totalPaid);
+                  
+                  if (patientRefund > 0) {
+                      await addAvailableBalance(appointment.patientId, patientRefund, 'refund', appointment._id, { totalPaid });
+                  }
+                  if (originalDoctorShare > 0) {
+                      await removePendingBalance(appointment.doctorId, originalDoctorShare);
+                  }
+                  if (doctorCompensation > 0) {
+                      await addAvailableBalance(appointment.doctorId, doctorCompensation, 'cancellation_fee', appointment._id);
+                  }
+                  docRevenueTx.status = 'partial_refunded';
+                  await docRevenueTx.save();
               }
           }
       }

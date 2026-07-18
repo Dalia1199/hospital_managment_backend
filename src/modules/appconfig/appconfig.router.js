@@ -24,6 +24,29 @@ appConfigRouter.get(
     }
 );
 
+appConfigRouter.get(
+    "/public",
+    async (req, res, next) => {
+        try {
+            let config = await appconfigmodel.findOne({ isGlobalConfig: true });
+            if (!config) {
+                config = await appconfigmodel.create({ isGlobalConfig: true });
+            }
+            return successresponse({ 
+                res, 
+                data: {
+                    patientCancellationRefundPercentage: config.patientCancellationRefundPercentage,
+                    patientCancellationDoctorCompensationPercentage: config.patientCancellationDoctorCompensationPercentage,
+                    patientCancellationPlatformFeePercentage: config.patientCancellationPlatformFeePercentage
+                }, 
+                message: "Public config fetched" 
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
 appConfigRouter.patch(
     "/",
     authentication,

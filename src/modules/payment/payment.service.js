@@ -99,23 +99,14 @@ export const createCheckout = async (
 
         const paidPayment =
             await paymentmodel.findOne({
-
                 userId: req.user._id,
-
                 purpose,
-
                 referenceId,
-
                 paymentStatus: "paid"
-
             });
 
-        if (paidPayment && purpose !== "subscription") {
-
-            throw new Error(
-                "this item is already paid"
-            );
-
+        if (paidPayment && purpose !== "subscription" && purpose !== "appointment") {
+            throw new Error("this item is already paid");
         }
 
         // =========================
@@ -128,6 +119,10 @@ export const createCheckout = async (
 
             const slot = await slotmodel.findById(referenceId);
             if (!slot) throw new Error("slot not found");
+
+            if (slot.isBooked && paidPayment) {
+                throw new Error("this item is already paid");
+            }
 
             const clinic = await clinicmodel.findById(slot.clinicId);
             if (!clinic) throw new Error("clinic not found");

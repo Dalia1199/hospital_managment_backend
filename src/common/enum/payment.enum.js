@@ -29,6 +29,9 @@ export const paymentStatusEnum = {
         "failed",
 
     refunded:
-        "refunded"
+        "refunded",
+
+    cancelled:
+        "cancelled"
 
 };
