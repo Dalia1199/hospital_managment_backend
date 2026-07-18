@@ -116,13 +116,20 @@ export const getWalletStats = async (req, res, next) => {
             }
         ]);
         
+        const [transactionProfits] = await transactionmodel.aggregate([
+            { $match: { purpose: 'online_booking_revenue', status: { $ne: 'cancelled' } } },
+            { $group: { _id: null, totalPlatformFee: { $sum: '$metadata.platformFee' } } }
+        ]);
+
+        const totalRevenue = (ledgerAgg?.totalRevenue || 0) + (transactionProfits?.totalPlatformFee || 0);
+        
         return successresponse({
             res,
             message: "Stats retrieved successfully",
             data: {
                 totalAvailable: walletAgg?.totalAvailable || 0,
                 totalPending: walletAgg?.totalPending || 0,
-                totalRevenue: ledgerAgg?.totalRevenue || 0
+                totalRevenue: totalRevenue
             }
         });
     } catch (error) {
@@ -145,6 +152,16 @@ export const manualWalletAdjust = async (req, res, next) => {
         const type = amount > 0 ? 'credit' : 'debit';
         const absAmount = Math.abs(amount);
         
+        const wallet = await getWallet(targetUserId);
+        if (amount < 0) {
+            if (balanceType === 'pending' && wallet.pendingBalance < absAmount) {
+                throw new Error("Insufficient pending balance for this debit");
+            }
+            if (balanceType !== 'pending' && wallet.availableBalance < absAmount) {
+                throw new Error("Insufficient available balance for this debit");
+            }
+        }
+
         const walletmodel = (await import('../../DB/models/walletmodel.js')).default;
         
         let updateQuery = {};
