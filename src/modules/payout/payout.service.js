@@ -220,11 +220,49 @@ export const getMyPayouts = async (req, res, next) => {
 // Admin only
 export const getAllPayoutRequests = async (req, res, next) => {
     try {
-        const payouts = await payoutrequestmodel.find({}).populate('userId', 'fullName email role').sort({ createdAt: -1 });
+        const { page = 1, limit = 10, status, search } = req.query;
+        const currentPage = parseInt(page);
+        const itemsPerPage = parseInt(limit);
+        const skip = (currentPage - 1) * itemsPerPage;
+
+        const filter = {};
+
+        if (status && status !== 'all') {
+            filter.status = status;
+        }
+
+        if (search) {
+            const usermodel = (await import('../../DB/models/usermodel.js')).default;
+            const users = await usermodel.find({
+                $or: [
+                    { fullName: { $regex: search, $options: "i" } },
+                    { email: { $regex: search, $options: "i" } }
+                ]
+            }).select('_id');
+            
+            const userIds = users.map(u => u._id);
+            filter.userId = { $in: userIds };
+        }
+
+        const total = await payoutrequestmodel.countDocuments(filter);
+        const payouts = await payoutrequestmodel.find(filter)
+            .populate('userId', 'fullName email role')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(itemsPerPage);
+
         return successresponse({
             res,
             message: "All payouts retrieved successfully",
-            data: payouts
+            data: {
+                data: payouts,
+                pagination: {
+                    total,
+                    page: currentPage,
+                    limit: itemsPerPage,
+                    totalPages: Math.ceil(total / itemsPerPage)
+                }
+            }
         });
     } catch (error) {
         next(error);
@@ -322,13 +360,49 @@ export const updatePayoutStatus = async (req, res, next) => {
 // Admin only
 export const getAllChangeRequests = async (req, res, next) => {
     try {
-        const requests = await payoutchangerequestmodel.find({})
+        const { page = 1, limit = 10, status, search } = req.query;
+        const currentPage = parseInt(page);
+        const itemsPerPage = parseInt(limit);
+        const skip = (currentPage - 1) * itemsPerPage;
+
+        const filter = {};
+
+        if (status && status !== 'all') {
+            filter.status = status;
+        }
+
+        if (search) {
+            const usermodel = (await import('../../DB/models/usermodel.js')).default;
+            const users = await usermodel.find({
+                $or: [
+                    { fullName: { $regex: search, $options: "i" } },
+                    { email: { $regex: search, $options: "i" } }
+                ]
+            }).select('_id');
+            
+            const userIds = users.map(u => u._id);
+            filter.userId = { $in: userIds };
+        }
+
+        const total = await payoutchangerequestmodel.countDocuments(filter);
+        const requests = await payoutchangerequestmodel.find(filter)
             .populate('userId', 'fullName email role')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(itemsPerPage);
+
         return successresponse({
             res,
             message: "All change requests retrieved successfully",
-            data: requests
+            data: {
+                data: requests,
+                pagination: {
+                    total,
+                    page: currentPage,
+                    limit: itemsPerPage,
+                    totalPages: Math.ceil(total / itemsPerPage)
+                }
+            }
         });
     } catch (error) {
         next(error);
