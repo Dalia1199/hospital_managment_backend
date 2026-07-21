@@ -387,7 +387,7 @@ export const getPatientCompliance = async (req, res, next) => {
             }
         }
 
-        let trackFilter = { patientId };
+        let trackFilter = { patientId, isAutoSynced: { $ne: true } };
         if (!hasAccess || sharingSetting === "own_only") {
             trackFilter.prescriptionId = { $in: prescriptions.map(p => p._id) };
         }
@@ -447,18 +447,6 @@ export const getPatientCompliance = async (req, res, next) => {
             alerts.push({ type: "warning", message: `Multiple missed doses (${consecutiveMissedDays} days).` });
         }
 
-        return successresponse({
-            res, data: {
-                adherencePercentage,
-                complianceStatus,
-                totalTaken,
-                totalMissed,
-                currentStreak,
-                activeMedicationsCount: activeMeds.length,
-                alerts,
-                activeMeds
-            }
-        });
         return successresponse({ res, data: {
             adherencePercentage,
             complianceStatus,

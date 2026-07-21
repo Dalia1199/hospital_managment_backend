@@ -705,7 +705,8 @@ async function _syncMissedDoses(patientId) {
                             medicationId: med._id,
                             scheduledDoseDateTime: missedDate,
                             status: 'missed',
-                            completedAt: missedDate
+                            completedAt: missedDate,
+                            isAutoSynced: true
                         });
                     }
                 }
@@ -743,13 +744,15 @@ async function _getActiveMedicationsList(patientId) {
         model: medicationtrackingmodel,
         filter: {
             patientId,
-            scheduledDoseDateTime: { $gte: todayStart, $lte: todayEnd }
+            scheduledDoseDateTime: { $gte: todayStart, $lte: todayEnd },
+            isAutoSynced: { $ne: true }  // Only show records the patient manually tracked
         }
     });
     const todaysTrackingCounts = {};
     for (const t of todaysTracking) {
         if (t.status === 'taken' || t.status === 'missed') {
-            todaysTrackingCounts[t.medicationId] = (todaysTrackingCounts[t.medicationId] || 0) + 1;
+            const key = t.medicationId.toString();
+            todaysTrackingCounts[key] = (todaysTrackingCounts[key] || 0) + 1;
         }
     }
 
@@ -761,7 +764,8 @@ async function _getActiveMedicationsList(patientId) {
     const takenCounts = {};
     for (const t of allTracking) {
         if (t.status === 'taken') {
-            takenCounts[t.medicationId] = (takenCounts[t.medicationId] || 0) + 1;
+            const key = t.medicationId.toString();
+            takenCounts[key] = (takenCounts[key] || 0) + 1;
         }
     }
 
@@ -801,7 +805,7 @@ async function _getActiveMedicationsList(patientId) {
             if (isActive) {
                 // Calculate progress % based on doses taken vs doses expected
                 let progress = 0;
-                let totalTaken = takenCounts[med._id] || 0;
+                let totalTaken = takenCounts[med._id.toString()] || 0;
 
                 if (durationInfo.isLifelong) {
                     const expectedSoFar = (daysCompleted + 1) * frequency;
@@ -811,7 +815,7 @@ async function _getActiveMedicationsList(patientId) {
                     progress = totalExpected > 0 ? Math.min(100, Math.floor((totalTaken / totalExpected) * 100)) : 0;
                 }
 
-                const trackedToday = todaysTrackingCounts[med._id] || 0;
+                const trackedToday = todaysTrackingCounts[med._id.toString()] || 0;
                 const hasTrackedToday = trackedToday >= frequency;
 
                 const todaysRecords = todaysTracking.filter(t => t.medicationId.toString() === med._id.toString());
@@ -839,9 +843,20 @@ async function _getActiveMedicationsList(patientId) {
     return activeMeds;
 }
 
+export async function _syncMissedDosesForAll() {
+    const allPatients = await patientmodel.find({}).select("userId").lean();
+    for (const patient of allPatients) {
+        if (!patient.userId) continue;
+        try {
+            await _syncMissedDoses(patient.userId);
+        } catch (err) {
+            console.error(`Failed to sync missed doses for patient ${patient.userId}:`, err);
+        }
+    }
+}
+
 export const getActiveMedications = async (req, res, next) => {
     try {
-        await _syncMissedDoses(req.user._id);
         const activeMeds = await _getActiveMedicationsList(req.user._id);
         return successresponse({ res, data: activeMeds });
     } catch (error) {
@@ -928,7 +943,8 @@ export const trackMedicationDose = async (req, res, next) => {
             filter: {
                 patientId: req.user._id,
                 medicationId,
-                scheduledDoseDateTime: { $gte: todayStart, $lte: todayEnd }
+                scheduledDoseDateTime: { $gte: todayStart, $lte: todayEnd },
+                isAutoSynced: { $ne: true }
             }
         });
 
@@ -960,11 +976,12 @@ export const untrackMedicationDose = async (req, res, next) => {
 
         const record = await medicationtrackingmodel.findOneAndDelete({
             _id: recordId,
-            patientId: req.user._id
+            patientId: req.user._id,
+            isAutoSynced: { $ne: true }  // Prevent deleting auto-synced records
         });
 
         if (!record) {
-            return next(new Error("Tracking record not found", { cause: 404 }));
+            return next(new Error("Tracking record not found or cannot be undone", { cause: 404 }));
         }
 
         return successresponse({ res, message: "Dose untracked successfully", data: record });
@@ -1009,7 +1026,7 @@ export const getMedicationSummary = async (req, res, next) => {
         
         const trackingRecords = await db_service.find({
             model: medicationtrackingmodel,
-            filter: { patientId: req.user._id },
+            filter: { patientId: req.user._id, isAutoSynced: { $ne: true } },
             options: { sort: { scheduledDoseDateTime: -1 } }
         });
 

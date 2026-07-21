@@ -23,10 +23,13 @@ export function parseFrequency(freqStr) {
 
   const str = freqStr.toLowerCase().trim();
   
-  if (str.includes("once") || str === "daily" || str.includes("1 time")) return 1;
-  if (str.includes("twice") || str.includes("2 time")) return 2;
-  if (str.includes("three times") || str.includes("3 time")) return 3;
-  if (str.includes("four times") || str.includes("4 time")) return 4;
+  if (/^\d+$/.test(str)) return parseInt(str, 10);
+  
+  if (str.includes("once") || str === "daily" || str.includes("1 time") || str.includes("1x")) return 1;
+  if (str.includes("twice") || str.includes("2 time") || str.includes("2x")) return 2;
+  if (str.includes("three times") || str.includes("3 time") || str.includes("3x")) return 3;
+  if (str.includes("four times") || str.includes("4 time") || str.includes("4x")) return 4;
+  if (str.includes("five times") || str.includes("5 time") || str.includes("5x")) return 5;
   
   // Every X hours
   if (str.includes("every 24 hour")) return 1;
@@ -34,17 +37,20 @@ export function parseFrequency(freqStr) {
   if (str.includes("every 8 hour")) return 3;
   if (str.includes("every 6 hour")) return 4;
   if (str.includes("every 4 hour")) return 6;
+  if (str.includes("every 3 hour")) return 8;
+
+  const timesMatch = str.match(/(\d+)\s*(?:times?|x)\s*(?:a\s*)?(?:day|daily)?/);
+  if (timesMatch) return parseInt(timesMatch[1], 10);
+
+  const hourMatch = str.match(/every\s*(\d+)\s*hour/);
+  if (hourMatch) {
+    const num = parseInt(hourMatch[1], 10);
+    if (num > 0) return Math.floor(24 / num);
+  }
 
   // Generic match for number
-  const match = str.match(/(\d+)/);
-  if (match) {
-    const num = parseInt(match[1], 10);
-    if (str.includes("hour")) {
-        // e.g. every 8 hours -> 24/8 = 3
-        if (num > 0) return Math.floor(24 / num);
-    }
-    return num;
-  }
+  const numMatch = str.match(/(\d+)/);
+  if (numMatch) return parseInt(numMatch[1], 10);
 
   return 1; // Fallback
 }

@@ -29,6 +29,10 @@ const medicationtrackingSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    isAutoSynced: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

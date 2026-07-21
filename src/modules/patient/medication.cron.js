@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import medicationschedulemodel from "../../DB/models/medicationschedulemodel.js";
 import { notify } from "../notifications/notification.service.js";
+import { _syncMissedDosesForAll } from "./patient.service.js";
 
 // Run every minute
 const medicationCronJob = cron.schedule("* * * * *", async () => {
@@ -53,4 +54,15 @@ const medicationCronJob = cron.schedule("* * * * *", async () => {
   }
 });
 
-export default medicationCronJob;
+// Run once daily at 00:05 AM to sync missed doses for all patients
+const missedDosesSyncJob = cron.schedule("5 0 * * *", async () => {
+    try {
+        console.log("[Cron] Starting daily missed doses sync...");
+        await _syncMissedDosesForAll();
+        console.log("[Cron] Missed doses sync complete.");
+    } catch (error) {
+        console.error("[Cron] Missed doses sync error:", error);
+    }
+});
+
+export { medicationCronJob, missedDosesSyncJob };

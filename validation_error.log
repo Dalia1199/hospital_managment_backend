@@ -1,19 +1,16 @@
 {
-  "url": "/doctor/profile/certificates?clinicId=6a59285799c7dd4daa8808e4",
+  "url": "/users/signin",
   "body": {
-    "title": "c1",
-    "issuer": "1",
-    "issueDate": "2026-07-01"
+    "email": "doctor@123",
+    "password": "123123123"
   },
-  "query": {
-    "clinicId": "6a59285799c7dd4daa8808e4"
-  },
+  "query": {},
   "params": {},
   "errorresult": [
     {
       "key": "body",
-      "path": "issuer",
-      "message": "\"issuer\" length must be at least 2 characters long"
+      "path": "email",
+      "message": "\"email\" must be a valid email"
     }
   ]
 }
